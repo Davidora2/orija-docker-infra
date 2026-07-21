@@ -1,0 +1,58 @@
+# Portainer stack: pin-agent-prod
+# LIVE posting — only deploy after sandbox dry-run looks good.
+#
+# Checklist before deploy:
+#   1. PIN_AGENT_MODE=live
+#   2. Real Pinterest access/refresh tokens + board ID
+#   3. PINTEREST_USE_SANDBOX=false (unless still validating API)
+#   4. Shopify token + public storefront URL in brand config / DEFAULT_LINK
+
+services:
+  pinterest-pin-agent:
+    build:
+      context: ./services/pinterest-pin-agent
+      dockerfile: Dockerfile
+    image: orija/pinterest-pin-agent:prod
+    container_name: pin-agent-prod
+    restart: unless-stopped
+    environment:
+      # --- Mode ---
+      PIN_AGENT_MODE: live
+      PIN_INTERVAL_HOURS: "2"
+      PIN_TIMEZONE: America/New_York
+      # Optional quiet hours (empty = post anytime)
+      PIN_QUIET_START_HOUR: "0"
+      PIN_QUIET_END_HOUR: "7"
+
+      # --- Shopify (fill these) ---
+      SHOPIFY_SHOP_DOMAIN: your-store.myshopify.com
+      SHOPIFY_ACCESS_TOKEN: shpat_xxxxxxxx
+      SHOPIFY_API_VERSION: "2025-01"
+      SHOPIFY_PRODUCT_TAG_FILTER: ""
+      SHOPIFY_PRODUCT_LIMIT: "50"
+
+      # --- Pinterest (required for live) ---
+      PINTEREST_APP_ID: ""
+      PINTEREST_APP_SECRET: ""
+      PINTEREST_ACCESS_TOKEN: ""
+      PINTEREST_REFRESH_TOKEN: ""
+      PINTEREST_BOARD_ID: ""
+      PINTEREST_DEFAULT_LINK: ""
+      PINTEREST_USE_SANDBOX: "false"
+
+      # --- Brand ---
+      BRAND_NAME: Orija
+      BRAND_VOICE: warm, practical, SEO-friendly. Short sentences. No hype.
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: gpt-4o-mini
+
+      DATA_DIR: /data
+      CONFIG_DIR: /app/config
+
+    volumes:
+      - pin-agent-prod-data:/data
+      # Optional: live keyword/brand overrides
+      # - ./services/pinterest-pin-agent/config:/app/config:ro
+
+volumes:
+  pin-agent-prod-data:

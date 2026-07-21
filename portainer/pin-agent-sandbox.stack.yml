@@ -1,0 +1,62 @@
+# Portainer stack: pin-agent-sandbox
+# Deploy via: Stacks → Add stack → Repository (this repo) OR Web editor
+# Purpose: safe testing — never posts to real Pinterest
+#
+# After deploy: Container → Console →
+#   python -m pin_agent once
+# Then inspect volume pin-agent-sandbox-data → /data/drafts/
+
+services:
+  pinterest-pin-agent:
+    build:
+      context: ./services/pinterest-pin-agent
+      dockerfile: Dockerfile
+    image: orija/pinterest-pin-agent:sandbox
+    container_name: pin-agent-sandbox
+    restart: unless-stopped
+    environment:
+      # --- Mode (keep dry_run in sandbox) ---
+      PIN_AGENT_MODE: dry_run
+      PIN_INTERVAL_HOURS: "2"
+      PIN_TIMEZONE: America/New_York
+      PIN_QUIET_START_HOUR: ""
+      PIN_QUIET_END_HOUR: ""
+
+      # --- Shopify (fill these) ---
+      SHOPIFY_SHOP_DOMAIN: your-store.myshopify.com
+      SHOPIFY_ACCESS_TOKEN: shpat_xxxxxxxx
+      SHOPIFY_API_VERSION: "2025-01"
+      SHOPIFY_PRODUCT_TAG_FILTER: ""
+      SHOPIFY_PRODUCT_LIMIT: "50"
+
+      # --- Pinterest (optional for dry_run; needed if you flip to live later) ---
+      PINTEREST_APP_ID: ""
+      PINTEREST_APP_SECRET: ""
+      PINTEREST_ACCESS_TOKEN: ""
+      PINTEREST_REFRESH_TOKEN: ""
+      PINTEREST_BOARD_ID: ""
+      PINTEREST_DEFAULT_LINK: ""
+      PINTEREST_USE_SANDBOX: "true"
+
+      # --- Brand ---
+      BRAND_NAME: Orija
+      BRAND_VOICE: warm, practical, SEO-friendly. Short sentences. No hype.
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: gpt-4o-mini
+
+      # --- Paths ---
+      DATA_DIR: /data
+      CONFIG_DIR: /app/config
+
+    volumes:
+      - pin-agent-sandbox-data:/data
+      # Optional: override baked-in keywords/brand without rebuilding
+      # - ./services/pinterest-pin-agent/config:/app/config:ro
+
+    # Scheduler runs by default. For a single test cycle, use Console:
+    #   python -m pin_agent once
+    # Or temporarily change command below and update the stack:
+    # command: ["python", "-m", "pin_agent", "once"]
+
+volumes:
+  pin-agent-sandbox-data:
