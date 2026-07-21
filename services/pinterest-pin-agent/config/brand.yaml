@@ -1,0 +1,15 @@
+brand_name: Orija
+website: ""
+cta_phrases:
+  - "Shop now"
+  - "See details"
+  - "Get yours"
+title_max_chars: 100
+description_max_chars: 500
+# Ideal Pinterest pin canvas (2:3)
+pin_width: 1000
+pin_height: 1500
+# Avoid re-pinning the same product within this many days
+repost_cooldown_days: 30
+# Prefer products updated recently (days). 0 = no preference.
+prefer_updated_within_days: 90

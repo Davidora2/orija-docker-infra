@@ -1,0 +1,19 @@
+services:
+  pinterest-pin-agent:
+    build:
+      context: ./services/pinterest-pin-agent
+    container_name: pinterest-pin-agent
+    restart: unless-stopped
+    env_file:
+      - ./services/pinterest-pin-agent/.env
+    environment:
+      DATA_DIR: /data
+      CONFIG_DIR: /app/config
+    volumes:
+      - ./services/pinterest-pin-agent/config:/app/config:ro
+      - pin-agent-data:/data
+    # Uncomment to run a single cycle instead of the daemon:
+    # command: ["python", "-m", "pin_agent", "once"]
+
+volumes:
+  pin-agent-data:
