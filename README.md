@@ -2,6 +2,17 @@
 
 Personal meeting assistant for Android. Runs **entirely on-device**.
 
+## Download the APK
+
+The installable file is **not** inside the `app/` source folder. Get it here:
+
+**[`releases/LocalAide-debug.apk`](https://github.com/Davidora2/orija-docker-infra/raw/cursor/local-meeting-assistant-apk-b639/releases/LocalAide-debug.apk)** (~29MB)
+
+On GitHub mobile: open the PR branch → tap **`releases`** (repo root) → tap **`LocalAide-debug.apk`** → **Download**.
+
+> Path: `orija-docker-infra / releases / LocalAide-debug.apk`  
+> Do not look under `app/` — that folder is only Kotlin source + Gradle config.
+
 ## What it does
 
 1. **Records meetings** with the microphone (foreground service keeps capture alive)
