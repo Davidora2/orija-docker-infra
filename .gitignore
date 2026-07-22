@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+**/build/
+local.properties
+.idea/
+.DS_Store
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+android-sdk/
+*.log
+.cxx/
+!releases/LocalAide-debug.apk
