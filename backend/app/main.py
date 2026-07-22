@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
-from app.api import auth, favorites, library, progress, sorter, streams, xtream
+from app.api import auth, favorites, library, progress, search, sorter, streams, xtream
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
 from app.core.security import hash_password
@@ -107,6 +107,7 @@ app.include_router(favorites.router, prefix="/api")
 app.include_router(streams.router, prefix="/api")
 app.include_router(library.router, prefix="/api")
 app.include_router(sorter.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
 app.include_router(progress.router, prefix="/api")
 
 

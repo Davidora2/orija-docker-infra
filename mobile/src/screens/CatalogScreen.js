@@ -145,7 +145,7 @@ export default function CatalogScreen() {
               />
             </View>
           )}
-          ListEmptyComponent={<Text style={styles.empty}>No titles found</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>{q ? `No matches for “${q}”` : "No titles found"}</Text>}
         />
       )}
     </View>

@@ -12,6 +12,7 @@ import DetailScreen from "./src/screens/DetailScreen";
 import LiveAliasScreen from "./src/screens/CatalogScreen";
 import FavoritesScreen from "./src/screens/FavoritesScreen";
 import LibraryScreen from "./src/screens/LibraryScreen";
+import SearchScreen from "./src/screens/SearchScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
 import { colors } from "./src/theme";
@@ -49,6 +50,7 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen name="Movies" component={CatalogScreen} initialParams={{ kind: "movies" }} />
       <Tab.Screen name="Shows" component={CatalogScreen} initialParams={{ kind: "shows" }} />
       <Tab.Screen name="Live" component={LiveAliasScreen} initialParams={{ kind: "live" }} />

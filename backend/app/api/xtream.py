@@ -123,8 +123,9 @@ async def catalog(
         raise HTTPException(status_code=400, detail="kind must be movies|shows|live")
 
     if q:
-        ql = q.lower()
-        items = [i for i in items if ql in (i.get("title") or "").lower()]
+        from app.services.search import title_matches
+
+        items = [i for i in items if title_matches(i.get("title") or "", q)]
 
     total = len(items)
     page = items[offset : offset + limit]

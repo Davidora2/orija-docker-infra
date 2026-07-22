@@ -69,6 +69,15 @@ export default function HomePage() {
               : "Browse local library or connect Xtream in Settings"}
           </p>
         </div>
+        <input
+          className="search"
+          placeholder="Search Shogun, movies, shows…"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && e.currentTarget.value.trim()) {
+              navigate(`/search?q=${encodeURIComponent(e.currentTarget.value.trim())}`);
+            }
+          }}
+        />
       </div>
       {error && <p className="error">{error}</p>}
 

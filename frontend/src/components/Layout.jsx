@@ -17,6 +17,7 @@ export default function Layout() {
           <NavLink to="/" end>
             Home
           </NavLink>
+          <NavLink to="/search">Search</NavLink>
           <NavLink to="/movies">Movies</NavLink>
           <NavLink to="/shows">Shows</NavLink>
           <NavLink to="/live">Live TV</NavLink>

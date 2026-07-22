@@ -9,6 +9,7 @@ import LibraryPage from "./pages/LibraryPage";
 import LoginPage from "./pages/LoginPage";
 import MovieDetailPage from "./pages/MovieDetailPage";
 import PlayerPage from "./pages/PlayerPage";
+import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import ShowDetailPage from "./pages/ShowDetailPage";
 
@@ -40,6 +41,7 @@ export default function App() {
         }
       >
         <Route index element={<HomePage />} />
+        <Route path="search" element={<SearchPage />} />
         <Route path="movies" element={<CatalogPage kind="movies" />} />
         <Route path="shows" element={<CatalogPage kind="shows" />} />
         <Route path="live" element={<CatalogPage kind="live" />} />
