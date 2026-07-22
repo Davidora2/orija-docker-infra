@@ -10,8 +10,8 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
-          ORIJA
-          <span>Media Server</span>
+          ORIJAFLIX
+          <span>Personal Cinema</span>
         </div>
         <nav className="nav">
           <NavLink to="/" end>

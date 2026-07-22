@@ -16,7 +16,7 @@ from app.core.database import SessionLocal
 from app.models.models import Favorite, XtreamConfig
 from app.services.xtream import XtreamClient
 
-logger = logging.getLogger("orija.downloads")
+logger = logging.getLogger("orijaflix.downloads")
 
 _queue: asyncio.Queue[int] | None = None
 _worker_task: asyncio.Task | None = None

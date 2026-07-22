@@ -120,7 +120,7 @@ export default function HomePage() {
             ))}
           </div>
         ) : (
-          <div className="empty">No movies yet. Connect Xtream or drop files into /media/movies.</div>
+          <div className="empty">No movies yet. Connect Xtream or drop files into movies / incoming.</div>
         )}
       </section>
 

@@ -15,7 +15,7 @@ export default function PosterCard({ title, subtitle, poster, onPress, width, he
           <Image source={{ uri: poster }} style={styles.image} resizeMode="cover" />
         ) : (
           <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>ORIJA</Text>
+            <Text style={styles.placeholderText}>ORIJAFLIX</Text>
           </View>
         )}
       </View>

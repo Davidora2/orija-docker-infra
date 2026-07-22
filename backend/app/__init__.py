@@ -1,1 +1,1 @@
-"""Orija Media Server backend."""
+"""OrijaFlix media server backend."""

@@ -1,11 +1,11 @@
 services:
-  orija:
+  orijaflix:
     build: .
-    container_name: orija-media
+    container_name: orijaflix
     ports:
       - "${ORIJA_PORT:-8096}:8000"
     environment:
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-orija-secret}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-orijaflix-secret}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       MAX_STREAMS_PER_USER: ${MAX_STREAMS_PER_USER:-4}
@@ -13,19 +13,19 @@ services:
       XTREAM_BASE_URL: ${XTREAM_BASE_URL:-}
       XTREAM_USERNAME: ${XTREAM_USERNAME:-}
       XTREAM_PASSWORD: ${XTREAM_PASSWORD:-}
-      DATABASE_URL: sqlite+aiosqlite:////data/orija.db
-      MOVIES_DIR: /media/movies
-      SHOWS_DIR: /media/shows
-      LIVE_DIR: /media/live
-      DOWNLOADS_DIR: /media/downloads
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      DATABASE_URL: sqlite+aiosqlite:////data/orijaflix.db
+      MEDIA_ROOT: /srv/storage/data/media
+      MOVIES_DIR: /srv/storage/data/media/movies
+      SHOWS_DIR: /srv/storage/data/media/TVshows
+      LIVE_DIR: /srv/storage/data/media/live
+      DOWNLOADS_DIR: /srv/storage/data/media/downloads
+      INCOMING_DIR: /srv/storage/data/media/incoming
     volumes:
-      - orija-data:/data
-      - ${MOVIES_PATH:-./media/movies}:/media/movies
-      - ${SHOWS_PATH:-./media/shows}:/media/shows
-      - ${LIVE_PATH:-./media/live}:/media/live
-      - orija-downloads:/media/downloads
+      - orijaflix-data:/data
+      # Host media library (movies + TVshows + incoming sorter inbox)
+      - ${MEDIA_HOST_PATH:-/srv/storage/data/media}:/srv/storage/data/media
     restart: unless-stopped
 
 volumes:
-  orija-data:
-  orija-downloads:
+  orijaflix-data:

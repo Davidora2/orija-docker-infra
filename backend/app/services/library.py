@@ -17,14 +17,45 @@ EPISODE_RE = re.compile(
     r"(?P<season2>\d{1,2})x(?P<episode2>\d{1,3})",
     re.IGNORECASE,
 )
+SHOW_ROOT_NAMES = {"tvshows", "shows", "tv", "series"}
 
 
 def _title_from_filename(path: Path) -> str:
     name = path.stem
     name = re.sub(r"[._]+", " ", name)
-    name = re.sub(r"\b(1080p|720p|2160p|4k|bluray|web[- ]?dl|x264|x265|hevc|aac|hdr)\b", "", name, flags=re.I)
+    name = re.sub(
+        r"\b(1080p|720p|2160p|4k|bluray|web[- ]?dl|x264|x265|hevc|aac|hdr)\b",
+        "",
+        name,
+        flags=re.I,
+    )
     name = re.sub(r"\s+", " ", name).strip(" -._")
     return name or path.stem
+
+
+def find_poster(path: Path) -> str | None:
+    """Look for poster.jpg / folder.jpg beside a movie file or show folder."""
+    candidates = [
+        path.parent / "poster.jpg",
+        path.parent / "poster.png",
+        path.parent / "folder.jpg",
+        path.parent / "cover.jpg",
+    ]
+    # For episodes: show root is often parent of Season XX
+    if re.match(r"(?i)season\s*\d+", path.parent.name):
+        show_root = path.parent.parent
+        candidates.extend(
+            [
+                show_root / "poster.jpg",
+                show_root / "poster.png",
+                show_root / "folder.jpg",
+                show_root / "cover.jpg",
+            ]
+        )
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return None
 
 
 def parse_episode(path: Path) -> tuple[str, int | None, int | None]:
@@ -33,11 +64,12 @@ def parse_episode(path: Path) -> tuple[str, int | None, int | None]:
         return _title_from_filename(path), None, None
     season = match.group("season") or match.group("season2")
     episode = match.group("episode") or match.group("episode2")
-    show = path.parent.name if path.parent.name.lower() not in {"shows", "tv", "series"} else _title_from_filename(path)
-    # Prefer parent folder as show name for nested layouts: Shows/Name/S01/...
+    show = path.parent.name
+    if re.match(r"(?i)season\s*\d+", show):
+        show = path.parent.parent.name
     parts = path.parts
     for i, part in enumerate(parts):
-        if part.lower() in {"shows", "tv", "series"} and i + 1 < len(parts):
+        if part.lower() in SHOW_ROOT_NAMES and i + 1 < len(parts):
             show = parts[i + 1]
             break
     show = re.sub(r"[._]+", " ", show).strip()
@@ -45,10 +77,15 @@ def parse_episode(path: Path) -> tuple[str, int | None, int | None]:
 
 
 async def scan_library(db: AsyncSession) -> dict:
-    settings.movies_dir.mkdir(parents=True, exist_ok=True)
-    settings.shows_dir.mkdir(parents=True, exist_ok=True)
-    settings.live_dir.mkdir(parents=True, exist_ok=True)
-    settings.downloads_dir.mkdir(parents=True, exist_ok=True)
+    for d in (
+        settings.media_root,
+        settings.movies_dir,
+        settings.shows_dir,
+        settings.live_dir,
+        settings.downloads_dir,
+        settings.incoming_dir,
+    ):
+        d.mkdir(parents=True, exist_ok=True)
 
     found: list[LocalMedia] = []
     seen_paths: set[str] = set()
@@ -63,6 +100,7 @@ async def scan_library(db: AsyncSession) -> dict:
                     title=_title_from_filename(path),
                     path=rel,
                     size_bytes=path.stat().st_size,
+                    poster=find_poster(path),
                 )
             )
 
@@ -80,6 +118,7 @@ async def scan_library(db: AsyncSession) -> dict:
                     season=season,
                     episode=episode,
                     size_bytes=path.stat().st_size,
+                    poster=find_poster(path),
                 )
             )
 
@@ -89,12 +128,14 @@ async def scan_library(db: AsyncSession) -> dict:
     added = 0
     for item in found:
         if item.path in existing_by_path:
-            existing_by_path[item.path].title = item.title
-            existing_by_path[item.path].size_bytes = item.size_bytes
-            existing_by_path[item.path].show_name = item.show_name
-            existing_by_path[item.path].season = item.season
-            existing_by_path[item.path].episode = item.episode
-            existing_by_path[item.path].media_type = item.media_type
+            row = existing_by_path[item.path]
+            row.title = item.title
+            row.size_bytes = item.size_bytes
+            row.show_name = item.show_name
+            row.season = item.season
+            row.episode = item.episode
+            row.media_type = item.media_type
+            row.poster = item.poster
         else:
             db.add(item)
             added += 1
@@ -106,4 +147,10 @@ async def scan_library(db: AsyncSession) -> dict:
             removed += 1
 
     await db.commit()
-    return {"scanned": len(found), "added": added, "removed": removed}
+    return {
+        "scanned": len(found),
+        "added": added,
+        "removed": removed,
+        "movies_dir": str(settings.movies_dir),
+        "shows_dir": str(settings.shows_dir),
+    }

@@ -27,7 +27,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={onSubmit}>
-        <h1>ORIJA</h1>
+        <h1>ORIJAFLIX</h1>
         <p className="muted">Your personal cinema — Xtream streams & local files.</p>
         <div className="field">
           <label>Username</label>

@@ -10,11 +10,15 @@ frontend/dist/
 data/
 media/movies/*
 media/shows/*
+media/TVshows/*
 media/live/*
+media/incoming/*
 media/downloads/*
 !media/movies/.gitkeep
 !media/shows/.gitkeep
+!media/TVshows/.gitkeep
 !media/live/.gitkeep
+!media/incoming/.gitkeep
 .DS_Store
 *.db
 *.part

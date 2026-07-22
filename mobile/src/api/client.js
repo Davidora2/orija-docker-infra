@@ -2,8 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
-const TOKEN_KEY = "orija_token";
-const SERVER_KEY = "orija_server";
+const TOKEN_KEY = "orijaflix_token";
+const SERVER_KEY = "orijaflix_server";
 
 async function storageGet(key) {
   if (Platform.OS === "web") return AsyncStorage.getItem(key);

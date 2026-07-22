@@ -10,7 +10,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.pad}>
-      <ScreenHeader title="Account" subtitle="Native client for Orija" />
+      <ScreenHeader title="Account" subtitle="Native client for OrijaFlix" />
       <View style={styles.card}>
         <Text style={styles.label}>Signed in as</Text>
         <Text style={styles.value}>{user?.display_name}</Text>

@@ -158,7 +158,7 @@ export default function DetailScreen() {
             <Image source={{ uri: item.poster }} style={styles.poster} />
           ) : (
             <View style={[styles.poster, styles.posterFallback]}>
-              <Text style={{ color: colors.accent }}>ORIJA</Text>
+              <Text style={{ color: colors.accent }}>ORIJAFLIX</Text>
             </View>
           )}
         </View>

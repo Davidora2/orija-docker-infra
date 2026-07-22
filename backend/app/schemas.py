@@ -154,5 +154,6 @@ class LocalMediaOut(BaseModel):
     season: Optional[int] = None
     episode: Optional[int] = None
     size_bytes: int
+    poster: Optional[str] = None
 
     model_config = {"from_attributes": True}

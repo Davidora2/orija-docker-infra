@@ -1,80 +1,78 @@
-# Orija
+# OrijaFlix
 
-Plex-style personal media server in Docker. Pulls live TV, movies, and shows from an **Xtream Codes** subscription, supports **multi-streaming** with personalized accounts, saves favorited titles into local **Movies/Shows** folders, and serves either those local files or direct Xtream streams.
+Plex-style personal media server in Docker — branded **OrijaFlix**. Pulls live TV, movies, and shows from an **Xtream Codes** subscription, supports **multi-streaming** with personalized accounts, saves favorited titles into local **movies** / **TVshows** folders, sorts messy filenames + fetches cover art, and serves either local files or Xtream streams.
+
+## Media layout
+
+```
+/srv/storage/data/media/
+  movies/          # Movie Name (2020)/Movie Name (2020).mkv + poster.jpg
+  TVshows/         # Show Name/Season 01/Show Name - S01E01 - Title.mkv + poster.jpg
+  incoming/        # Drop zone for the media sorter
+  downloads/       # Also scanned by the sorter
+```
+
+Mount this host path into the container via `MEDIA_HOST_PATH` (default `/srv/storage/data/media`).
 
 ## Features
 
-- **Xtream Codes** catalog (movies, series, live TV) via `player_api.php`
+- **Xtream Codes** catalog (movies, series, live TV)
 - **Multi-stream** sessions with per-user and global concurrency limits
-- **Personalized accounts** (admin + members), each with their own favorites & watch progress
-- **Favorite → library**: starring an Xtream movie/show queues a download into `/media/movies` or `/media/shows`
-- **Local library** scanner + playback for files already on disk
-- Single Docker image (FastAPI API + React UI)
+- **Personalized accounts** — favorites & watch progress per user
+- **Favorite → library** downloads into `movies/` or `TVshows/`
+- **Media sorter** — rename, classify movie vs TV, move to the right folder, fetch TMDB artwork
+- **Local library** scanner + playback
+- Native apps: Android · Android TV · iOS (`mobile/`)
+
+## Quick start
+
+```bash
+cp .env.example .env
+# set TMDB_API_KEY for artwork + title correction (optional but recommended)
+docker compose up -d --build
+```
+
+Open **http://localhost:8096** and sign in with `admin` / `admin`.
+
+In **Settings**, paste your Xtream server URL, username, and password.  
+In **Local Library**, use **Preview sort** / **Run sorter** on files in `incoming/`.
 
 ## Native apps (Android · Android TV · iOS)
-
-Expo client in [`mobile/`](./mobile):
 
 ```bash
 cd mobile && npm install && npx expo start
 # production: eas build -p android|ios
 ```
 
-Enter your Orija LAN URL (e.g. `http://192.168.1.50:8096`). Android TV uses the same APK with leanback launcher + D-pad focus UI. See [mobile/README.md](./mobile/README.md).
+Enter your OrijaFlix LAN URL (e.g. `http://192.168.1.50:8096`). See [mobile/README.md](./mobile/README.md).
 
-## Quick start
-
-```bash
-cp .env.example .env
-# edit XTREAM_* and ADMIN_PASSWORD
-docker compose up -d --build
-```
-
-Open **http://localhost:8096** and sign in with `admin` / `admin` (or your `.env` values).
-
-In **Settings**, paste your Xtream server URL, username, and password, then **Save & Test**.
-
-### Volumes
+## Volumes
 
 | Path | Purpose |
 |------|---------|
-| `/media/movies` | Local movies + favorited Xtream movies |
-| `/media/shows` | Local / favorited series episodes |
-| `/media/live` | Optional live recordings |
+| `/srv/storage/data/media/movies` | Movies + favorited Xtream movies |
+| `/srv/storage/data/media/TVshows` | TV shows / favorited series |
+| `/srv/storage/data/media/incoming` | Sorter inbox |
 | `/data` | SQLite database |
 
-Map host folders via `MOVIES_PATH` / `SHOWS_PATH` in `.env`.
+## Sorter API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/sorter/status` | Pending files + folder paths |
+| `POST /api/sorter/preview` | Dry-run rename/move plan |
+| `POST /api/sorter/run` | Apply plan + download posters |
+
+Set `TMDB_API_KEY` in `.env` for TMDB title matching and cover art.
 
 ## Development
 
 ```bash
-# Backend
 cd backend
 pip install -r requirements.txt
-mkdir -p /tmp/orija/{data,movies,shows,live,downloads}
-export DATABASE_URL=sqlite+aiosqlite:////tmp/orija/data/orija.db
-export MOVIES_DIR=/tmp/orija/movies SHOWS_DIR=/tmp/orija/shows
+export MEDIA_ROOT=/tmp/orijaflix/media
+mkdir -p $MEDIA_ROOT/{movies,TVshows,incoming,downloads}
 uvicorn app.main:app --reload --port 8000
 
-# Frontend
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && npm run dev
 ```
-
-## API overview
-
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/auth/login` | Get JWT |
-| `GET /api/xtream/catalog/{movies\|shows\|live}` | Browse Xtream |
-| `POST /api/streams/open` | Open a counted stream session |
-| `GET /api/streams/play/{session_key}` | Proxied play URL (local or Xtream) |
-| `POST /api/favorites` | Favorite (+ optional download to disk) |
-| `POST /api/library/scan` | Rescan local media folders |
-
-## Notes
-
-- Use only with an Xtream subscription you are authorized to access.
-- Provider connection limits still apply; Orija enforces its own multi-stream caps on top.
-- Series favorites currently download the first available episode into the Shows folder as a starter; re-run **Save again** or expand the downloader for full-season grabs as needed.

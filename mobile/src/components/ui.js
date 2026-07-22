@@ -8,7 +8,7 @@ export function ScreenHeader({ title, subtitle, right }) {
   return (
     <View style={styles.header}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.brand}>ORIJA</Text>
+        <Text style={styles.brand}>ORIJAFLIX</Text>
         <Text style={styles.title}>{title}</Text>
         {!!subtitle && <Text style={styles.sub}>{subtitle}</Text>}
       </View>

@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Orija",
-    "slug": "orija",
+    "name": "OrijaFlix",
+    "slug": "orijaflix",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "orija",
+    "scheme": "orijaflix",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.orija.media",
+      "bundleIdentifier": "com.orijaflix.media",
       "infoPlist": {
         "UIBackgroundModes": ["audio"],
         "NSAppTransportSecurity": {
@@ -23,7 +23,7 @@
       }
     },
     "android": {
-      "package": "com.orija.media",
+      "package": "com.orijaflix.media",
       "adaptiveIcon": {
         "backgroundColor": "#071018",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -55,7 +55,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "orija-media-native"
+        "projectId": "orijaflix-media-native"
       }
     }
   }

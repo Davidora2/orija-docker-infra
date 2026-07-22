@@ -17,7 +17,7 @@ export default function ServerScreen() {
     try {
       await saveServer(url);
     } catch (err) {
-      setError(err.message || "Could not reach Orija server");
+      setError(err.message || "Could not reach OrijaFlix server");
     } finally {
       setBusy(false);
     }
@@ -31,7 +31,7 @@ export default function ServerScreen() {
       <View style={styles.card}>
         <ScreenHeader
           title="Connect"
-          subtitle="Enter your Orija server address (same host as docker compose)."
+          subtitle="Enter your OrijaFlix server address (same host as docker compose)."
         />
         <Text style={styles.label}>Server URL</Text>
         <TextInput
@@ -48,7 +48,7 @@ export default function ServerScreen() {
         {!!error && <Text style={styles.error}>{error}</Text>}
         <PrimaryButton label={busy ? "Connecting…" : "Continue"} onPress={onContinue} disabled={busy} />
         <Text style={styles.hint}>
-          Android / iOS / Android TV all talk to the same Orija API. Use your LAN IP, not localhost, on devices.
+          Android / iOS / Android TV all talk to the same OrijaFlix API. Use your LAN IP, not localhost, on devices.
         </Text>
       </View>
     </KeyboardAvoidingView>

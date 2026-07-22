@@ -108,4 +108,5 @@ class LocalMedia(Base):
     season: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     episode: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    poster: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
