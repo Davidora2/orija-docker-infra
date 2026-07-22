@@ -1,0 +1,38 @@
+# Paste-friendly Portainer web-editor version (pre-built image).
+# Build first:
+#   docker build -t orija/pinterest-pin-agent:prod ./services/pinterest-pin-agent
+
+services:
+  pinterest-pin-agent:
+    image: orija/pinterest-pin-agent:prod
+    container_name: pin-agent-prod
+    restart: unless-stopped
+    environment:
+      PIN_AGENT_MODE: live
+      PIN_INTERVAL_HOURS: "2"
+      PIN_TIMEZONE: America/New_York
+      PIN_QUIET_START_HOUR: "0"
+      PIN_QUIET_END_HOUR: "7"
+      SHOPIFY_SHOP_DOMAIN: your-store.myshopify.com
+      SHOPIFY_ACCESS_TOKEN: shpat_xxxxxxxx
+      SHOPIFY_API_VERSION: "2025-01"
+      SHOPIFY_PRODUCT_TAG_FILTER: ""
+      SHOPIFY_PRODUCT_LIMIT: "50"
+      PINTEREST_APP_ID: ""
+      PINTEREST_APP_SECRET: ""
+      PINTEREST_ACCESS_TOKEN: ""
+      PINTEREST_REFRESH_TOKEN: ""
+      PINTEREST_BOARD_ID: ""
+      PINTEREST_DEFAULT_LINK: ""
+      PINTEREST_USE_SANDBOX: "false"
+      BRAND_NAME: Orija
+      BRAND_VOICE: warm, practical, SEO-friendly. Short sentences. No hype.
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: gpt-4o-mini
+      DATA_DIR: /data
+      CONFIG_DIR: /app/config
+    volumes:
+      - pin-agent-prod-data:/data
+
+volumes:
+  pin-agent-prod-data:

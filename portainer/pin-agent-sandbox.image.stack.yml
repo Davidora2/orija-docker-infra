@@ -1,0 +1,40 @@
+# Paste-friendly Portainer web-editor versions
+# Use these when you cannot build from Git (image must already exist on the host).
+#
+# First build once on the Portainer host (or CI), then paste the matching stack:
+#   cd /path/to/orija-docker-infra
+#   docker build -t orija/pinterest-pin-agent:sandbox ./services/pinterest-pin-agent
+#   docker tag orija/pinterest-pin-agent:sandbox orija/pinterest-pin-agent:prod
+
+services:
+  pinterest-pin-agent:
+    image: orija/pinterest-pin-agent:sandbox
+    container_name: pin-agent-sandbox
+    restart: unless-stopped
+    environment:
+      PIN_AGENT_MODE: dry_run
+      PIN_INTERVAL_HOURS: "2"
+      PIN_TIMEZONE: America/New_York
+      SHOPIFY_SHOP_DOMAIN: your-store.myshopify.com
+      SHOPIFY_ACCESS_TOKEN: shpat_xxxxxxxx
+      SHOPIFY_API_VERSION: "2025-01"
+      SHOPIFY_PRODUCT_TAG_FILTER: ""
+      SHOPIFY_PRODUCT_LIMIT: "50"
+      PINTEREST_APP_ID: ""
+      PINTEREST_APP_SECRET: ""
+      PINTEREST_ACCESS_TOKEN: ""
+      PINTEREST_REFRESH_TOKEN: ""
+      PINTEREST_BOARD_ID: ""
+      PINTEREST_DEFAULT_LINK: ""
+      PINTEREST_USE_SANDBOX: "true"
+      BRAND_NAME: Orija
+      BRAND_VOICE: warm, practical, SEO-friendly. Short sentences. No hype.
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: gpt-4o-mini
+      DATA_DIR: /data
+      CONFIG_DIR: /app/config
+    volumes:
+      - pin-agent-sandbox-data:/data
+
+volumes:
+  pin-agent-sandbox-data:

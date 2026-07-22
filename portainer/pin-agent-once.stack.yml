@@ -1,0 +1,48 @@
+# Portainer stack: pin-agent-once
+# One-shot dry-run test stack — runs a single cycle, then exits.
+# Best for first Portainer smoke test.
+#
+# Deploy → wait for exit → check Logs + volume drafts.
+# Redeploy / recreate container to run another cycle.
+
+services:
+  pinterest-pin-agent:
+    build:
+      context: ./services/pinterest-pin-agent
+      dockerfile: Dockerfile
+    image: orija/pinterest-pin-agent:sandbox
+    container_name: pin-agent-once
+    restart: "no"
+    command: ["python", "-m", "pin_agent", "once"]
+    environment:
+      PIN_AGENT_MODE: dry_run
+      PIN_INTERVAL_HOURS: "2"
+      PIN_TIMEZONE: America/New_York
+
+      SHOPIFY_SHOP_DOMAIN: your-store.myshopify.com
+      SHOPIFY_ACCESS_TOKEN: shpat_xxxxxxxx
+      SHOPIFY_API_VERSION: "2025-01"
+      SHOPIFY_PRODUCT_TAG_FILTER: ""
+      SHOPIFY_PRODUCT_LIMIT: "50"
+
+      PINTEREST_APP_ID: ""
+      PINTEREST_APP_SECRET: ""
+      PINTEREST_ACCESS_TOKEN: ""
+      PINTEREST_REFRESH_TOKEN: ""
+      PINTEREST_BOARD_ID: ""
+      PINTEREST_DEFAULT_LINK: ""
+      PINTEREST_USE_SANDBOX: "true"
+
+      BRAND_NAME: Orija
+      BRAND_VOICE: warm, practical, SEO-friendly. Short sentences. No hype.
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: gpt-4o-mini
+
+      DATA_DIR: /data
+      CONFIG_DIR: /app/config
+
+    volumes:
+      - pin-agent-once-data:/data
+
+volumes:
+  pin-agent-once-data:

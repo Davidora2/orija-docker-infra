@@ -1,0 +1,44 @@
+# Seed keywords the agent scores against Shopify products.
+# Higher weight = stronger preference when matching titles/tags/types.
+# Add your real niche keywords here.
+
+keywords:
+  - phrase: "home decor"
+    weight: 1.0
+  - phrase: "gift ideas"
+    weight: 0.9
+  - phrase: "sustainable living"
+    weight: 0.8
+  - phrase: "minimalist style"
+    weight: 0.7
+
+# Seasonal boosts (month 1-12). Applied as a multiplier when the month matches.
+seasonal:
+  - months: [11, 12]
+    phrases: ["holiday gifts", "christmas gifts", "winter decor"]
+    boost: 1.4
+  - months: [1, 2]
+    phrases: ["new year reset", "organization ideas"]
+    boost: 1.2
+  - months: [3, 4, 5]
+    phrases: ["spring refresh", "easter gifts"]
+    boost: 1.2
+  - months: [6, 7, 8]
+    phrases: ["summer vibes", "outdoor living"]
+    boost: 1.2
+  - months: [9, 10]
+    phrases: ["fall decor", "halloween"]
+    boost: 1.2
+
+# Hashtags / searchable terms appended to descriptions (Pinterest uses text SEO heavily).
+# Keep 3-8 relevant terms; avoid stuffing.
+search_terms:
+  - "shop small"
+  - "gift guide"
+
+# Boards: optional map of keyword -> board_id override.
+# If missing, everything goes to PINTEREST_BOARD_ID.
+# Example:
+#   board_routing:
+#     home decor: "1234567890123456789"
+board_routing: {}
