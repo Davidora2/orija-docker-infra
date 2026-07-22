@@ -216,12 +216,15 @@ private fun MainShell(
                 val vm: SearchViewModel = viewModel(factory = VmFactory(repo))
                 val query by vm.query.collectAsState()
                 val results by vm.results.collectAsState()
+                val suggestions by vm.suggestions.collectAsState()
                 val loading by vm.loading.collectAsState()
                 SearchScreen(
                     query = query,
                     loading = loading,
                     results = results,
+                    suggestions = suggestions,
                     onQueryChange = vm::onQueryChange,
+                    onSuggestionClick = vm::applySuggestion,
                     onOpen = { navController.navigate(detailsRoute(gson, it)) }
                 )
             }

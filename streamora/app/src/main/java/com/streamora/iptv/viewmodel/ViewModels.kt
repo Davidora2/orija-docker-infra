@@ -14,6 +14,7 @@ import com.streamora.iptv.data.model.MediaItem
 import com.streamora.iptv.data.model.PlaybackRequest
 import com.streamora.iptv.data.model.SeriesInfoResponse
 import com.streamora.iptv.data.repository.StreamoraRepository
+import com.streamora.iptv.data.search.TitleSearch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -328,27 +329,38 @@ class SearchViewModel(private val repo: StreamoraRepository) : ViewModel() {
     private val _results = MutableStateFlow<List<MediaItem>>(emptyList())
     val results: StateFlow<List<MediaItem>> = _results.asStateFlow()
 
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
     private var cacheMovies: List<MediaItem> = emptyList()
     private var cacheSeries: List<MediaItem> = emptyList()
     private var cacheLive: List<MediaItem> = emptyList()
+    private var catalog: List<MediaItem> = emptyList()
     private var loaded = false
 
     fun onQueryChange(q: String) {
         _query.value = q
         viewModelScope.launch {
             ensureCache()
-            val needle = q.trim().lowercase()
-            if (needle.length < 2) {
+            val needle = q.trim()
+            if (TitleSearch.compact(needle).length < 2 && needle.length < 2) {
                 _results.value = emptyList()
+                _suggestions.value = emptyList()
                 return@launch
             }
-            _results.value = (cacheMovies + cacheSeries + cacheLive)
-                .filter { it.name.lowercase().contains(needle) }
-                .take(80)
+            val ranked = TitleSearch.search(catalog, needle, limit = 80)
+            _results.value = ranked.map { it.item }
+            // Autocomplete chips use real catalog spellings (e.g. Shōgun when typing Shogun)
+            _suggestions.value = TitleSearch.suggestions(catalog, needle, limit = 8)
+                .filter { !it.equals(needle, ignoreCase = true) }
         }
+    }
+
+    fun applySuggestion(title: String) {
+        onQueryChange(title)
     }
 
     private suspend fun ensureCache() {
@@ -358,6 +370,7 @@ class SearchViewModel(private val repo: StreamoraRepository) : ViewModel() {
             cacheLive = repo.getLiveStreams().map { repo.run { it.toMedia() } }
             cacheMovies = repo.getVodStreams().map { repo.run { it.toMedia() } }
             cacheSeries = repo.getSeries().map { repo.run { it.toMedia() } }
+            catalog = cacheMovies + cacheSeries + cacheLive
             loaded = true
         } catch (_: Exception) {
         } finally {
