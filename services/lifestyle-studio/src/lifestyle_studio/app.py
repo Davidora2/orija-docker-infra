@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
+from .learning import LearningMemory
 from .nanobanana import NanoBananaClient, NanoBananaError
 from .projects import ProjectStore
 from . import prompts
@@ -21,7 +22,7 @@ logger = logging.getLogger("lifestyle_studio")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 
-app = FastAPI(title="Orija Lifestyle Studio", version="1.0.0")
+app = FastAPI(title="Orija Lifestyle Studio", version="1.1.0")
 
 
 def store() -> ProjectStore:
@@ -30,6 +31,10 @@ def store() -> ProjectStore:
 
 def banana() -> NanoBananaClient:
     return NanoBananaClient(get_settings())
+
+
+def memory() -> LearningMemory:
+    return LearningMemory(get_settings())
 
 
 class BriefUpdate(BaseModel):
@@ -62,11 +67,38 @@ class BakeRequest(BaseModel):
     draft_id: str | None = None
     size: str | None = Field(default=None, description="1K, 2K, or 4K")
     model: str | None = None
+    lesson: str | None = Field(
+        default=None,
+        description="Optional note the assistant should remember from this approval",
+    )
+
+
+class RatingRequest(BaseModel):
+    draft_id: str | None = None
+    rating: str = Field(description="up or down")
+    reason: str | None = None
+
+
+class LessonRequest(BaseModel):
+    text: str
+    product_name: str | None = None
+
+
+class AssistantAskRequest(BaseModel):
+    question: str
+    product_name: str | None = None
+    apply_suggestion: bool = False
+
+
+class SuggestRequest(BaseModel):
+    product_name: str | None = None
+    apply: bool = True
 
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     settings = get_settings()
+    profile = memory().profile()
     return {
         "ok": True,
         "brand": settings.brand_name,
@@ -76,6 +108,8 @@ def health() -> dict[str, Any]:
         "bake_model": settings.nanobanana_bake_model,
         "draft_size": settings.nanobanana_draft_size,
         "bake_size": settings.nanobanana_bake_size,
+        "learning": profile.get("totals"),
+        "self_learning": True,
     }
 
 
@@ -85,8 +119,31 @@ def list_projects() -> list[dict[str, Any]]:
 
 
 @app.post("/api/projects")
-def create_project() -> dict[str, Any]:
-    return store().create()
+def create_project(apply_learning: bool = True) -> dict[str, Any]:
+    project = store().create()
+    if apply_learning:
+        suggestion = memory().suggest()
+        brief_updates = {k: v for k, v in (suggestion.get("brief") or {}).items() if v is not None}
+        if brief_updates:
+            project["brief"].update(brief_updates)
+        if suggestion.get("layout"):
+            # merge carefully
+            layout = suggestion["layout"]
+            if layout.get("product"):
+                project["layout"]["product"].update(layout["product"])
+            if layout.get("model"):
+                project["layout"]["model"].update(
+                    {k: v for k, v in layout["model"].items() if k != "enabled"}
+                )
+                project["layout"]["model"]["enabled"] = bool(
+                    project["brief"].get("include_model")
+                )
+        project["meta"]["learning"] = {
+            "confidence": suggestion.get("confidence"),
+            "tips": suggestion.get("tips") or [],
+        }
+        project = store().save(project)
+    return project
 
 
 @app.get("/api/projects/{project_id}")
@@ -181,7 +238,10 @@ def generate_draft(project_id: str, body: GenerateRequest | None = None) -> dict
     brief["model_reference"] = bool(project["refs"]["model"])
     brief["style_reference"] = bool(project["refs"]["style"])
 
-    prompt = prompts.build_draft_prompt(brief)
+    prompt = prompts.build_draft_prompt(
+        brief,
+        learning_context=memory().learning_context_for_prompt(brief.get("product_name") or ""),
+    )
     kinds = ["product"]
     if brief.get("include_model") and project["refs"]["model"]:
         kinds.append("model")
@@ -210,6 +270,15 @@ def generate_draft(project_id: str, body: GenerateRequest | None = None) -> dict
         size=settings.nanobanana_draft_size,
         source="generate",
     )
+    memory().record(
+        "generate",
+        {
+            "project_id": project_id,
+            "draft_id": draft["id"],
+            "brief": project["brief"],
+            "layout": project["layout"],
+        },
+    )
     return {"project": project, "draft": draft}
 
 
@@ -237,7 +306,14 @@ def reposition_draft(project_id: str, body: RepositionRequest) -> dict[str, Any]
         raise HTTPException(400, "Active draft not found.")
 
     draft_path = ps.project_dir(project_id) / draft_meta["path"]
-    prompt = prompts.build_reposition_prompt(project["brief"], project["layout"])
+    before_layout = draft_meta.get("layout") or {}
+    prompt = prompts.build_reposition_prompt(
+        project["brief"],
+        project["layout"],
+        learning_context=memory().learning_context_for_prompt(
+            project["brief"].get("product_name") or ""
+        ),
+    )
 
     # Include current draft + product refs for fidelity
     paths = [draft_path]
@@ -271,6 +347,17 @@ def reposition_draft(project_id: str, body: RepositionRequest) -> dict[str, Any]
         size=settings.nanobanana_draft_size,
         source="reposition",
     )
+    memory().record(
+        "reposition",
+        {
+            "project_id": project_id,
+            "draft_id": draft["id"],
+            "brief": project["brief"],
+            "before_layout": before_layout,
+            "after_layout": project["layout"],
+            "layout": project["layout"],
+        },
+    )
     return {"project": project, "draft": draft}
 
 
@@ -292,7 +379,13 @@ def bake_project(project_id: str, body: BakeRequest | None = None) -> dict[str, 
 
     draft_path = ps.project_dir(project_id) / draft_meta["path"]
     layout = draft_meta.get("layout") or project.get("layout")
-    prompt = prompts.build_bake_prompt(project["brief"], layout)
+    prompt = prompts.build_bake_prompt(
+        project["brief"],
+        layout,
+        learning_context=memory().learning_context_for_prompt(
+            project["brief"].get("product_name") or ""
+        ),
+    )
 
     paths = [draft_path]
     labels = ["Approved draft — match this composition exactly"]
@@ -328,7 +421,19 @@ def bake_project(project_id: str, body: BakeRequest | None = None) -> dict[str, 
         size=bake_size,
         from_draft_id=draft_id,
     )
-    return {"project": project, "baked": baked}
+    memory().record(
+        "bake_approved",
+        {
+            "project_id": project_id,
+            "draft_id": draft_id,
+            "baked_id": baked["id"],
+            "brief": project["brief"],
+            "layout": layout,
+            "lesson": body.lesson,
+            "product_name": project["brief"].get("product_name"),
+        },
+    )
+    return {"project": project, "baked": baked, "learning": memory().profile().get("totals")}
 
 
 @app.post("/api/projects/{project_id}/select-draft/{draft_id}")
@@ -339,6 +444,80 @@ def select_draft(project_id: str, draft_id: str) -> dict[str, Any]:
         raise HTTPException(404, "Draft not found")
     project["active_draft_id"] = draft_id
     return ps.save(project)
+
+
+@app.post("/api/projects/{project_id}/rate")
+def rate_draft(project_id: str, body: RatingRequest) -> dict[str, Any]:
+    if body.rating not in {"up", "down"}:
+        raise HTTPException(400, "rating must be 'up' or 'down'")
+    project = store().get(project_id)
+    draft_id = body.draft_id or project.get("active_draft_id")
+    result = memory().record(
+        "rating",
+        {
+            "project_id": project_id,
+            "draft_id": draft_id,
+            "rating": body.rating,
+            "reason": body.reason,
+            "brief": project.get("brief"),
+            "layout": project.get("layout"),
+            "product_name": project.get("brief", {}).get("product_name"),
+        },
+    )
+    return result
+
+
+@app.get("/api/assistant/memory")
+def assistant_memory() -> dict[str, Any]:
+    mem = memory()
+    return {"profile": mem.profile(), "suggestion": mem.suggest()}
+
+
+@app.post("/api/assistant/suggest")
+def assistant_suggest(body: SuggestRequest | None = None) -> dict[str, Any]:
+    body = body or SuggestRequest()
+    suggestion = memory().suggest(body.product_name or "")
+    return suggestion
+
+
+@app.post("/api/assistant/ask")
+def assistant_ask(body: AssistantAskRequest) -> dict[str, Any]:
+    return memory().assistant_reply(body.question, body.product_name or "")
+
+
+@app.post("/api/assistant/lesson")
+def assistant_lesson(body: LessonRequest) -> dict[str, Any]:
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Lesson text required")
+    return memory().record(
+        "lesson",
+        {"text": text, "product_name": body.product_name or "", "brief": {"product_name": body.product_name or ""}},
+    )
+
+
+@app.post("/api/projects/{project_id}/apply-suggestion")
+def apply_suggestion(project_id: str) -> dict[str, Any]:
+    ps = store()
+    project = ps.get(project_id)
+    suggestion = memory().suggest(project["brief"].get("product_name") or "")
+    brief = suggestion.get("brief") or {}
+    for key, value in brief.items():
+        if value is not None and value != "":
+            project["brief"][key] = value
+    layout = suggestion.get("layout") or {}
+    if layout.get("product"):
+        project["layout"]["product"].update(layout["product"])
+    if layout.get("model"):
+        project["layout"]["model"].update(
+            {k: v for k, v in layout["model"].items() if k != "enabled"}
+        )
+    project["layout"]["model"]["enabled"] = bool(project["brief"].get("include_model"))
+    project["meta"]["learning"] = {
+        "confidence": suggestion.get("confidence"),
+        "tips": suggestion.get("tips") or [],
+    }
+    return {"project": ps.save(project), "suggestion": suggestion}
 
 
 if STATIC_DIR.exists():

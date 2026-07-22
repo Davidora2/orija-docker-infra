@@ -10,9 +10,22 @@ realistic models, reference images, draft repositioning, and high-res bake.
 2. **Describe the scene** — setting, lighting, camera, aspect ratio
 3. **Generate draft** at 1K for fast iteration
 4. **Draft studio** — drag Product / Model anchors (or use sliders) when placement or proportions are off, then **Apply layout move**
-5. **Approve & bake** — locks the approved composition and regenerates at 2K / 4K
+5. **Rate drafts** and **Approve & bake** — locks composition, regenerates at 2K / 4K, and teaches the assistant
 
 Product prompts enforce logo, color, material, silhouette, and real-world scale fidelity.
+
+## Self-learning assistant
+
+The studio keeps a local memory under `/data/memory/`:
+
+| Signal | What it learns |
+|--------|----------------|
+| **Approve & bake** | Winning scenes, lighting, camera, layout priors, per-product preferences |
+| **Layout moves** | Common placement/proportion corrections to anticipate next time |
+| **Good draft / Needs fix** | Positive patterns vs things to avoid |
+| **Teach a lesson** | Explicit rules you type in |
+
+Learned guidance is injected into future Nano Banana prompts, and **Apply learned defaults** pre-fills the brief/layout for new work. Ask the assistant questions like “where should the model sit?” from the Assistant panel.
 
 ## Quick start
 

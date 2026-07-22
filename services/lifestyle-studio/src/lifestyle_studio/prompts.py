@@ -38,7 +38,7 @@ def _layout_block(layout: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
-def build_draft_prompt(brief: dict[str, Any]) -> str:
+def build_draft_prompt(brief: dict[str, Any], learning_context: str = "") -> str:
     scene = brief.get("scene") or "a lived-in, natural lifestyle environment"
     lighting = brief.get("lighting") or "soft natural window light with gentle fill"
     camera = brief.get("camera") or "editorial lifestyle photograph, shallow depth of field"
@@ -58,6 +58,8 @@ def build_draft_prompt(brief: dict[str, Any]) -> str:
     ]
     if product_notes:
         parts.append(f"Additional product notes: {product_notes}")
+    if learning_context:
+        parts.append(learning_context)
     parts.append(f"Scene / setting: {scene}.")
     parts.append(f"Lighting: {lighting}.")
     parts.append(f"Camera / look: {camera}.")
@@ -90,7 +92,11 @@ def build_draft_prompt(brief: dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
-def build_reposition_prompt(brief: dict[str, Any], layout: dict[str, Any]) -> str:
+def build_reposition_prompt(
+    brief: dict[str, Any],
+    layout: dict[str, Any],
+    learning_context: str = "",
+) -> str:
     """Edit an existing draft so placement matches the draft-studio layout."""
     product = layout.get("product") or {}
     model = layout.get("model") or {}
@@ -98,14 +104,16 @@ def build_reposition_prompt(brief: dict[str, Any], layout: dict[str, Any]) -> st
         "Edit this lifestyle photograph. Keep the same scene, lighting, camera, materials, and product identity.",
         FIDELITY_RULES,
         "Only adjust composition / placement / scale as specified. Do not redesign the product.",
-        _layout_block(layout),
-        (
-            f"Move the product so its visual center sits near "
-            f"({product.get('x', 50):.0f}% horizontal, {product.get('y', 55):.0f}% vertical) "
-            f"and resize it to about {product.get('scale', 1.0):.2f}× its current perceived size "
-            "relative to the frame, while keeping real-world proportions believable."
-        ),
     ]
+    if learning_context:
+        parts.append(learning_context)
+    parts.append(_layout_block(layout))
+    parts.append(
+        f"Move the product so its visual center sits near "
+        f"({product.get('x', 50):.0f}% horizontal, {product.get('y', 55):.0f}% vertical) "
+        f"and resize it to about {product.get('scale', 1.0):.2f}× its current perceived size "
+        "relative to the frame, while keeping real-world proportions believable."
+    )
     if model.get("enabled"):
         parts.append(
             f"Reposition the human model so their visual center sits near "
@@ -121,7 +129,11 @@ def build_reposition_prompt(brief: dict[str, Any], layout: dict[str, Any]) -> st
     return "\n\n".join(parts)
 
 
-def build_bake_prompt(brief: dict[str, Any], layout: dict[str, Any] | None) -> str:
+def build_bake_prompt(
+    brief: dict[str, Any],
+    layout: dict[str, Any] | None,
+    learning_context: str = "",
+) -> str:
     parts = [
         "Bake a final high-resolution commercial lifestyle photograph from the approved draft.",
         "Match the approved draft composition exactly — same framing, placement, pose, and mood.",
@@ -130,6 +142,8 @@ def build_bake_prompt(brief: dict[str, Any], layout: dict[str, Any] | None) -> s
         "Increase clarity, micro-contrast, and material fidelity suitable for ecommerce / ad use.",
         "No redesign, no new props that change the story, no text overlays.",
     ]
+    if learning_context:
+        parts.append(learning_context)
     layout_block = _layout_block(layout)
     if layout_block:
         parts.append(layout_block)

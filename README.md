@@ -13,6 +13,7 @@ Dockerized services for Orija commerce automation and creative production.
 
 Creates photorealistic lifestyle shots that stay faithful to your product references.
 Draft at 1K, drag product/model placement when proportions are off, then approve and bake at 2K/4K.
+A **self-learning assistant** remembers approvals, ratings, and layout fixes so future suggestions and prompts improve over time.
 
 ```bash
 cp services/lifestyle-studio/.env.example services/lifestyle-studio/.env

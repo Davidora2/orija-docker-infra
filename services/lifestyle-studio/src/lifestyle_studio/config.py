@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     def outputs_dir(self) -> Path:
         return self.data_dir / "outputs"
 
+    @property
+    def memory_dir(self) -> Path:
+        return self.data_dir / "memory"
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -41,4 +45,5 @@ def get_settings() -> Settings:
     settings.projects_dir.mkdir(parents=True, exist_ok=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     settings.outputs_dir.mkdir(parents=True, exist_ok=True)
+    settings.memory_dir.mkdir(parents=True, exist_ok=True)
     return settings

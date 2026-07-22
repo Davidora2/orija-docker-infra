@@ -16,7 +16,7 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
         <p class="brand-name">Orija</p>
-        <p class="brand-sub">Lifestyle Studio · Nano Banana</p>
+        <p class="brand-sub">Lifestyle Studio · Self-learning · Nano Banana</p>
       </div>
     </div>
     <div class="top-actions">
@@ -115,13 +115,33 @@
         </div>
       </section>
 
+      <section class="panel assistant-panel">
+        <h2>Assistant</h2>
+        <p class="hint" id="learn-stats">Learning from your approvals…</p>
+        <ul id="learn-tips" class="tips"></ul>
+        <div class="assistant-actions">
+          <button type="button" id="btn-apply-learn" class="btn tiny">Apply learned defaults</button>
+        </div>
+        <label class="field">
+          <span>Ask the studio</span>
+          <textarea id="ask-input" rows="2" placeholder="e.g. Where should I place the model? What lighting works?"></textarea>
+        </label>
+        <button type="button" id="btn-ask" class="btn wide">Ask</button>
+        <p id="ask-answer" class="ask-answer" hidden></p>
+        <label class="field">
+          <span>Teach a lesson</span>
+          <input id="lesson-input" type="text" placeholder="e.g. Keep handbags lower in frame" />
+        </label>
+        <button type="button" id="btn-lesson" class="btn tiny">Remember this</button>
+      </section>
+
       <section class="panel">
         <label class="field">
           <span>Creative notes</span>
           <textarea id="notes" rows="2" placeholder="Season, wardrobe color, mood…"></textarea>
         </label>
         <button type="button" id="btn-generate" class="btn primary wide">Generate draft</button>
-        <p class="hint">Drafts render at 1K for fast layout iteration.</p>
+        <p class="hint">Drafts render at 1K for fast layout iteration. Approvals teach the assistant.</p>
       </section>
     </aside>
 
@@ -129,9 +149,11 @@
       <div class="stage-head">
         <div>
           <h1 id="stage-title">Draft studio</h1>
-          <p id="stage-sub" class="lede">Upload product refs, generate a draft, then drag anchors until proportions feel right. Approve to bake high-res.</p>
+          <p id="stage-sub" class="lede">Upload product refs, generate a draft, then drag anchors until proportions feel right. Rate drafts and bake approvals so the assistant improves next time.</p>
         </div>
         <div class="stage-actions">
+          <button type="button" id="btn-rate-up" class="btn" disabled title="Looks good">Good draft</button>
+          <button type="button" id="btn-rate-down" class="btn" disabled title="Needs work">Needs fix</button>
           <button type="button" id="btn-apply-layout" class="btn" disabled>Apply layout move</button>
           <button type="button" id="btn-bake" class="btn primary" disabled>Approve &amp; bake</button>
         </div>
@@ -172,6 +194,10 @@
               <option value="4K">4K</option>
               <option value="1K">1K</option>
             </select>
+          </label>
+          <label class="field tight">
+            <span>Lesson to remember</span>
+            <input id="bake-lesson" type="text" placeholder="Optional note for next time" />
           </label>
         </div>
       </div>

@@ -165,6 +165,8 @@
     $("#layout-controls").hidden = !hasDraft;
     $("#btn-apply-layout").disabled = !hasDraft;
     $("#btn-bake").disabled = !hasDraft;
+    $("#btn-rate-up").disabled = !hasDraft;
+    $("#btn-rate-down").disabled = !hasDraft;
 
     if (hasDraft) {
       img.src = fileUrl(draft.path);
@@ -230,6 +232,24 @@
     });
   }
 
+  async function refreshAssistant() {
+    try {
+      const data = await api("/api/assistant/memory");
+      const totals = data.profile?.totals || {};
+      $("#learn-stats").textContent =
+        `${totals.bakes || 0} bakes · ${totals.thumbs_up || 0} ups · ${totals.thumbs_down || 0} downs · ${totals.repositions || 0} layout fixes · confidence ${Math.round((data.suggestion?.confidence || 0) * 100)}%`;
+      const tips = $("#learn-tips");
+      tips.innerHTML = "";
+      for (const tip of data.suggestion?.tips || data.profile?.learned_rules || []) {
+        const li = document.createElement("li");
+        li.textContent = tip;
+        tips.appendChild(li);
+      }
+    } catch {
+      /* ignore until first project */
+    }
+  }
+
   async function ensureProject() {
     if (state.project) return;
     const projects = await api("/api/projects");
@@ -242,6 +262,7 @@
     renderRefs();
     renderDraft();
     renderBaked();
+    await refreshAssistant();
   }
 
   async function uploadFiles(kind, fileList) {
@@ -290,10 +311,10 @@
     state.health = await api("/api/health");
     const pill = $("#mode-pill");
     if (state.health.mock_mode) {
-      pill.textContent = "Mock mode · set GEMINI_API_KEY";
+      pill.textContent = "Mock · self-learning on";
       pill.className = "pill warn";
     } else if (state.health.has_api_key) {
-      pill.textContent = `Nano Banana · ${state.health.draft_model.split("gemini-")[1] || "ready"}`;
+      pill.textContent = `Nano Banana · learning`;
       pill.className = "pill ok";
     } else {
       pill.textContent = "API key missing";
@@ -310,7 +331,8 @@
       renderRefs();
       renderDraft();
       renderBaked();
-      toast("New project created");
+      await refreshAssistant();
+      toast("New project with learned defaults");
     };
 
     $("#include_model").onchange = () => {
@@ -339,6 +361,80 @@
     $("#upload-model").onchange = (e) => uploadFiles("model", e.target.files);
     $("#upload-style").onchange = (e) => uploadFiles("style", e.target.files);
 
+    $("#btn-apply-learn").onclick = async () => {
+      try {
+        const result = await api(`/api/projects/${state.project.id}/apply-suggestion`, {
+          method: "POST",
+        });
+        state.project = result.project;
+        fillForm(state.project);
+        await refreshAssistant();
+        toast("Applied learned scene / layout defaults");
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+
+    $("#btn-ask").onclick = async () => {
+      const question = $("#ask-input").value.trim();
+      if (!question) return;
+      try {
+        const result = await api("/api/assistant/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            product_name: $("#product_name").value.trim(),
+          }),
+        });
+        const el = $("#ask-answer");
+        el.hidden = false;
+        el.textContent = result.answer;
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+
+    $("#btn-lesson").onclick = async () => {
+      const text = $("#lesson-input").value.trim();
+      if (!text) return;
+      try {
+        await api("/api/assistant/lesson", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            product_name: $("#product_name").value.trim(),
+          }),
+        });
+        $("#lesson-input").value = "";
+        await refreshAssistant();
+        toast("Lesson saved to studio memory");
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+
+    async function rate(rating) {
+      try {
+        const reason =
+          rating === "down"
+            ? prompt("What should improve? (saved for learning)") || ""
+            : "";
+        await api(`/api/projects/${state.project.id}/rate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rating, reason }),
+        });
+        await refreshAssistant();
+        toast(rating === "up" ? "Logged as a good draft" : "Logged — I'll avoid that next time");
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+    $("#btn-rate-up").onclick = () => rate("up");
+    $("#btn-rate-down").onclick = () => rate("down");
+
     $("#btn-generate").onclick = async () => {
       try {
         busy(true, "Generating draft with Nano Banana…");
@@ -351,6 +447,7 @@
         state.project = result.project;
         renderDraft();
         renderBaked();
+        await refreshAssistant();
         toast("Draft ready — adjust placement if needed");
       } catch (e) {
         toast(e.message, true);
@@ -373,7 +470,8 @@
         });
         state.project = result.project;
         renderDraft();
-        toast("Layout applied to a new draft");
+        await refreshAssistant();
+        toast("Layout applied — correction learned");
       } catch (e) {
         toast(e.message, true);
       } finally {
@@ -388,12 +486,16 @@
         const result = await api(`/api/projects/${state.project.id}/bake`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ size: $("#bake-size").value }),
+          body: JSON.stringify({
+            size: $("#bake-size").value,
+            lesson: $("#bake-lesson").value.trim() || null,
+          }),
         });
         state.project = result.project;
         renderDraft();
         renderBaked();
-        toast(`Baked ${result.baked.size} — download from Baked strip`);
+        await refreshAssistant();
+        toast(`Baked ${result.baked.size} — approval saved to memory`);
       } catch (e) {
         toast(e.message, true);
       } finally {
