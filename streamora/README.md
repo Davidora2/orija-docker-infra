@@ -30,7 +30,8 @@ Debug APK:
 
 Outputs:
 
-- `app/build/outputs/apk/debug/app-debug.apk`
+- **Prebuilt (in this repo):** [`dist/streamora-debug.apk`](dist/streamora-debug.apk) — download from GitHub and install
+- `app/build/outputs/apk/debug/app-debug.apk` (after local build)
 - `app/build/outputs/apk/release/app-release-unsigned.apk`
 
 ## Install
