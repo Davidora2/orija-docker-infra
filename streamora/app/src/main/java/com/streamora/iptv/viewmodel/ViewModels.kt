@@ -373,7 +373,9 @@ class SearchViewModel(private val repo: StreamoraRepository) : ViewModel() {
                     val tmdb = TmdbClient.predict(needle, limit = 6)
                     val catalogKeys = catalogChips.map { TitleSearch.normalize(it.title) }.toSet()
                     val merged = catalogChips + tmdb.filter { TitleSearch.normalize(it.title) !in catalogKeys }
-                    _suggestions.value = merged.take(12)
+                    if (_query.value.trim() == needle) {
+                        _suggestions.value = merged.take(12)
+                    }
                 }
             }
         }
