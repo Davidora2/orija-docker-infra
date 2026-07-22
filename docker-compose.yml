@@ -1,0 +1,27 @@
+services:
+  orija:
+    build: .
+    container_name: orija-media
+    ports:
+      - "${ORIJA_PORT:-8096}:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-orija-secret}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      MAX_STREAMS_PER_USER: ${MAX_STREAMS_PER_USER:-4}
+      MAX_GLOBAL_STREAMS: ${MAX_GLOBAL_STREAMS:-20}
+      XTREAM_BASE_URL: ${XTREAM_BASE_URL:-}
+      XTREAM_USERNAME: ${XTREAM_USERNAME:-}
+      XTREAM_PASSWORD: ${XTREAM_PASSWORD:-}
+      DATABASE_URL: sqlite+aiosqlite:////data/orija.db
+    volumes:
+      - orija-data:/data
+      - ${MOVIES_PATH:-./media/movies}:/media/movies
+      - ${SHOWS_PATH:-./media/shows}:/media/shows
+      - ${LIVE_PATH:-./media/live}:/media/live
+      - orija-downloads:/media/downloads
+    restart: unless-stopped
+
+volumes:
+  orija-data:
+  orija-downloads:
