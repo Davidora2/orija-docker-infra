@@ -15,10 +15,12 @@ import com.streamora.iptv.data.db.WatchHistoryEntity
 import com.streamora.iptv.data.model.Category
 import com.streamora.iptv.data.model.ContentType
 import com.streamora.iptv.data.model.Episode
+import com.streamora.iptv.data.model.ExternalSubtitle
 import com.streamora.iptv.data.model.LiveStream
 import com.streamora.iptv.data.model.MediaItem
 import com.streamora.iptv.data.model.SeriesInfoResponse
 import com.streamora.iptv.data.model.SeriesItem
+import com.streamora.iptv.data.model.VodInfoResponse
 import com.streamora.iptv.data.model.VodStream
 import com.streamora.iptv.data.model.XtreamAuthResponse
 import kotlinx.coroutines.flow.Flow
@@ -175,6 +177,39 @@ class StreamoraRepository(context: Context) {
     suspend fun getSeriesInfo(seriesId: Int): SeriesInfoResponse {
         val c = requireCreds()
         return requireApi().getSeriesInfo(c.username, c.password, seriesId = seriesId)
+    }
+
+    suspend fun getVodInfo(vodId: Int): VodInfoResponse {
+        val c = requireCreds()
+        return requireApi().getVodInfo(c.username, c.password, vodId = vodId)
+    }
+
+    suspend fun fetchExternalSubtitles(vodId: Int): List<ExternalSubtitle> {
+        return try {
+            val info = getVodInfo(vodId)
+            info.info?.subtitles.orEmpty().mapNotNull { sub ->
+                val url = sub.url?.takeIf { it.isNotBlank() } ?: sub.file?.takeIf { it.isNotBlank() }
+                url?.let {
+                    ExternalSubtitle(
+                        url = it,
+                        language = sub.lang ?: sub.language,
+                        label = sub.language ?: sub.lang ?: "Subtitle",
+                        mimeType = guessSubtitleMime(it)
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun guessSubtitleMime(url: String): String {
+        val lower = url.lowercase()
+        return when {
+            lower.endsWith(".vtt") || lower.contains(".vtt?") -> "text/vtt"
+            lower.endsWith(".ass") || lower.endsWith(".ssa") -> "text/x-ssa"
+            else -> "application/x-subrip"
+        }
     }
 
     fun liveUrl(streamId: Int): String {

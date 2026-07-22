@@ -11,6 +11,8 @@ Android IPTV client for **Xtream Codes** with a Netflix-style experience: profil
 - Like titles to My List (per profile)
 - Search across live, movies, and series
 - Fullscreen player (Media3 ExoPlayer + HLS)
+- Subtitles: embedded tracks + Xtream external subtitle files, with in-player picker
+- Cast to TV: Chromecast / Cast-enabled TVs via the cast button in the player
 
 ## Build the APK
 

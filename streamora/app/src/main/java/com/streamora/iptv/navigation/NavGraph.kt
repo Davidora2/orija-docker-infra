@@ -33,6 +33,10 @@ import androidx.navigation.navArgument
 import com.google.gson.Gson
 import com.streamora.iptv.data.model.ContentType
 import com.streamora.iptv.data.model.MediaItem
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.streamora.iptv.data.model.PlaybackRequest
+import com.streamora.iptv.data.model.ExternalSubtitle
 import com.streamora.iptv.ui.browse.BrowseScreen
 import com.streamora.iptv.ui.details.DetailsScreen
 import com.streamora.iptv.ui.favorites.FavoritesScreen
@@ -109,6 +113,7 @@ private fun MainShell(
     gson: Gson
 ) {
     val navController = rememberNavController()
+    val scope = rememberCoroutineScope()
     val repo = appViewModel.repository()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
@@ -161,15 +166,29 @@ private fun MainShell(
                     state = state,
                     onOpen = { item -> navController.navigate(detailsRoute(gson, item)) },
                     onPlay = { item ->
-                        val url = when (item.type) {
-                            ContentType.LIVE -> repo.liveUrl(item.id)
-                            ContentType.VOD -> repo.vodUrl(item.id, item.extension)
-                            ContentType.SERIES -> {
-                                navController.navigate(detailsRoute(gson, item))
-                                return@HomeScreen
+                        when (item.type) {
+                            ContentType.SERIES -> navController.navigate(detailsRoute(gson, item))
+                            else -> scope.launch {
+                                val url = when (item.type) {
+                                    ContentType.LIVE -> repo.liveUrl(item.id)
+                                    ContentType.VOD -> repo.vodUrl(item.id, item.extension)
+                                    ContentType.SERIES -> return@launch
+                                }
+                                val subs = if (item.type == ContentType.VOD) {
+                                    repo.fetchExternalSubtitles(item.id)
+                                } else emptyList()
+                                navController.navigate(
+                                    playerRoute(
+                                        PlaybackRequest(
+                                            title = item.name,
+                                            streamUrl = url,
+                                            subtitles = subs
+                                        ),
+                                        gson
+                                    )
+                                )
                             }
                         }
-                        navController.navigate(playerRoute(item.name, url))
                     },
                     onRetry = vm::refresh
                 )
@@ -223,27 +242,29 @@ private fun MainShell(
                     onToggleLike = vm::toggleLike,
                     onSelectSeason = vm::selectSeason,
                     onPlay = { episode ->
-                        try {
-                            val url = vm.playUrl(episode)
-                            vm.recordWatch()
-                            val title = episode?.title ?: item.name
-                            navController.navigate(playerRoute(title, url))
-                        } catch (e: Exception) {
-                            // no episodes yet
+                        scope.launch {
+                            try {
+                                val req = vm.buildPlayback(episode)
+                                vm.recordWatch()
+                                navController.navigate(playerRoute(req, gson))
+                            } catch (_: Exception) {
+                            }
                         }
                     }
                 )
             }
             composable(
-                route = "player/{title}/{url}",
-                arguments = listOf(
-                    navArgument("title") { type = NavType.StringType },
-                    navArgument("url") { type = NavType.StringType }
-                )
+                route = "player/{payload}",
+                arguments = listOf(navArgument("payload") { type = NavType.StringType })
             ) { entry ->
-                val title = URLDecoder.decode(entry.arguments?.getString("title"), StandardCharsets.UTF_8.name())
-                val url = URLDecoder.decode(entry.arguments?.getString("url"), StandardCharsets.UTF_8.name())
-                PlayerScreen(title = title, streamUrl = url, onBack = { navController.popBackStack() })
+                val payload = URLDecoder.decode(entry.arguments?.getString("payload"), StandardCharsets.UTF_8.name())
+                val req = gson.fromJson(payload, PlaybackRequest::class.java)
+                PlayerScreen(
+                    title = req.title,
+                    streamUrl = req.streamUrl,
+                    subtitles = req.subtitles ?: emptyList(),
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable("profiles") {
                 ProfilesScreen(
@@ -292,8 +313,7 @@ private fun detailsRoute(gson: Gson, item: MediaItem): String {
     return "details/$encoded"
 }
 
-private fun playerRoute(title: String, url: String): String {
-    val t = URLEncoder.encode(title, StandardCharsets.UTF_8.name())
-    val u = URLEncoder.encode(url, StandardCharsets.UTF_8.name())
-    return "player/$t/$u"
+private fun playerRoute(req: PlaybackRequest, gson: Gson): String {
+    val encoded = URLEncoder.encode(gson.toJson(req), StandardCharsets.UTF_8.name())
+    return "player/$encoded"
 }

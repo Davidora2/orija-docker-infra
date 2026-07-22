@@ -9,7 +9,9 @@ import com.streamora.iptv.data.db.WatchHistoryEntity
 import com.streamora.iptv.data.model.Category
 import com.streamora.iptv.data.model.ContentType
 import com.streamora.iptv.data.model.Episode
+import com.streamora.iptv.data.model.ExternalSubtitle
 import com.streamora.iptv.data.model.MediaItem
+import com.streamora.iptv.data.model.PlaybackRequest
 import com.streamora.iptv.data.model.SeriesInfoResponse
 import com.streamora.iptv.data.repository.StreamoraRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -296,6 +298,20 @@ class DetailsViewModel(
                 repo.seriesUrl(ep.id, ep.containerExtension)
             }
         }
+    }
+
+    suspend fun buildPlayback(episode: Episode? = null): PlaybackRequest {
+        val url = playUrl(episode)
+        val title = when {
+            episode != null -> episode.title?.takeIf { it.isNotBlank() } ?: item.name
+            else -> item.name
+        }
+        val subs = if (item.type == ContentType.VOD) {
+            repo.fetchExternalSubtitles(item.id)
+        } else {
+            emptyList()
+        }
+        return PlaybackRequest(title = title, streamUrl = url, subtitles = subs)
     }
 
     fun recordWatch() {

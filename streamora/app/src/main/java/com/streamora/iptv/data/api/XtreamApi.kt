@@ -4,6 +4,7 @@ import com.streamora.iptv.data.model.Category
 import com.streamora.iptv.data.model.LiveStream
 import com.streamora.iptv.data.model.SeriesInfoResponse
 import com.streamora.iptv.data.model.SeriesItem
+import com.streamora.iptv.data.model.VodInfoResponse
 import com.streamora.iptv.data.model.VodStream
 import com.streamora.iptv.data.model.XtreamAuthResponse
 import okhttp3.OkHttpClient
@@ -73,6 +74,14 @@ interface XtreamApi {
         @Query("action") action: String = "get_series_info",
         @Query("series_id") seriesId: Int
     ): SeriesInfoResponse
+
+    @GET("player_api.php")
+    suspend fun getVodInfo(
+        @Query("username") username: String,
+        @Query("password") password: String,
+        @Query("action") action: String = "get_vod_info",
+        @Query("vod_id") vodId: Int
+    ): VodInfoResponse
 }
 
 object XtreamApiFactory {

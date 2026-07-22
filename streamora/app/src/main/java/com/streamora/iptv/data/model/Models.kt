@@ -141,3 +141,46 @@ data class MediaItem(
     val plot: String? = null,
     val extension: String? = null
 )
+
+
+data class VodInfoResponse(
+    @SerializedName("info") val info: VodInfoDetail? = null,
+    @SerializedName("movie_data") val movieData: VodMovieData? = null
+)
+
+data class VodInfoDetail(
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("movie_image") val movieImage: String? = null,
+    @SerializedName("plot") val plot: String? = null,
+    @SerializedName("rating") val rating: String? = null,
+    @SerializedName("duration") val duration: String? = null,
+    @SerializedName("genre") val genre: String? = null,
+    @SerializedName("subtitles") val subtitles: List<XtreamSubtitle>? = null
+)
+
+data class VodMovieData(
+    @SerializedName("stream_id") val streamId: Int? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("container_extension") val containerExtension: String? = null
+)
+
+data class XtreamSubtitle(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("lang") val lang: String? = null,
+    @SerializedName("language") val language: String? = null,
+    @SerializedName("url") val url: String? = null,
+    @SerializedName("file") val file: String? = null
+)
+
+data class ExternalSubtitle(
+    val url: String,
+    val language: String? = null,
+    val label: String? = null,
+    val mimeType: String? = null
+)
+
+data class PlaybackRequest(
+    val title: String,
+    val streamUrl: String,
+    val subtitles: List<ExternalSubtitle> = emptyList()
+)
