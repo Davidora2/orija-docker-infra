@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="la_ink">#1A2A24</color>
+    <color name="la_paper">#F3EFE6</color>
+    <color name="la_moss">#2F6B4F</color>
+    <color name="la_moss_deep">#1E4634</color>
+    <color name="la_clay">#C46B3A</color>
+    <color name="la_mist">#D9E5DD</color>
+    <color name="ic_launcher_background">#1E4634</color>
+</resources>

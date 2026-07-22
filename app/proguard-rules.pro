@@ -1,0 +1,4 @@
+# LocalAide
+-keep class org.vosk.** { *; }
+-keep class com.sun.jna.** { *; }
+-dontwarn org.vosk.**
