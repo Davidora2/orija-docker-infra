@@ -1,0 +1,37 @@
+# Portainer stack: Orija Lifestyle Studio (Nano Banana)
+# 1. Create stack in Portainer
+# 2. Paste this file
+# 3. Set GEMINI_API_KEY (and optional model overrides) as stack env vars
+# 4. Deploy
+
+services:
+  lifestyle-studio:
+    image: ${LIFESTYLE_IMAGE:-lifestyle-studio:latest}
+    build:
+      context: ../services/lifestyle-studio
+    container_name: lifestyle-studio
+    restart: unless-stopped
+    ports:
+      - "${LIFESTYLE_PORT:-8080}:8080"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      NANOBANANA_DRAFT_MODEL: ${NANOBANANA_DRAFT_MODEL:-gemini-3.1-flash-image}
+      NANOBANANA_BAKE_MODEL: ${NANOBANANA_BAKE_MODEL:-gemini-3-pro-image}
+      NANOBANANA_DRAFT_SIZE: ${NANOBANANA_DRAFT_SIZE:-1K}
+      NANOBANANA_BAKE_SIZE: ${NANOBANANA_BAKE_SIZE:-2K}
+      ALLOW_MOCK_WITHOUT_KEY: ${ALLOW_MOCK_WITHOUT_KEY:-true}
+      DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: 8080
+      BRAND_NAME: ${BRAND_NAME:-Orija}
+    volumes:
+      - lifestyle-studio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  lifestyle-studio-data:
