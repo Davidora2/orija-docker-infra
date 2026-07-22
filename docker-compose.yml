@@ -1,0 +1,25 @@
+services:
+  lifestyle-studio:
+    build:
+      context: ./services/lifestyle-studio
+    container_name: lifestyle-studio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./services/lifestyle-studio/.env
+    environment:
+      DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: 8080
+    volumes:
+      - lifestyle-studio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  lifestyle-studio-data:

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orija · Lifestyle Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <p class="brand-name">Orija</p>
+        <p class="brand-sub">Lifestyle Studio · Nano Banana</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="mode-pill" class="pill">Checking…</span>
+      <button type="button" id="btn-new" class="btn ghost">New project</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <aside class="rail">
+      <section class="panel">
+        <h2>1 · Product</h2>
+        <label class="field">
+          <span>Product name</span>
+          <input id="product_name" type="text" placeholder="e.g. Orija linen tote" />
+        </label>
+        <label class="field">
+          <span>Product notes (features to preserve)</span>
+          <textarea id="product_notes" rows="3" placeholder="Exact colors, logo placement, hardware, stitching…"></textarea>
+        </label>
+        <div class="upload-block">
+          <div class="upload-head">
+            <span>Product references</span>
+            <label class="btn tiny">
+              Add
+              <input id="upload-product" type="file" accept="image/*" multiple hidden />
+            </label>
+          </div>
+          <div id="refs-product" class="thumbs"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>2 · Scene</h2>
+        <label class="field">
+          <span>Setting</span>
+          <textarea id="scene" rows="3"></textarea>
+        </label>
+        <label class="field">
+          <span>Lighting</span>
+          <input id="lighting" type="text" />
+        </label>
+        <label class="field">
+          <span>Camera / look</span>
+          <input id="camera" type="text" />
+        </label>
+        <label class="field">
+          <span>Aspect ratio</span>
+          <select id="aspect_ratio">
+            <option value="3:4">3:4 portrait</option>
+            <option value="4:5">4:5</option>
+            <option value="1:1">1:1 square</option>
+            <option value="4:3">4:3</option>
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16 story</option>
+            <option value="2:3">2:3</option>
+          </select>
+        </label>
+        <div class="upload-block">
+          <div class="upload-head">
+            <span>Style / mood refs (optional)</span>
+            <label class="btn tiny">
+              Add
+              <input id="upload-style" type="file" accept="image/*" multiple hidden />
+            </label>
+          </div>
+          <div id="refs-style" class="thumbs"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>3 · Model</h2>
+        <label class="toggle">
+          <input id="include_model" type="checkbox" checked />
+          <span>Include realistic human model</span>
+        </label>
+        <div id="model-fields">
+          <label class="field">
+            <span>Model description</span>
+            <textarea id="model_description" rows="2"></textarea>
+          </label>
+          <label class="field">
+            <span>Pose / interaction</span>
+            <input id="model_pose" type="text" placeholder="holding product at chest height" />
+          </label>
+          <div class="upload-block">
+            <div class="upload-head">
+              <span>Model references (optional)</span>
+              <label class="btn tiny">
+                Add
+                <input id="upload-model" type="file" accept="image/*" multiple hidden />
+              </label>
+            </div>
+            <div id="refs-model" class="thumbs"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <label class="field">
+          <span>Creative notes</span>
+          <textarea id="notes" rows="2" placeholder="Season, wardrobe color, mood…"></textarea>
+        </label>
+        <button type="button" id="btn-generate" class="btn primary wide">Generate draft</button>
+        <p class="hint">Drafts render at 1K for fast layout iteration.</p>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-head">
+        <div>
+          <h1 id="stage-title">Draft studio</h1>
+          <p id="stage-sub" class="lede">Upload product refs, generate a draft, then drag anchors until proportions feel right. Approve to bake high-res.</p>
+        </div>
+        <div class="stage-actions">
+          <button type="button" id="btn-apply-layout" class="btn" disabled>Apply layout move</button>
+          <button type="button" id="btn-bake" class="btn primary" disabled>Approve &amp; bake</button>
+        </div>
+      </div>
+
+      <div class="canvas-wrap">
+        <div id="canvas" class="canvas empty">
+          <p class="empty-msg">No draft yet</p>
+          <img id="draft-image" alt="Draft preview" hidden />
+          <div id="anchor-product" class="anchor product" hidden draggable="false">
+            <span>Product</span>
+          </div>
+          <div id="anchor-model" class="anchor model" hidden draggable="false">
+            <span>Model</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layout-controls" id="layout-controls" hidden>
+        <div class="control-card">
+          <h3>Product placement</h3>
+          <label>X <input id="prod-x" type="range" min="5" max="95" value="58" /><output id="prod-x-out">58%</output></label>
+          <label>Y <input id="prod-y" type="range" min="5" max="95" value="62" /><output id="prod-y-out">62%</output></label>
+          <label>Scale <input id="prod-scale" type="range" min="50" max="180" value="100" /><output id="prod-scale-out">1.00×</output></label>
+        </div>
+        <div class="control-card" id="model-layout-card">
+          <h3>Model placement</h3>
+          <label>X <input id="model-x" type="range" min="5" max="95" value="38" /><output id="model-x-out">38%</output></label>
+          <label>Y <input id="model-y" type="range" min="5" max="95" value="48" /><output id="model-y-out">48%</output></label>
+          <label>Scale <input id="model-scale" type="range" min="50" max="180" value="100" /><output id="model-scale-out">1.00×</output></label>
+        </div>
+        <div class="control-card bake-opts">
+          <h3>Bake output</h3>
+          <label class="field tight">
+            <span>Resolution</span>
+            <select id="bake-size">
+              <option value="2K">2K</option>
+              <option value="4K">4K</option>
+              <option value="1K">1K</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="history">
+        <div>
+          <h3>Drafts</h3>
+          <div id="draft-list" class="strip"></div>
+        </div>
+        <div>
+          <h3>Baked</h3>
+          <div id="bake-list" class="strip"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <div id="busy" class="busy" hidden>
+    <div class="busy-card">
+      <div class="spinner"></div>
+      <p id="busy-text">Working with Nano Banana…</p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
