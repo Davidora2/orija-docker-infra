@@ -62,13 +62,34 @@ class CalendarEventWriter(private val context: Context) {
                 val end = start + TimeUnit.MINUTES.toMillis(defaultDurationMinutes)
                 val values = ContentValues().apply {
                     put(CalendarContract.Events.CALENDAR_ID, calId)
-                    put(CalendarContract.Events.TITLE, "Deliverable: ${item.title}")
+                    put(CalendarContract.Events.TITLE, buildString {
+                        item.priorityRank?.let { append("#$it ") }
+                        append("Deliverable: ${item.title}")
+                    })
                     put(
                         CalendarContract.Events.DESCRIPTION,
                         buildString {
                             append("Meeting: ").append(meetingTitle).append('\n')
+                            item.priorityRank?.let {
+                                append("Recommended order: #").append(it).append('\n')
+                            }
+                            item.sensitivity?.let {
+                                append("Sensitivity: ").append(it.label).append('\n')
+                            }
+                            item.priorityScore?.let {
+                                append("Priority score: ").append("%.0f".format(it)).append("/100\n")
+                            }
                             item.owner?.let { append("Owner: ").append(it).append('\n') }
                             if (item.notes.isNotBlank()) append(item.notes).append('\n')
+                            item.recommendationSummary?.let {
+                                append("\nReasoning: ").append(it).append('\n')
+                            }
+                            if (item.reasoningSteps.isNotEmpty()) {
+                                append("\nReasoning steps:\n")
+                                item.reasoningSteps.forEachIndexed { i, step ->
+                                    append("  ").append(i + 1).append(". ").append(step).append('\n')
+                                }
+                            }
                             if (item.sourceSnippet.isNotBlank()) {
                                 append("\nFrom transcript:\n").append(item.sourceSnippet)
                             }

@@ -43,7 +43,10 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material3.Button
@@ -241,7 +244,7 @@ fun HomeScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Transcribe meetings on this phone. Turn deliverables into calendar events — nothing leaves the device.",
+                            "Transcribe meetings on this phone. Rank what to finish first by deadline and sensitivity — nothing leaves the device.",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f)
                         )
@@ -574,10 +577,12 @@ private fun LevelRing(level: Float, recording: Boolean) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
     val review by vm.review.collectAsStateWithLifecycle()
     val meeting = review.meeting
+    val plan = review.priorityPlan
     val context = LocalContext.current
 
     val calPerms = arrayOf(
@@ -604,7 +609,7 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
 
             Text(meeting.title, style = MaterialTheme.typography.headlineLarge)
             Text(
-                "${meeting.deliverables.size} deliverables extracted locally",
+                "${meeting.deliverables.size} deliverables · ranked on-device by deadline & sensitivity",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
             )
@@ -612,6 +617,11 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = { vm.reExtract() }) { Text("Re-scan") }
+                FilledTonalButton(onClick = { vm.reRank() }, enabled = !review.busy) {
+                    Icon(Icons.Default.Psychology, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Re-rank")
+                }
                 Button(
                     onClick = {
                         val need = calPerms.filter {
@@ -625,7 +635,7 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
                 ) {
                     Icon(Icons.Default.CalendarMonth, null)
                     Spacer(Modifier.width(6.dp))
-                    Text("Add to calendar")
+                    Text("Calendar")
                 }
             }
             review.calendarMessage?.let {
@@ -638,12 +648,23 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f)
             ) {
+                if (plan != null) {
+                    item {
+                        PriorityPlanCard(plan = plan)
+                    }
+                }
+
                 items(meeting.deliverables, key = { it.id }) { item ->
+                    val expanded = review.reasoningExpandedId == item.id
+                    val isFirst = item.id == plan?.doFirstId
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                            .background(
+                                if (isFirst) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+                            )
                             .padding(10.dp),
                         verticalAlignment = Alignment.Top
                     ) {
@@ -652,6 +673,24 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
                             onCheckedChange = { vm.toggleDeliverable(item.id) }
                         )
                         Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                item.priorityRank?.let { rank ->
+                                    Text(
+                                        "#$rank",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                                if (isFirst) {
+                                    Text(
+                                        "DO FIRST",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                            }
                             var title by remember(item.id, item.title) { mutableStateOf(item.title) }
                             OutlinedTextField(
                                 value = title,
@@ -662,6 +701,23 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text("Deliverable") }
                             )
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                item.sensitivity?.let {
+                                    Text(
+                                        "Sensitivity: ${it.label}",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                                item.priorityScore?.let {
+                                    Text(
+                                        "Score ${"%.0f".format(it)}",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                             item.owner?.let {
                                 Text("Owner: $it", style = MaterialTheme.typography.bodyMedium)
                             }
@@ -671,11 +727,47 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
+                            item.recommendationSummary?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
                             if (item.calendarEventId != null) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
                                     Text("On calendar", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
+                            if (item.reasoningSteps.isNotEmpty()) {
+                                TextButton(onClick = { vm.toggleReasoning(item.id) }) {
+                                    Icon(
+                                        if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (expanded) "Hide reasoning" else "Show reasoning steps")
+                                }
+                                AnimatedVisibility(visible = expanded) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.55f))
+                                            .padding(10.dp)
+                                    ) {
+                                        item.reasoningSteps.forEachIndexed { i, step ->
+                                            Text(
+                                                "${i + 1}. $step",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.padding(bottom = 4.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             Text(
@@ -706,6 +798,41 @@ fun ReviewScreen(vm: AssistantViewModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PriorityPlanCard(plan: com.localaide.app.data.model.PriorityPlan) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Psychology,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Priority reasoner", style = MaterialTheme.typography.titleLarge)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            plan.doFirstBlurb,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.secondary
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            plan.overallReasoning,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+        )
     }
 }
 

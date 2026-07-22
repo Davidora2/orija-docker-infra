@@ -6,6 +6,7 @@ import com.localaide.app.data.db.MeetingDao
 import com.localaide.app.data.db.MeetingEntity
 import com.localaide.app.data.model.Deliverable
 import com.localaide.app.data.model.MeetingSummary
+import com.localaide.app.data.model.PriorityPlan
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -51,12 +52,28 @@ class MeetingRepository(private val dao: MeetingDao) {
         } catch (_: Exception) {
             emptyList()
         }
+        val plan = rebuildPlan(items)
         return MeetingSummary(
             meetingId = id,
             title = title,
             transcript = transcript,
-            deliverables = items,
-            createdAt = createdAt
+            deliverables = plan?.ranked ?: items,
+            createdAt = createdAt,
+            priorityPlan = plan
+        )
+    }
+
+    private fun rebuildPlan(items: List<Deliverable>): PriorityPlan? {
+        if (items.isEmpty() || items.none { it.priorityRank != null }) return null
+        val ranked = items.sortedBy { it.priorityRank ?: Int.MAX_VALUE }
+        val top = ranked.first()
+        return PriorityPlan(
+            ranked = ranked,
+            overallReasoning = "Restored on-device ranking for ${ranked.size} task(s).",
+            doFirstId = top.id,
+            doFirstBlurb = top.recommendationSummary
+                ?.let { "Do first: ${top.title} — $it" }
+                ?: "Do first: ${top.title}"
         )
     }
 }

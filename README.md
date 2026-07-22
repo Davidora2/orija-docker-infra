@@ -7,7 +7,8 @@ Personal meeting assistant for Android. Runs **entirely on-device**.
 1. **Records meetings** with the microphone (foreground service keeps capture alive)
 2. **Transcribes speech offline** with the Vosk English model (downloaded once into app storage)
 3. **Extracts deliverables / action items** locally from the transcript
-4. **Creates calendar events** for each selected deliverable (title, owner, due date, source snippet)
+4. **Ranks what to do first** with an on-device priority reasoner (deadline urgency + sensitivity + blockers + external pressure), including step-by-step reasoning
+5. **Creates calendar events** for each selected deliverable (title, owner, due date, priority, reasoning)
 
 No cloud AI accounts. Audio and transcripts stay on the phone.
 

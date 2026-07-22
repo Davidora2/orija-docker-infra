@@ -10,7 +10,9 @@ import com.localaide.app.calendar.CalendarEventWriter
 import com.localaide.app.data.MeetingRepository
 import com.localaide.app.data.model.Deliverable
 import com.localaide.app.data.model.MeetingSummary
+import com.localaide.app.data.model.PriorityPlan
 import com.localaide.app.nlp.DeliverableExtractor
+import com.localaide.app.nlp.PriorityReasoner
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,8 +41,10 @@ data class CaptureUiState(
 data class ReviewUiState(
     val meeting: MeetingSummary? = null,
     val selected: Set<String> = emptySet(),
+    val priorityPlan: PriorityPlan? = null,
     val calendarMessage: String? = null,
-    val busy: Boolean = false
+    val busy: Boolean = false,
+    val reasoningExpandedId: String? = null
 )
 
 class AssistantViewModel(
@@ -48,6 +52,7 @@ class AssistantViewModel(
     private val modelInstaller: ModelInstaller,
     private val transcriber: VoskTranscriber,
     private val extractor: DeliverableExtractor,
+    private val priorityReasoner: PriorityReasoner,
     private val calendarWriter: CalendarEventWriter,
     private val meetingsDir: File
 ) : ViewModel() {
@@ -144,14 +149,14 @@ class AssistantViewModel(
 
                 val duration = System.currentTimeMillis() - startedAt
                 val title = "Meeting ${SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(startedAt))}"
-                val deliverables = extractor.extract(transcript)
-                Log.i(TAG, "[local] transcript result length=${transcript.length}, deliverables=${deliverables.size}")
+                val plan = prioritize(extractor.extract(transcript), transcript)
+                Log.i(TAG, "[local] transcript=${transcript.length}, deliverables=${plan.ranked.size}, doFirst=${plan.doFirstId}")
 
                 val id = repository.saveMeeting(
                     title = title,
                     audioPath = path,
                     transcript = transcript,
-                    deliverables = deliverables,
+                    deliverables = plan.ranked,
                     durationMs = duration
                 )
 
@@ -161,7 +166,7 @@ class AssistantViewModel(
                         busy = false,
                         liveTranscript = transcript,
                         lastMeetingId = id,
-                        statusMessage = "Saved locally · ${deliverables.size} deliverable(s) found"
+                        statusMessage = "Saved · ${plan.ranked.size} deliverable(s) · ranked on-device"
                     )
                 }
                 openReview(id)
@@ -186,9 +191,18 @@ class AssistantViewModel(
     fun openReview(meetingId: Long) {
         viewModelScope.launch {
             val meeting = repository.getMeeting(meetingId) ?: return@launch
+            val plan = meeting.priorityPlan
+                ?: prioritize(meeting.deliverables, meeting.transcript).also { fresh ->
+                    repository.updateDeliverables(meetingId, fresh.ranked)
+                }
+            val rankedMeeting = meeting.copy(
+                deliverables = plan.ranked,
+                priorityPlan = plan
+            )
             _review.value = ReviewUiState(
-                meeting = meeting,
-                selected = meeting.deliverables.map { it.id }.toSet()
+                meeting = rankedMeeting,
+                selected = plan.ranked.map { it.id }.toSet(),
+                priorityPlan = plan
             )
         }
     }
@@ -201,14 +215,29 @@ class AssistantViewModel(
         }
     }
 
+    fun toggleReasoning(id: String) {
+        _review.update { state ->
+            state.copy(
+                reasoningExpandedId = if (state.reasoningExpandedId == id) null else id
+            )
+        }
+    }
+
     fun updateDeliverableTitle(id: String, title: String) {
         val meeting = _review.value.meeting ?: return
         val updated = meeting.deliverables.map {
             if (it.id == id) it.copy(title = title) else it
         }
-        _review.update { it.copy(meeting = meeting.copy(deliverables = updated)) }
+        // Re-rank after edits so deadline/sensitivity reasoning stays fresh
         viewModelScope.launch {
-            repository.updateDeliverables(meeting.meetingId, updated)
+            val plan = prioritize(updated, meeting.transcript)
+            repository.updateDeliverables(meeting.meetingId, plan.ranked)
+            _review.update {
+                it.copy(
+                    meeting = meeting.copy(deliverables = plan.ranked, priorityPlan = plan),
+                    priorityPlan = plan
+                )
+            }
         }
     }
 
@@ -221,7 +250,10 @@ class AssistantViewModel(
         }
         viewModelScope.launch {
             _review.update { it.copy(busy = true, calendarMessage = null) }
-            val result = calendarWriter.createEventsForDeliverables(meeting.title, chosen)
+            // Prefer recommended order when writing events
+            val ordered = (_review.value.priorityPlan?.ranked ?: chosen)
+                .filter { it.id in _review.value.selected }
+            val result = calendarWriter.createEventsForDeliverables(meeting.title, ordered)
             repository.updateDeliverables(meeting.meetingId, meeting.deliverables)
             val msg = buildString {
                 append("Created ${result.created} calendar event(s)")
@@ -233,8 +265,7 @@ class AssistantViewModel(
             _review.update {
                 it.copy(
                     busy = false,
-                    calendarMessage = msg,
-                    meeting = meeting.copy(deliverables = meeting.deliverables)
+                    calendarMessage = msg
                 )
             }
             openReview(meeting.meetingId)
@@ -244,9 +275,27 @@ class AssistantViewModel(
     fun reExtract() {
         val meeting = _review.value.meeting ?: return
         viewModelScope.launch {
-            val items = extractor.extract(meeting.transcript)
-            repository.updateDeliverables(meeting.meetingId, items)
+            val plan = prioritize(extractor.extract(meeting.transcript), meeting.transcript)
+            repository.updateDeliverables(meeting.meetingId, plan.ranked)
             openReview(meeting.meetingId)
+        }
+    }
+
+    fun reRank() {
+        val meeting = _review.value.meeting ?: return
+        viewModelScope.launch {
+            _review.update { it.copy(busy = true) }
+            val plan = prioritize(meeting.deliverables, meeting.transcript)
+            repository.updateDeliverables(meeting.meetingId, plan.ranked)
+            Log.i(TAG, "[local] priority reasoner: ${plan.doFirstBlurb}")
+            _review.update {
+                it.copy(
+                    busy = false,
+                    meeting = meeting.copy(deliverables = plan.ranked, priorityPlan = plan),
+                    priorityPlan = plan,
+                    calendarMessage = "Re-ranked on-device · ${plan.doFirstBlurb}"
+                )
+            }
         }
     }
 
@@ -257,13 +306,22 @@ class AssistantViewModel(
     fun processPastedTranscript(text: String) {
         viewModelScope.launch {
             val title = "Notes ${SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date())}"
-            val deliverables = extractor.extract(text)
-            val id = repository.saveMeeting(title, null, text, deliverables, 0)
+            val plan = prioritize(extractor.extract(text), text)
+            val id = repository.saveMeeting(title, null, text, plan.ranked, 0)
             _capture.update {
-                it.copy(lastMeetingId = id, statusMessage = "Imported notes · ${deliverables.size} deliverable(s)")
+                it.copy(
+                    lastMeetingId = id,
+                    statusMessage = "Imported · ${plan.ranked.size} deliverable(s) · ranked on-device"
+                )
             }
             openReview(id)
         }
+    }
+
+    private fun prioritize(items: List<Deliverable>, transcript: String): PriorityPlan {
+        val plan = priorityReasoner.prioritize(items, transcript)
+        Log.i(TAG, "[local] reasoner overall: ${plan.overallReasoning}")
+        return plan
     }
 
     override fun onCleared() {
@@ -287,6 +345,7 @@ class AssistantViewModelFactory(
             modelInstaller = c.modelInstaller,
             transcriber = c.transcriber,
             extractor = c.deliverableExtractor,
+            priorityReasoner = c.priorityReasoner,
             calendarWriter = c.calendarWriter,
             meetingsDir = File(app.filesDir, "meetings")
         ) as T
