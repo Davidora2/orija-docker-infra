@@ -14,6 +14,10 @@ services:
       XTREAM_USERNAME: ${XTREAM_USERNAME:-}
       XTREAM_PASSWORD: ${XTREAM_PASSWORD:-}
       DATABASE_URL: sqlite+aiosqlite:////data/orija.db
+      MOVIES_DIR: /media/movies
+      SHOWS_DIR: /media/shows
+      LIVE_DIR: /media/live
+      DOWNLOADS_DIR: /media/downloads
     volumes:
       - orija-data:/data
       - ${MOVIES_PATH:-./media/movies}:/media/movies

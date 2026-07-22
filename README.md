@@ -11,6 +11,17 @@ Plex-style personal media server in Docker. Pulls live TV, movies, and shows fro
 - **Local library** scanner + playback for files already on disk
 - Single Docker image (FastAPI API + React UI)
 
+## Native apps (Android · Android TV · iOS)
+
+Expo client in [`mobile/`](./mobile):
+
+```bash
+cd mobile && npm install && npx expo start
+# production: eas build -p android|ios
+```
+
+Enter your Orija LAN URL (e.g. `http://192.168.1.50:8096`). Android TV uses the same APK with leanback launcher + D-pad focus UI. See [mobile/README.md](./mobile/README.md).
+
 ## Quick start
 
 ```bash
