@@ -17,3 +17,7 @@ bin/
 gen/
 out/
 release/
+
+# Keep published APK downloadable from the repo
+!dist/
+!dist/*.apk
