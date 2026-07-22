@@ -17,7 +17,14 @@ router = APIRouter(prefix="/library", tags=["library"])
 
 @router.post("/scan")
 async def scan(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await scan_library(db)
+    result = await scan_library(db)
+    try:
+        from app.services.search import invalidate_catalog_cache
+
+        invalidate_catalog_cache()
+    except Exception:
+        pass
+    return result
 
 
 @router.get("/paths")

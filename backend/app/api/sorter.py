@@ -55,12 +55,19 @@ async def preview_sort(body: SortRequest, _: User = Depends(get_admin_user)):
 @router.post("/run")
 async def run_sort(body: SortRequest, _: User = Depends(get_admin_user)):
     roots = [Path(p) for p in body.paths] if body.paths else None
-    return await sorter_svc.run_sort(
+    result = await sorter_svc.run_sort(
         roots=roots,
         apply_tmdb=body.apply_tmdb,
         include_library=body.include_library,
         fetch_artwork=body.fetch_artwork,
     )
+    try:
+        from app.services.search import invalidate_catalog_cache
+
+        invalidate_catalog_cache()
+    except Exception:
+        pass
+    return result
 
 
 @router.post("/organize-file")

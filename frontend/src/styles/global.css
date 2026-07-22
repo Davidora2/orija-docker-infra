@@ -162,6 +162,52 @@ select {
   border-color: rgba(212, 175, 106, 0.55);
 }
 
+.suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0 0 1.25rem;
+  animation: fadeUp 0.35s ease both;
+}
+
+.suggest-chip {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  background: rgba(19, 36, 51, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.55rem 0.85rem;
+  color: var(--text);
+  transition: border-color 0.15s, transform 0.15s, background 0.15s;
+  max-width: 100%;
+}
+
+.suggest-chip:hover,
+.suggest-chip:focus-visible {
+  border-color: rgba(212, 175, 106, 0.65);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.suggest-chip.predict {
+  border-style: dashed;
+  background: rgba(212, 175, 106, 0.06);
+}
+
+.suggest-title {
+  display: block;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.suggest-meta {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
 h1,
 h2,
 h3 {

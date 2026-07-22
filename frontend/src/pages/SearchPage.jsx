@@ -8,6 +8,7 @@ export default function SearchPage() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get("q") || "");
   const [items, setItems] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -17,6 +18,7 @@ export default function SearchPage() {
     setParams(term ? { q: term } : {});
     if (term.length < 1) {
       setItems([]);
+      setSuggestions([]);
       setTotal(0);
       return;
     }
@@ -28,17 +30,19 @@ export default function SearchPage() {
         const data = await api(`/search?q=${encodeURIComponent(term)}&limit=60`);
         if (!alive) return;
         setItems(data.items || []);
+        setSuggestions(data.suggestions || []);
         setTotal(data.total || 0);
       } catch (err) {
         if (alive) {
           setError(err.message);
           setItems([]);
+          setSuggestions([]);
           setTotal(0);
         }
       } finally {
         if (alive) setLoading(false);
       }
-    }, 280);
+    }, 220);
     return () => {
       alive = false;
       clearTimeout(timer);
@@ -46,6 +50,11 @@ export default function SearchPage() {
   }, [q]);
 
   function openItem(item) {
+    if (item.kind === "prediction" && item.source === "tmdb") {
+      // Use predicted title as the search query to find provider/library copies
+      setQ(item.title);
+      return;
+    }
     if (item.media_type === "live") {
       navigate("/player", {
         state: {
@@ -59,6 +68,10 @@ export default function SearchPage() {
       });
       return;
     }
+    if (!item.id || item.source === "tmdb") {
+      setQ(item.title);
+      return;
+    }
     const kind = item.media_type === "show" ? "shows" : "movies";
     navigate(`/${kind}/${item.source || "xtream"}/${item.id}`);
   }
@@ -70,23 +83,42 @@ export default function SearchPage() {
           <h1>Search</h1>
           <p className="muted">
             {loading
-              ? "Searching movies, shows, live & library…"
+              ? "Recognizing titles…"
               : q.trim()
                 ? `${total} match${total === 1 ? "" : "es"}`
-                : "Search across Xtream + local library"}
+                : "Fuzzy search + title predictions across Xtream & library"}
           </p>
         </div>
         <input
           className="search"
-          placeholder="Search Shogun, movies, channels…"
+          placeholder="Try sho, shogun, matrix 99…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           autoFocus
         />
       </div>
+
+      {!!suggestions.length && (
+        <div className="suggest-row">
+          {suggestions.map((s) => (
+            <button
+              key={`${s.kind}-${s.source}-${s.id || s.tmdb_id || s.title}`}
+              type="button"
+              className={`suggest-chip ${s.kind === "prediction" ? "predict" : ""}`}
+              onClick={() => openItem(s)}
+            >
+              <span className="suggest-title">{s.title}</span>
+              <span className="suggest-meta">
+                {[s.year, s.media_type, s.kind === "prediction" ? "predicted" : s.match].filter(Boolean).join(" · ")}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {error && <p className="error">{error}</p>}
       {!loading && q.trim() && !items.length && <div className="empty">No matches for “{q.trim()}”</div>}
-      {!q.trim() && <div className="empty">Type a title to search everywhere.</div>}
+      {!q.trim() && <div className="empty">Start typing — predictions appear as titles are recognized.</div>}
       {!!items.length && (
         <div className="grid">
           {items.map((item) => (
@@ -94,7 +126,9 @@ export default function SearchPage() {
               key={`${item.source}-${item.media_type}-${item.id}`}
               item={{
                 ...item,
-                year: [item.year, item.origin || item.source, item.media_type].filter(Boolean).join(" · "),
+                year: [item.year, item.match, item.origin || item.source, item.score ? `${item.score}` : null]
+                  .filter(Boolean)
+                  .join(" · "),
               }}
               onClick={() => openItem(item)}
             />
