@@ -223,6 +223,7 @@ private fun MainShell(
                     loading = loading,
                     results = results,
                     suggestions = suggestions,
+                    tmdbEnabled = vm.tmdbEnabled,
                     onQueryChange = vm::onQueryChange,
                     onSuggestionClick = vm::applySuggestion,
                     onOpen = { navController.navigate(detailsRoute(gson, it)) }

@@ -14,7 +14,10 @@ import com.streamora.iptv.data.model.MediaItem
 import com.streamora.iptv.data.model.PlaybackRequest
 import com.streamora.iptv.data.model.SeriesInfoResponse
 import com.streamora.iptv.data.repository.StreamoraRepository
+import com.streamora.iptv.data.api.TmdbClient
 import com.streamora.iptv.data.search.TitleSearch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -329,48 +332,71 @@ class SearchViewModel(private val repo: StreamoraRepository) : ViewModel() {
     private val _results = MutableStateFlow<List<MediaItem>>(emptyList())
     val results: StateFlow<List<MediaItem>> = _results.asStateFlow()
 
-    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
-    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+    private val _suggestions = MutableStateFlow<List<TitleSearch.SearchSuggestion>>(emptyList())
+    val suggestions: StateFlow<List<TitleSearch.SearchSuggestion>> = _suggestions.asStateFlow()
 
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
-    private var cacheMovies: List<MediaItem> = emptyList()
-    private var cacheSeries: List<MediaItem> = emptyList()
-    private var cacheLive: List<MediaItem> = emptyList()
-    private var catalog: List<MediaItem> = emptyList()
+    val tmdbEnabled: Boolean get() = TmdbClient.isConfigured
+
+    private var indexed: List<TitleSearch.IndexedTitle> = emptyList()
     private var loaded = false
+    private var searchJob: Job? = null
+    private var tmdbJob: Job? = null
 
     fun onQueryChange(q: String) {
         _query.value = q
-        viewModelScope.launch {
+        searchJob?.cancel()
+        tmdbJob?.cancel()
+        searchJob = viewModelScope.launch {
             ensureCache()
             val needle = q.trim()
-            if (TitleSearch.compact(needle).length < 2 && needle.length < 2) {
+            val parsed = TitleSearch.parseQuery(needle)
+            if (parsed.compact.length < 2 && parsed.tokens.isEmpty()) {
                 _results.value = emptyList()
                 _suggestions.value = emptyList()
                 return@launch
             }
-            val ranked = TitleSearch.search(catalog, needle, limit = 80)
+
+            val ranked = TitleSearch.searchIndexed(indexed, needle, limit = 80)
             _results.value = ranked.map { it.item }
-            // Autocomplete chips use real catalog spellings (e.g. Shōgun when typing Shogun)
-            _suggestions.value = TitleSearch.suggestions(catalog, needle, limit = 8)
-                .filter { !it.equals(needle, ignoreCase = true) }
+
+            val catalogChips = TitleSearch.catalogSuggestions(indexed, needle, limit = 8)
+            _suggestions.value = catalogChips
+
+            // Debounced TMDB predictions (dashed chips) when API key is configured
+            if (TmdbClient.isConfigured) {
+                tmdbJob = viewModelScope.launch {
+                    delay(320)
+                    if (_query.value.trim() != needle) return@launch
+                    val tmdb = TmdbClient.predict(needle, limit = 6)
+                    val catalogKeys = catalogChips.map { TitleSearch.normalize(it.title) }.toSet()
+                    val merged = catalogChips + tmdb.filter { TitleSearch.normalize(it.title) !in catalogKeys }
+                    _suggestions.value = merged.take(12)
+                }
+            }
         }
     }
 
-    fun applySuggestion(title: String) {
-        onQueryChange(title)
+    fun applySuggestion(suggestion: TitleSearch.SearchSuggestion) {
+        // Tap refines the query using the predicted/catalog title (and year when present)
+        val refined = when {
+            suggestion.year != null && !suggestion.title.contains(suggestion.year.toString()) ->
+                "${suggestion.title} ${suggestion.year}"
+            else -> suggestion.title
+        }
+        onQueryChange(refined)
     }
 
     private suspend fun ensureCache() {
         if (loaded) return
         _loading.value = true
         try {
-            cacheLive = repo.getLiveStreams().map { repo.run { it.toMedia() } }
-            cacheMovies = repo.getVodStreams().map { repo.run { it.toMedia() } }
-            cacheSeries = repo.getSeries().map { repo.run { it.toMedia() } }
-            catalog = cacheMovies + cacheSeries + cacheLive
+            val live = repo.getLiveStreams().map { repo.run { it.toMedia() } }
+            val movies = repo.getVodStreams().map { repo.run { it.toMedia() } }
+            val series = repo.getSeries().map { repo.run { it.toMedia() } }
+            indexed = TitleSearch.indexAll(movies + series + live)
             loaded = true
         } catch (_: Exception) {
         } finally {

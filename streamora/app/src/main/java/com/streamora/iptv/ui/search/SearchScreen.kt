@@ -1,6 +1,7 @@
 package com.streamora.iptv.ui.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.streamora.iptv.data.model.MediaItem
+import com.streamora.iptv.data.search.TitleSearch
 import com.streamora.iptv.ui.components.PosterCard
 import com.streamora.iptv.ui.theme.StreamoraBg
 import com.streamora.iptv.ui.theme.StreamoraMuted
@@ -44,9 +46,10 @@ fun SearchScreen(
     query: String,
     loading: Boolean,
     results: List<MediaItem>,
-    suggestions: List<String>,
+    suggestions: List<TitleSearch.SearchSuggestion>,
+    tmdbEnabled: Boolean,
     onQueryChange: (String) -> Unit,
-    onSuggestionClick: (String) -> Unit,
+    onSuggestionClick: (TitleSearch.SearchSuggestion) -> Unit,
     onOpen: (MediaItem) -> Unit
 ) {
     Column(
@@ -59,7 +62,7 @@ fun SearchScreen(
             value = query,
             onValueChange = onQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Try Shogun, resume, cafe…") },
+            placeholder = { Text("got · shogun · incepton · matrix 1999") },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = StreamoraMuted) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
@@ -73,7 +76,10 @@ fun SearchScreen(
 
         if (suggestions.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            Text("Did you mean", color = StreamoraMuted)
+            Text(
+                if (tmdbEnabled) "Predictions · solid = library, dashed = TMDB" else "Did you mean",
+                color = StreamoraMuted
+            )
             Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier
@@ -81,16 +87,11 @@ fun SearchScreen(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                suggestions.forEach { title ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(StreamoraSurface)
-                            .clickable { onSuggestionClick(title) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text(title, color = StreamoraText, maxLines = 1)
-                    }
+                suggestions.forEach { suggestion ->
+                    SuggestionChip(
+                        suggestion = suggestion,
+                        onClick = { onSuggestionClick(suggestion) }
+                    )
                 }
             }
         }
@@ -106,7 +107,7 @@ fun SearchScreen(
             }
             query.length >= 2 && results.isEmpty() -> {
                 Text(
-                    "No matches — try another spelling",
+                    "No library matches — try a prediction chip or another spelling",
                     color = StreamoraMuted,
                     modifier = Modifier.padding(top = 24.dp)
                 )
@@ -124,5 +125,35 @@ fun SearchScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SuggestionChip(
+    suggestion: TitleSearch.SearchSuggestion,
+    onClick: () -> Unit
+) {
+    val isTmdb = suggestion.source == TitleSearch.SuggestionSource.TMDB
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .then(
+                if (isTmdb) {
+                    Modifier
+                        .border(1.dp, StreamoraMuted.copy(alpha = 0.85f), shape)
+                        .background(Color.Transparent)
+                } else {
+                    Modifier.background(StreamoraSurface)
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = suggestion.label,
+            color = if (isTmdb) StreamoraMuted else StreamoraText,
+            maxLines = 1
+        )
     }
 }

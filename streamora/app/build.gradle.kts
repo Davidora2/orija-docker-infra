@@ -12,10 +12,26 @@ android {
         applicationId = "com.streamora.iptv"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+
+        // Optional: -PTMDB_API_KEY=... or TMDB_API_KEY in local.properties
+        val tmdbKey = (project.findProperty("TMDB_API_KEY") as String?)
+            ?: run {
+                val localProps = rootProject.file("local.properties")
+                if (localProps.exists()) {
+                    localProps.readLines()
+                        .map { it.trim() }
+                        .firstOrNull { it.startsWith("TMDB_API_KEY=") }
+                        ?.substringAfter("=")
+                        ?.trim()
+                } else null
+            }
+            ?: System.getenv("TMDB_API_KEY")
+            ?: ""
+        buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.replace("\"", "\\\"")}\"")
     }
 
     buildTypes {
@@ -37,6 +53,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"

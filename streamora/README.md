@@ -12,6 +12,8 @@ Android IPTV client for **Xtream Codes** with a Netflix-style experience: profil
 - Search across live, movies, and series
 - Fullscreen player (Media3 ExoPlayer + HLS)
 - Subtitles: embedded tracks + Xtream external subtitle files, with in-player picker
+- Intelligent search: typos, prefixes, diacritics, acronyms (`got`, `tlou`), token+year (`matrix 1999`)
+- Typeahead chips from your library; optional **TMDB** dashed prediction chips when `TMDB_API_KEY` is set
 - Cast to TV: Chromecast / Cast-enabled TVs via the cast button in the player
 
 ## Build the APK
@@ -41,6 +43,25 @@ Outputs:
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+
+
+## Optional TMDB predictions
+
+Add your [TMDB API key](https://www.themoviedb.org/settings/api) so search can show dashed prediction chips (tap to refine the query):
+
+```properties
+# streamora/local.properties
+TMDB_API_KEY=your_tmdb_v3_key
+```
+
+Or build with:
+
+```bash
+./gradlew assembleDebug -PTMDB_API_KEY=your_tmdb_v3_key
+```
+
+Without a key, search still works against your Xtream catalog only.
 
 ## Login fields
 
