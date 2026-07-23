@@ -1,23 +1,23 @@
-# OrijaFlix — Portainer uploadable stack (builds from private GitHub)
+# Alternative: build image ONCE on the Docker host, then use image-only stack.
+# Run these commands on the same machine that runs Portainer/Docker:
+
+# git clone https://github.com/Davidora2/orija-docker-infra.git
+# cd orija-docker-infra
+# git checkout cursor/xtream-media-server-8dc5
+# docker compose -f docker-compose.local.yml build
+# docker tag orijaflix:local orijaflix:latest
 #
-# In Portainer, when deploying this stack, add Environment variable:
-#   GITHUB_TOKEN = <your GitHub PAT with repo scope>
-#
-# Optional:
-#   GITHUB_USER  = x-access-token   (default)
-#   GIT_BRANCH   = cursor/xtream-media-server-8dc5
+# Then deploy deploy/orijaflix-stack.image-only.yml in Portainer.
 
 services:
   orijaflix:
-    build:
-      context: https://${GITHUB_USER:-x-access-token}:${GITHUB_TOKEN}@github.com/Davidora2/orija-docker-infra.git#${GIT_BRANCH:-cursor/xtream-media-server-8dc5}
-      dockerfile: Dockerfile
     image: orijaflix:latest
+    pull_policy: never
     container_name: orijaflix
     ports:
       - "8096:8000"
     environment:
-      SECRET_KEY: orijaflix-1956
+      SECRET_KEY: orijaflix-change-this-to-a-long-random-string
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: Olaore123!
       MAX_STREAMS_PER_USER: "4"
