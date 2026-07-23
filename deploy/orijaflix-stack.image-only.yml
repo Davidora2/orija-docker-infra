@@ -22,9 +22,8 @@ services:
       ADMIN_PASSWORD: Olaore123!
       MAX_STREAMS_PER_USER: "4"
       MAX_GLOBAL_STREAMS: "20"
-      XTREAM_BASE_URL: http://cf.8ktvworldiscord.xyz/
-      XTREAM_USERNAME: efb57ecb29b3
-      XTREAM_PASSWORD: "1302cabedc"
+      XTREAM_BASE_URL:
+      XTREAM_USERNAME: 
       TMDB_API_KEY: d604e223a1bc1c58157eccbb2616befe
       DATABASE_URL: sqlite+aiosqlite:////data/orijaflix.db
       MEDIA_ROOT: /srv/storage/data/media
