@@ -24,6 +24,7 @@
     },
     "android": {
       "package": "com.orijaflix.media",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#071018",
         "foregroundImage": "./assets/android-icon-foreground.png",
