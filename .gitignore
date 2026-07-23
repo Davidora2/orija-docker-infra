@@ -1,6 +1,7 @@
 .env
 stack.env
 docker-compose.secrets.yml
+orijaflix-stack.yml
 *.secrets.env
 portainer.env
 __pycache__/
