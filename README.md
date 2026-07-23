@@ -26,9 +26,29 @@ Mount this host path into the container via `MEDIA_HOST_PATH` (default `/srv/sto
 
 ## Quick start
 
+### Portainer / stack deploy (paste YAML)
+
+Use the compose below — it **builds from GitHub**, so you do **not** need a local `Dockerfile`.
+
+If your host can’t reach GitHub during build, use **Stacks → Repository** instead:
+- Repository URL: `https://github.com/Davidora2/orija-docker-infra`
+- Compose path: `docker-compose.local.yml`
+- Branch: `cursor/xtream-media-server-8dc5`
+
+### CLI (local clone)
+
+```bash
+git clone https://github.com/Davidora2/orija-docker-infra.git
+cd orija-docker-infra
+git checkout cursor/xtream-media-server-8dc5
+cp .env.example .env
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+Or from this repo root (GitHub remote build):
+
 ```bash
 cp .env.example .env
-# set TMDB_API_KEY for artwork + title correction (optional but recommended)
 docker compose up -d --build
 ```
 

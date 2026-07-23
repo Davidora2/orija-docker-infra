@@ -23,7 +23,8 @@ RUN pip install -r requirements.txt
 COPY backend/app ./app
 COPY --from=frontend-build /frontend/dist ./static
 
-RUN mkdir -p /data /media/movies /media/shows /media/live /media/downloads
+RUN mkdir -p /data /srv/storage/data/media/movies /srv/storage/data/media/TVshows \
+    /srv/storage/data/media/live /srv/storage/data/media/downloads /srv/storage/data/media/incoming
 
 EXPOSE 8000
 

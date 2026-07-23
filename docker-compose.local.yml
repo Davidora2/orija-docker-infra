@@ -1,11 +1,10 @@
+# Local development — build from the checked-out repo (needs Dockerfile beside this file)
 services:
   orijaflix:
-    # Builds from GitHub so Portainer/stack deploys don't need a local Dockerfile.
-    # For a local git clone, you can override with: docker compose -f docker-compose.yml up -d --build
     build:
-      context: https://github.com/Davidora2/orija-docker-infra.git#cursor/xtream-media-server-8dc5
+      context: .
       dockerfile: Dockerfile
-    image: orijaflix:latest
+    image: orijaflix:local
     container_name: orijaflix
     ports:
       - "${ORIJA_PORT:-8096}:8000"
