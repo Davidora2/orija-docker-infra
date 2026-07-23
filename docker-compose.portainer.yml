@@ -1,0 +1,41 @@
+# Portainer-friendly: NO git build. Uses a pre-built image on the Docker host.
+# 
+# One-time on the Portainer/Docker host (with git credentials):
+#   git clone https://github.com/Davidora2/orija-docker-infra.git
+#   cd orija-docker-infra && git checkout cursor/xtream-media-server-8dc5
+#   docker compose -f docker-compose.local.yml build
+#   docker tag orijaflix:local orijaflix:latest
+#
+# Then deploy THIS file as a Portainer stack (Web editor) — no Dockerfile/Git needed.
+
+services:
+  orijaflix:
+    image: orijaflix:latest
+    pull_policy: never
+    container_name: orijaflix
+    ports:
+      - "${ORIJA_PORT:-8096}:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-orijaflix-secret}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      MAX_STREAMS_PER_USER: ${MAX_STREAMS_PER_USER:-4}
+      MAX_GLOBAL_STREAMS: ${MAX_GLOBAL_STREAMS:-20}
+      XTREAM_BASE_URL: ${XTREAM_BASE_URL:-}
+      XTREAM_USERNAME: ${XTREAM_USERNAME:-}
+      XTREAM_PASSWORD: ${XTREAM_PASSWORD:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      DATABASE_URL: sqlite+aiosqlite:////data/orijaflix.db
+      MEDIA_ROOT: /srv/storage/data/media
+      MOVIES_DIR: /srv/storage/data/media/movies
+      SHOWS_DIR: /srv/storage/data/media/TVshows
+      LIVE_DIR: /srv/storage/data/media/live
+      DOWNLOADS_DIR: /srv/storage/data/media/downloads
+      INCOMING_DIR: /srv/storage/data/media/incoming
+    volumes:
+      - orijaflix-data:/data
+      - ${MEDIA_HOST_PATH:-/srv/storage/data/media}:/srv/storage/data/media
+    restart: unless-stopped
+
+volumes:
+  orijaflix-data:

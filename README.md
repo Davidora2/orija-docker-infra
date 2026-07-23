@@ -28,18 +28,27 @@ Mount this host path into the container via `MEDIA_HOST_PATH` (default `/srv/sto
 
 ### Portainer / stack deploy (private GitHub)
 
-**Option A — Repository stack (recommended)**  
+**Option A — Build image once, then paste compose (no Git in Portainer)**  
+
+On the Docker/Portainer host:
+```bash
+git clone https://github.com/Davidora2/orija-docker-infra.git
+cd orija-docker-infra && git checkout cursor/xtream-media-server-8dc5
+bash scripts/build-image.sh   # creates orijaflix:latest
+```
+
+Then in Portainer → Stacks → **Web editor**, paste `docker-compose.portainer.yml`
+(or the filled stack from your notes). No Dockerfile/Git access needed at deploy time.
+
+**Option B — Repository stack**  
 Stacks → Add stack → **Repository**:
 - URL: `https://github.com/Davidora2/orija-docker-infra`
 - Branch: `cursor/xtream-media-server-8dc5`
 - Compose path: `docker-compose.local.yml`
 - Enable **authentication** → GitHub username + **Personal Access Token** (scope `repo`)
 
-**Option B — Paste YAML**  
-Use `docker-compose.yml` and set these stack environment variables:
-- `GITHUB_TOKEN` = your PAT (`repo` read access)
-- `GITHUB_USER` = `x-access-token` (or your GitHub username)
-- `GIT_BRANCH` = `cursor/xtream-media-server-8dc5`
+**Option C — Paste YAML that builds from private Git**  
+Use `docker-compose.yml` and set stack env: `GITHUB_TOKEN`, `GITHUB_USER=x-access-token`.
 
 ### CLI (local clone)
 
