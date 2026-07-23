@@ -16,6 +16,39 @@ from app.services.streams import StreamLimitError
 
 router = APIRouter(prefix="/streams", tags=["streams"])
 
+VOD_EXTS = ("mp4", "mkv", "avi", "m4v", "mov", "ts", "m3u8")
+LIVE_EXTS = ("ts", "m3u8", "mp4")
+
+
+async def _resolve_container(db: AsyncSession, body: StreamOpenIn) -> str:
+    """Ask Xtream for the real container extension when possible."""
+    if body.source != "xtream":
+        return body.container or "mp4"
+    client = await get_xtream_client(db)
+    if not client:
+        return body.container or "mp4"
+    try:
+        if body.media_type == "movie":
+            info = await client.get_vod_info(body.external_id)
+            movie = info.get("movie_data") or {}
+            ext = movie.get("container_extension") or (info.get("info") or {}).get("container_extension")
+            if ext:
+                return str(ext).lstrip(".")
+        elif body.media_type in {"show", "episode"} and body.episode_id:
+            info = await client.get_series_info(body.external_id)
+            episodes = info.get("episodes") or {}
+            for season_eps in episodes.values():
+                for ep in season_eps or []:
+                    if str(ep.get("id")) == str(body.episode_id):
+                        ext = ep.get("container_extension")
+                        if ext:
+                            return str(ext).lstrip(".")
+        elif body.media_type == "live":
+            return body.container or "ts"
+    except Exception:
+        pass
+    return body.container or ("ts" if body.media_type == "live" else "mp4")
+
 
 @router.post("/open", response_model=StreamOpenOut)
 async def open_stream(
@@ -24,10 +57,11 @@ async def open_stream(
     db: AsyncSession = Depends(get_db),
 ):
     external_id = body.episode_id or body.external_id
+    container = await _resolve_container(db, body)
 
     if body.source == "local":
         media = None
-        if external_id.isdigit():
+        if str(external_id).isdigit():
             media = await db.get(LocalMedia, int(external_id))
         if not media:
             result = await db.execute(select(LocalMedia).where(LocalMedia.path == external_id))
@@ -35,10 +69,14 @@ async def open_stream(
         if not media or not Path(media.path).exists():
             raise HTTPException(status_code=404, detail="Local media not found")
         external_id = str(media.id)
+        container = Path(media.path).suffix.lstrip(".") or "mp4"
     elif body.source == "xtream":
         client = await get_xtream_client(db)
         if not client:
-            raise HTTPException(status_code=400, detail="Xtream not configured")
+            raise HTTPException(
+                status_code=400,
+                detail="Xtream not configured. Set XTREAM_* env vars or save credentials in Settings.",
+            )
     else:
         raise HTTPException(status_code=400, detail="source must be xtream|local")
 
@@ -48,19 +86,14 @@ async def open_stream(
             user,
             media_type=body.media_type,
             source=body.source,
-            external_id=external_id,
+            external_id=str(external_id),
             title=body.title,
         )
     except StreamLimitError as exc:
         raise HTTPException(status_code=429, detail=exc.message) from exc
 
-    # Persist container hint in title side-channel is avoided; use default extensions at play time.
-    # Store container on session by appending via external_id format id|ext when needed.
-    if body.container and body.container not in {"mp4", "ts", "mkv"}:
-        pass
-    if body.container:
-        session.external_id = f"{external_id}|{body.container}"
-        await db.commit()
+    session.external_id = f"{external_id}|{container}"
+    await db.commit()
 
     return StreamOpenOut(
         session_key=session.session_key,
@@ -78,14 +111,70 @@ def _split_id_ext(value: str) -> tuple[str, str | None]:
     return value, None
 
 
+def _candidate_urls(client, media_type: str, stream_id: str, preferred: str | None) -> list[str]:
+    urls: list[str] = []
+    if media_type == "live":
+        exts = [preferred] if preferred else []
+        exts += [e for e in LIVE_EXTS if e not in exts]
+        for ext in exts:
+            if ext:
+                urls.append(client.live_stream_url(stream_id, ext))
+        # Some panels serve live without extension
+        urls.append(f"{client.base_url}/live/{client.username}/{client.password}/{stream_id}")
+    elif media_type == "movie":
+        exts = [preferred] if preferred else []
+        exts += [e for e in VOD_EXTS if e not in exts]
+        for ext in exts:
+            if ext:
+                urls.append(client.vod_stream_url(stream_id, ext))
+        urls.append(f"{client.base_url}/movie/{client.username}/{client.password}/{stream_id}")
+    else:
+        exts = [preferred] if preferred else []
+        exts += [e for e in VOD_EXTS if e not in exts]
+        for ext in exts:
+            if ext:
+                urls.append(client.series_stream_url(stream_id, ext))
+        urls.append(f"{client.base_url}/series/{client.username}/{client.password}/{stream_id}")
+    # de-dupe preserve order
+    seen: set[str] = set()
+    out: list[str] = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+async def _open_upstream(urls: list[str], range_header: str | None) -> tuple[httpx.AsyncClient, httpx.Response, str]:
+    headers = {}
+    if range_header:
+        headers["Range"] = range_header
+    last_status = 0
+    client = httpx.AsyncClient(timeout=None, follow_redirects=True)
+    for url in urls:
+        try:
+            resp = await client.send(client.build_request("GET", url, headers=headers), stream=True)
+            if resp.status_code < 400:
+                return client, resp, url
+            last_status = resp.status_code
+            await resp.aclose()
+        except Exception:
+            continue
+    await client.aclose()
+    raise HTTPException(
+        status_code=502,
+        detail=f"Could not open Xtream stream (last upstream status {last_status or 'error'}). Check credentials/URL.",
+    )
+
+
 @router.get("/play/{session_key}")
 async def play_stream(session_key: str, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(StreamSession).where(StreamSession.session_key == session_key, StreamSession.active.is_(True))
-    )
+    result = await db.execute(select(StreamSession).where(StreamSession.session_key == session_key))
     session = result.scalar_one_or_none()
     if not session:
-        raise HTTPException(status_code=404, detail="Stream session not found or expired")
+        raise HTTPException(status_code=404, detail="Stream session not found")
+    if not session.active:
+        raise HTTPException(status_code=410, detail="Stream session expired — press Play again")
 
     await stream_svc.heartbeat(db, session_key, session.user_id)
     external_id, container = _split_id_ext(session.external_id)
@@ -100,6 +189,7 @@ async def play_stream(session_key: str, request: Request, db: AsyncSession = Dep
             ".mkv": "video/x-matroska",
             ".webm": "video/webm",
             ".ts": "video/mp2t",
+            ".m3u8": "application/vnd.apple.mpegurl",
         }
         return FileResponse(path, filename=path.name, media_type=media_types.get(path.suffix.lower(), "video/mp4"))
 
@@ -107,23 +197,8 @@ async def play_stream(session_key: str, request: Request, db: AsyncSession = Dep
     if not client:
         raise HTTPException(status_code=400, detail="Xtream not configured")
 
-    if session.media_type == "movie":
-        url = client.vod_stream_url(external_id, container or "mp4")
-    elif session.media_type == "live":
-        url = client.live_stream_url(external_id, container or "ts")
-    else:
-        url = client.series_stream_url(external_id, container or "mp4")
-
-    headers = {}
-    if request.headers.get("range"):
-        headers["Range"] = request.headers["range"]
-
-    http = httpx.AsyncClient(timeout=None, follow_redirects=True)
-    upstream = await http.send(http.build_request("GET", url, headers=headers), stream=True)
-    if upstream.status_code >= 400:
-        await upstream.aclose()
-        await http.aclose()
-        raise HTTPException(status_code=upstream.status_code, detail="Upstream stream error")
+    urls = _candidate_urls(client, session.media_type, external_id, container)
+    http, upstream, _used = await _open_upstream(urls, request.headers.get("range"))
 
     async def iterator():
         try:
@@ -142,7 +217,7 @@ async def play_stream(session_key: str, request: Request, db: AsyncSession = Dep
         iterator(),
         status_code=upstream.status_code,
         headers=out_headers,
-        media_type=upstream.headers.get("content-type", "video/mp2t"),
+        media_type=upstream.headers.get("content-type", "video/mp4"),
     )
 
 

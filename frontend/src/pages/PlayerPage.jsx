@@ -6,6 +6,7 @@ export default function PlayerPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
   const videoRef = useRef(null);
+  const sessionRef = useRef(null);
   const [error, setError] = useState("");
   const [sessionKey, setSessionKey] = useState(null);
   const [playUrl, setPlayUrl] = useState("");
@@ -15,8 +16,7 @@ export default function PlayerPage() {
       setError("Nothing to play");
       return;
     }
-    let alive = true;
-    let key = null;
+    let cancelled = false;
     let heartbeatTimer;
 
     (async () => {
@@ -32,22 +32,30 @@ export default function PlayerPage() {
             episode_id: state.episode_id ? String(state.episode_id) : null,
           }),
         });
-        if (!alive) return;
-        key = opened.session_key;
-        setSessionKey(key);
+        if (cancelled) {
+          // StrictMode remount — close the session we just opened
+          api(`/streams/${opened.session_key}/close`, { method: "POST" }).catch(() => {});
+          return;
+        }
+        sessionRef.current = opened.session_key;
+        setSessionKey(opened.session_key);
         setPlayUrl(opened.play_url);
+        setError("");
 
         heartbeatTimer = setInterval(() => {
-          api(`/streams/${key}/heartbeat`, { method: "POST" }).catch(() => {});
-        }, 30000);
+          const key = sessionRef.current;
+          if (key) api(`/streams/${key}/heartbeat`, { method: "POST" }).catch(() => {});
+        }, 25000);
       } catch (err) {
-        if (alive) setError(err.message);
+        if (!cancelled) setError(err.message || "Failed to open stream");
       }
     })();
 
     return () => {
-      alive = false;
+      cancelled = true;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      const key = sessionRef.current;
+      sessionRef.current = null;
       if (key) api(`/streams/${key}/close`, { method: "POST" }).catch(() => {});
     };
   }, [state]);
@@ -55,6 +63,12 @@ export default function PlayerPage() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !playUrl || !state) return;
+
+    const onError = () => {
+      setError(
+        "Playback failed. The stream URL may be wrong, blocked, or unsupported in this browser (try MP4/HLS). Press Back and Play again."
+      );
+    };
 
     const onTime = () => {
       if (!video.duration || !Number.isFinite(video.duration)) return;
@@ -73,14 +87,20 @@ export default function PlayerPage() {
       }).catch(() => {});
     };
 
+    video.addEventListener("error", onError);
     video.addEventListener("timeupdate", onTime);
-    return () => video.removeEventListener("timeupdate", onTime);
+    return () => {
+      video.removeEventListener("error", onError);
+      video.removeEventListener("timeupdate", onTime);
+    };
   }, [playUrl, state]);
 
   async function close() {
-    if (sessionKey) {
+    const key = sessionRef.current || sessionKey;
+    sessionRef.current = null;
+    if (key) {
       try {
-        await api(`/streams/${sessionKey}/close`, { method: "POST" });
+        await api(`/streams/${key}/close`, { method: "POST" });
       } catch {
         /* ignore */
       }

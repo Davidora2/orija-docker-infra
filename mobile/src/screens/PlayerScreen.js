@@ -18,9 +18,9 @@ export default function PlayerScreen() {
   const [statusText, setStatusText] = useState("Opening stream…");
 
   useEffect(() => {
-    let alive = true;
-    let key = null;
+    let cancelled = false;
     let heartbeat;
+    let openedKey = null;
 
     (async () => {
       try {
@@ -39,24 +39,27 @@ export default function PlayerScreen() {
             episode_id: params.episode_id ? String(params.episode_id) : null,
           }),
         });
-        if (!alive) return;
-        key = opened.session_key;
-        setSessionKey(key);
+        if (cancelled) {
+          api(`/streams/${opened.session_key}/close`, { method: "POST" }).catch(() => {});
+          return;
+        }
+        openedKey = opened.session_key;
+        setSessionKey(opened.session_key);
         const base = await getServerUrl();
         setPlayUrl(absoluteUrl(base, opened.play_url));
         setStatusText("");
         heartbeat = setInterval(() => {
-          api(`/streams/${key}/heartbeat`, { method: "POST" }).catch(() => {});
-        }, 30000);
+          api(`/streams/${opened.session_key}/heartbeat`, { method: "POST" }).catch(() => {});
+        }, 25000);
       } catch (err) {
-        if (alive) setError(err.message);
+        if (!cancelled) setError(err.message || "Failed to open stream");
       }
     })();
 
     return () => {
-      alive = false;
+      cancelled = true;
       if (heartbeat) clearInterval(heartbeat);
-      if (key) api(`/streams/${key}/close`, { method: "POST" }).catch(() => {});
+      if (openedKey) api(`/streams/${openedKey}/close`, { method: "POST" }).catch(() => {});
     };
   }, []);
 

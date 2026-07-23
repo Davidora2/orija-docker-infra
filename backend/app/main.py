@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
@@ -38,7 +39,6 @@ def ensure_dirs() -> None:
 
 
 async def migrate_sqlite() -> None:
-    """Add columns introduced after first release."""
     async with engine.begin() as conn:
         if conn.dialect.name != "sqlite":
             return
@@ -64,19 +64,26 @@ async def seed() -> None:
             )
             await db.commit()
 
+        # Always sync Xtream from env when provided (Portainer stack credentials)
         if settings.xtream_base_url and settings.xtream_username and settings.xtream_password:
+            base = settings.xtream_base_url.rstrip("/")
             existing = await db.scalar(select(XtreamConfig).limit(1))
-            if not existing:
+            if existing:
+                existing.base_url = base
+                existing.username = settings.xtream_username
+                existing.password = settings.xtream_password
+                existing.enabled = True
+            else:
                 db.add(
                     XtreamConfig(
-                        base_url=settings.xtream_base_url.rstrip("/"),
+                        base_url=base,
                         username=settings.xtream_username,
                         password=settings.xtream_password,
                         enabled=True,
                         label="Primary",
                     )
                 )
-                await db.commit()
+            await db.commit()
 
 
 @asynccontextmanager
@@ -119,9 +126,26 @@ async def health():
         "media_root": str(settings.media_root),
         "movies_dir": str(settings.movies_dir),
         "shows_dir": str(settings.shows_dir),
+        "xtream_env": bool(settings.xtream_base_url and settings.xtream_username),
     }
 
 
+# Serve SPA without mounting "/" (which can shadow API routes in some setups)
 static_dir = Path("/app/static")
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/")
+    async def spa_index():
+        return FileResponse(static_dir / "index.html")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(status_code=404, detail="API route not found")
+        candidate = static_dir / full_path
+        if candidate.is_file() and static_dir in candidate.resolve().parents:
+            return FileResponse(candidate)
+        return FileResponse(static_dir / "index.html")
