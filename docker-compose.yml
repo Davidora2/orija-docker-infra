@@ -1,9 +1,9 @@
 services:
   orijaflix:
-    # Builds from GitHub so Portainer/stack deploys don't need a local Dockerfile.
-    # For a local git clone, you can override with: docker compose -f docker-compose.yml up -d --build
+    # Private GitHub: set GITHUB_TOKEN (PAT with Contents: Read) in stack env.
+    # Optional GITHUB_USER (defaults to x-access-token, which works with PATs).
     build:
-      context: https://github.com/Davidora2/orija-docker-infra.git#cursor/xtream-media-server-8dc5
+      context: https://${GITHUB_USER:-x-access-token}:${GITHUB_TOKEN}@github.com/Davidora2/orija-docker-infra.git#${GIT_BRANCH:-cursor/xtream-media-server-8dc5}
       dockerfile: Dockerfile
     image: orijaflix:latest
     container_name: orijaflix

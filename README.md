@@ -26,14 +26,20 @@ Mount this host path into the container via `MEDIA_HOST_PATH` (default `/srv/sto
 
 ## Quick start
 
-### Portainer / stack deploy (paste YAML)
+### Portainer / stack deploy (private GitHub)
 
-Use the compose below — it **builds from GitHub**, so you do **not** need a local `Dockerfile`.
-
-If your host can’t reach GitHub during build, use **Stacks → Repository** instead:
-- Repository URL: `https://github.com/Davidora2/orija-docker-infra`
-- Compose path: `docker-compose.local.yml`
+**Option A — Repository stack (recommended)**  
+Stacks → Add stack → **Repository**:
+- URL: `https://github.com/Davidora2/orija-docker-infra`
 - Branch: `cursor/xtream-media-server-8dc5`
+- Compose path: `docker-compose.local.yml`
+- Enable **authentication** → GitHub username + **Personal Access Token** (scope `repo`)
+
+**Option B — Paste YAML**  
+Use `docker-compose.yml` and set these stack environment variables:
+- `GITHUB_TOKEN` = your PAT (`repo` read access)
+- `GITHUB_USER` = `x-access-token` (or your GitHub username)
+- `GIT_BRANCH` = `cursor/xtream-media-server-8dc5`
 
 ### CLI (local clone)
 
