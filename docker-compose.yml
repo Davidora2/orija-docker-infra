@@ -1,9 +1,8 @@
 services:
   orijaflix:
-    # Private GitHub: set GITHUB_TOKEN (PAT with Contents: Read) in stack env.
-    # Optional GITHUB_USER (defaults to x-access-token, which works with PATs).
+    # Public repo — no GitHub token required
     build:
-      context: https://${GITHUB_USER:-x-access-token}:${GITHUB_TOKEN}@github.com/Davidora2/orija-docker-infra.git#${GIT_BRANCH:-cursor/xtream-media-server-8dc5}
+      context: https://github.com/Davidora2/orija-docker-infra.git#${GIT_BRANCH:-cursor/xtream-media-server-8dc5}
       dockerfile: Dockerfile
     image: orijaflix:latest
     container_name: orijaflix
