@@ -12,7 +12,7 @@ services:
     ports:
       - "8096:8000"
     environment:
-      SECRET_KEY: orijaflix-change-this-to-a-long-random-string
+      SECRET_KEY: orijaflix-1956
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: Olaore123!
       MAX_STREAMS_PER_USER: "4"
