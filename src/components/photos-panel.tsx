@@ -11,7 +11,11 @@ type PickedItem = {
   };
 };
 
-export function PhotosPanel() {
+type PhotosPanelProps = {
+  destinationPath: string;
+};
+
+export function PhotosPanel({ destinationPath }: PhotosPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [pickerUri, setPickerUri] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
@@ -72,7 +76,7 @@ export function PhotosPanel() {
         const itemsData = await itemsRes.json();
         if (!itemsRes.ok) throw new Error(itemsData.error ?? "Failed to list photos");
         setItems(itemsData.items ?? []);
-        setStatus(`${itemsData.items?.length ?? 0} item(s) ready to download.`);
+        setStatus(`${itemsData.items?.length ?? 0} item(s) ready to save.`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Polling failed");
@@ -84,35 +88,33 @@ export function PhotosPanel() {
     }
   }
 
-  async function downloadZip() {
+  async function saveToServer() {
     if (!sessionId) return;
+    if (!destinationPath) {
+      setError("Choose a save location first.");
+      return;
+    }
     setExporting(true);
-    setStatus("Packing selected photos into a zip…");
+    setError(null);
+    setStatus(`Saving selected photos to ${destinationPath}…`);
     try {
       const res = await fetch("/api/photos/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, destinationPath }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Download failed");
+        throw new Error(data.error ?? "Save failed");
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        res.headers
-          .get("Content-Disposition")
-          ?.match(/filename="(.+)"/)?.[1] ?? "google-photos-export.zip";
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus("Photos export ready.");
+      const failedNote =
+        data.failed > 0 ? ` (${data.failed} failed)` : "";
+      setStatus(`Saved ${data.saved} item(s) to ${data.destination}${failedNote}`);
       setSessionId(null);
       setPickerUri(null);
+      setItems([]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Download failed");
+      setError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setExporting(false);
     }
@@ -154,7 +156,8 @@ export function PhotosPanel() {
         >
           Google Takeout
         </a>
-        , then download the archive here alongside your Drive export.
+        , then place the archive in your chosen server folder alongside Drive
+        exports.
       </div>
 
       {status && <p className="status-line">{status}</p>}
@@ -166,10 +169,12 @@ export function PhotosPanel() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={exporting}
-              onClick={() => void downloadZip()}
+              disabled={exporting || !destinationPath}
+              onClick={() => void saveToServer()}
             >
-              {exporting ? "Packing…" : `Download ${items.length} item(s) as zip`}
+              {exporting
+                ? "Saving…"
+                : `Save ${items.length} item(s) to server`}
             </button>
           </div>
           <ul className="photo-list">

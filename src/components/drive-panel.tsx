@@ -24,7 +24,11 @@ function formatDate(value?: string) {
 
 type Crumb = { id: string; name: string };
 
-export function DrivePanel() {
+type DrivePanelProps = {
+  destinationPath: string;
+};
+
+export function DrivePanel({ destinationPath }: DrivePanelProps) {
   const [files, setFiles] = useState<DriveItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,12 +134,16 @@ export function DrivePanel() {
     }
   }
 
-  async function exportZip(mode: "all" | "selected") {
+  async function saveToServer(mode: "all" | "selected") {
+    if (!destinationPath) {
+      setStatus("Choose a save location first.");
+      return;
+    }
     setExporting(mode);
     setStatus(
       mode === "all"
-        ? "Packing your entire Drive into a zip… this can take a while."
-        : `Packing ${selected.size} file(s)…`,
+        ? `Saving entire Drive to ${destinationPath}… this can take a while.`
+        : `Saving ${selected.size} file(s) to ${destinationPath}…`,
     );
     try {
       const res = await fetch("/api/drive/export", {
@@ -144,23 +152,18 @@ export function DrivePanel() {
         body: JSON.stringify({
           mode,
           fileIds: mode === "selected" ? Array.from(selected) : undefined,
+          destinationPath,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Export failed");
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download =
-        res.headers
-          .get("Content-Disposition")
-          ?.match(/filename="(.+)"/)?.[1] ?? "google-drive-export.zip";
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus("Drive export ready.");
+      const failedNote =
+        data.failed > 0 ? ` (${data.failed} failed — see server logs)` : "";
+      setStatus(
+        `Saved ${data.saved} file(s) to ${data.destination}${failedNote}`,
+      );
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Export failed");
     } finally {
@@ -173,24 +176,26 @@ export function DrivePanel() {
       <div className="panel-head">
         <div>
           <h2>Google Drive</h2>
-          <p>Browse folders or export everything as a zip.</p>
+          <p>Browse folders, then save files into your selected server folder.</p>
         </div>
         <div className="panel-actions">
           <button
             type="button"
             className="btn btn-secondary"
-            disabled={selected.size === 0 || exporting !== null}
-            onClick={() => void exportZip("selected")}
+            disabled={selected.size === 0 || exporting !== null || !destinationPath}
+            onClick={() => void saveToServer("selected")}
           >
-            {exporting === "selected" ? "Packing…" : `Export selected (${selected.size})`}
+            {exporting === "selected"
+              ? "Saving…"
+              : `Save selected (${selected.size})`}
           </button>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={exporting !== null}
-            onClick={() => void exportZip("all")}
+            disabled={exporting !== null || !destinationPath}
+            onClick={() => void saveToServer("all")}
           >
-            {exporting === "all" ? "Packing…" : "Export all Drive files"}
+            {exporting === "all" ? "Saving…" : "Save all Drive files"}
           </button>
         </div>
       </div>

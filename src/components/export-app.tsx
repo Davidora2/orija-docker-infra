@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { DestinationPicker } from "@/components/destination-picker";
 import { DrivePanel } from "@/components/drive-panel";
 import { PhotosPanel } from "@/components/photos-panel";
 
 export function ExportApp() {
   const { data: session, status } = useSession();
+  const [destinationPath, setDestinationPath] = useState("");
 
   if (status === "loading") {
     return (
@@ -22,8 +25,8 @@ export function ExportApp() {
           <p className="brand">Outbox</p>
           <h1>Move your Google files out.</h1>
           <p className="lede">
-            Sign in once, then export Google Drive in full and pull photo batches
-            from Google Photos — straight to your computer.
+            Sign in once, pick a folder on this server, then export Google Drive
+            and photo batches straight to disk.
           </p>
           <div className="hero-actions">
             <button
@@ -35,7 +38,7 @@ export function ExportApp() {
             </button>
           </div>
           <p className="fine-print">
-            Read-only access. Files stay on your machine after download.
+            Read-only Google access. Files are written to the folder you choose.
           </p>
         </header>
       </div>
@@ -72,8 +75,9 @@ export function ExportApp() {
       )}
 
       <main className="workspace">
-        <DrivePanel />
-        <PhotosPanel />
+        <DestinationPicker value={destinationPath} onChange={setDestinationPath} />
+        <DrivePanel destinationPath={destinationPath} />
+        <PhotosPanel destinationPath={destinationPath} />
       </main>
     </div>
   );

@@ -7,15 +7,28 @@ import {
   listPickedMediaItems,
 } from "@/lib/photos";
 import { sanitizePathSegment } from "@/lib/drive";
+import { savePhotosToDisk } from "@/lib/save-photos";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { sessionId?: string };
+    const body = (await request.json()) as {
+      sessionId?: string;
+      destinationPath?: string;
+      asZip?: boolean;
+    };
     if (!body.sessionId) {
       return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    }
+
+    if (body.destinationPath && !body.asZip) {
+      const result = await savePhotosToDisk({
+        sessionId: body.sessionId,
+        destinationPath: body.destinationPath,
+      });
+      return NextResponse.json(result);
     }
 
     const items = await listPickedMediaItems(body.sessionId);

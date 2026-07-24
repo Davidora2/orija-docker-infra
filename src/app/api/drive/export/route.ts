@@ -8,6 +8,7 @@ import {
   sanitizePathSegment,
   type DriveItem,
 } from "@/lib/drive";
+import { saveDriveFilesToDisk } from "@/lib/save-drive";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -49,7 +50,19 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       mode?: "all" | "selected";
       fileIds?: string[];
+      destinationPath?: string;
+      asZip?: boolean;
     };
+
+    // Primary path: save files onto the server
+    if (body.destinationPath && !body.asZip) {
+      const result = await saveDriveFilesToDisk({
+        destinationPath: body.destinationPath,
+        mode: body.mode,
+        fileIds: body.fileIds,
+      });
+      return NextResponse.json(result);
+    }
 
     let files: DriveItem[];
     if (body.mode === "selected" && body.fileIds?.length) {
@@ -72,7 +85,6 @@ export async function POST(request: Request) {
     const stamp = new Date().toISOString().slice(0, 10);
     const filename = `google-drive-export-${stamp}.zip`;
 
-    // Build zip asynchronously while streaming response
     void (async () => {
       try {
         for (const { file, zipPath } of entries) {
