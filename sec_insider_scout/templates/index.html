@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orija Insider Scout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Orija</span>
+      <span class="brand-product">Insider Scout</span>
+    </div>
+    <form class="controls" method="get" action="/">
+      <label>
+        Lookback
+        <input type="number" name="lookback_days" min="1" max="60" value="{{ lookback_days }}" />
+      </label>
+      <label>
+        Filings
+        <input type="number" name="max_filings" min="10" max="100" value="{{ max_filings }}" />
+      </label>
+      <input type="hidden" name="refresh" value="1" />
+      <button type="submit">Rescan EDGAR</button>
+    </form>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Public Form 4 · research desk</p>
+      <h1>Orija</h1>
+      <p class="lede">
+        Rank recent insider open-market activity from SEC EDGAR, then map a buy window and a staged exit band.
+      </p>
+      <div class="cta-row">
+        <a class="cta" href="#ideas">View ranked ideas</a>
+        <a class="cta ghost" href="/api/scan">JSON API</a>
+      </div>
+    </section>
+
+    {% if error %}
+    <section class="panel error">
+      <h2>Scan failed</h2>
+      <p>{{ error }}</p>
+      <p class="hint">SEC requires a descriptive User-Agent. Set <code>INSIDER_SEC_USER_AGENT</code> to your app name and email.</p>
+    </section>
+    {% elif result %}
+    <section class="meta-strip" aria-label="Scan summary">
+      <div>
+        <span class="meta-label">Filings parsed</span>
+        <strong>{{ result.filings_considered }}</strong>
+      </div>
+      <div>
+        <span class="meta-label">Ideas ranked</span>
+        <strong>{{ result.ideas|length }}</strong>
+      </div>
+      <div>
+        <span class="meta-label">Lookback</span>
+        <strong>{{ result.lookback_days }}d</strong>
+      </div>
+      <div>
+        <span class="meta-label">Scanned</span>
+        <strong>{{ result.scanned_at.strftime('%Y-%m-%d %H:%M UTC') }}</strong>
+      </div>
+    </section>
+
+    <section id="ideas" class="ideas">
+      <header class="section-head">
+        <h2>Ranked opportunities</h2>
+        <p>Scores favor clustered open-market buys by senior officers shortly after filing.</p>
+      </header>
+
+      {% if not result.ideas %}
+      <p class="empty">No qualifying open-market buy clusters in this window. Widen lookback or lower the buy threshold.</p>
+      {% endif %}
+
+      <ol class="idea-list">
+        {% for idea in result.ideas %}
+        <li class="idea idea-{{ idea.side }}" style="--i: {{ loop.index0 }}">
+          <div class="idea-rank">
+            <span class="grade grade-{{ idea.grade }}">{{ idea.grade }}</span>
+            <span class="score">{{ '%.0f'|format(idea.rank_score) }}</span>
+          </div>
+          <div class="idea-body">
+            <div class="idea-title-row">
+              <h3><span class="ticker">{{ idea.ticker }}</span> {{ idea.issuer_name }}</h3>
+              <span class="side-pill side-{{ idea.side }}">{{ idea.side }}</span>
+            </div>
+            <p class="summary">{{ idea.summary }}</p>
+
+            <div class="timing">
+              <div>
+                <span class="meta-label">Buy window</span>
+                <strong>{{ idea.timing.entry_window_start }} → {{ idea.timing.entry_window_end }}</strong>
+              </div>
+              <div>
+                <span class="meta-label">Review</span>
+                <strong>{{ idea.timing.review_date }}</strong>
+              </div>
+              <div>
+                <span class="meta-label">Sell window</span>
+                <strong>{{ idea.timing.target_exit_start }} → {{ idea.timing.target_exit_end }}</strong>
+              </div>
+              <div>
+                <span class="meta-label">Stop review</span>
+                <strong>{{ idea.timing.stop_review_days }} trading days</strong>
+              </div>
+            </div>
+            <p class="rationale">{{ idea.timing.rationale }}</p>
+
+            <details>
+              <summary>Signal factors &amp; filings</summary>
+              <ul class="factors">
+                <li>Open-market buys {{ '%.0f'|format(idea.factors.open_market_buy * 100) }}%</li>
+                <li>Cluster {{ '%.0f'|format(idea.factors.cluster_buying * 100) }}%</li>
+                <li>Role {{ '%.0f'|format(idea.factors.role_weight * 100) }}%</li>
+                <li>Size {{ '%.0f'|format(idea.factors.size_conviction * 100) }}%</li>
+                <li>Recency {{ '%.0f'|format(idea.factors.recency * 100) }}%</li>
+                <li>Accumulation {{ '%.0f'|format(idea.factors.multi_day_accumulation * 100) }}%</li>
+                <li>Sell penalty {{ '%.0f'|format(idea.factors.sell_pressure_penalty * 100) }}%</li>
+              </ul>
+              <ul class="tx-list">
+                {% for tx in idea.transactions[:8] %}
+                <li>
+                  <span class="tx-side">{{ tx.side.value }}</span>
+                  {{ tx.owner_name }}
+                  · {{ '%.0f'|format(tx.shares) }} sh
+                  {% if tx.price %}@ ${{ '%.2f'|format(tx.price) }}{% endif %}
+                  {% if tx.value %}· ${{ '%.0f'|format(tx.value) }}{% endif %}
+                  · filed {{ tx.filed_at.strftime('%Y-%m-%d') }}
+                </li>
+                {% endfor %}
+              </ul>
+              <p class="links">
+                {% for url in idea.form_urls[:3] %}
+                <a href="{{ url }}" target="_blank" rel="noopener">Form 4</a>
+                {% endfor %}
+              </p>
+            </details>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    <section class="panel disclaimer">
+      <h2>Disclaimer</h2>
+      <p>{{ result.disclaimer }}</p>
+    </section>
+    {% else %}
+    <section class="panel">
+      <p>No scan data yet.</p>
+    </section>
+    {% endif %}
+  </main>
+
+  <footer>
+    <span>Orija Insider Scout v{{ version }}</span>
+    <span>Data: SEC EDGAR Form 4</span>
+  </footer>
+</body>
+</html>
