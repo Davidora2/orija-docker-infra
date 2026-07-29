@@ -9,6 +9,27 @@ import java.time.ZoneOffset
 
 class TradeIdeaScorerTest {
     @Test
+    fun parsesAtomFeedEntries() {
+        val atom = """
+            <?xml version="1.0" encoding="ISO-8859-1" ?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <title>4 - Example Corp (0001234567) (Issuer)</title>
+                <link href="https://www.sec.gov/Archives/edgar/data/1234567/000123456726000001/0001234567-26-000001-index.htm"/>
+                <id>tag:www.sec.gov,2008:accession-number=0001234567-26-000001</id>
+                <updated>2026-07-29T15:00:00-04:00</updated>
+              </entry>
+            </feed>
+        """.trimIndent()
+        val client = SecEdgarClient()
+        val method = SecEdgarClient::class.java.getDeclaredMethod("parseAtom", String::class.java)
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val entries = method.invoke(client, atom) as List<*>
+        assertEquals(1, entries.size)
+    }
+
+    @Test
     fun clusterBuyRanksAsLong() {
         val filed = OffsetDateTime.of(2026, 7, 22, 15, 0, 0, 0, ZoneOffset.UTC)
         val client = SecEdgarClient()

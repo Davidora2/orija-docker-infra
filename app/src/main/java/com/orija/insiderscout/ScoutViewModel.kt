@@ -54,11 +54,15 @@ class ScoutViewModel(
             }.onSuccess { result ->
                 _state.update { it.copy(loading = false, result = result, error = null) }
             }.onFailure { err ->
+                val message = when {
+                    err.message?.contains("Unexpected token", ignoreCase = true) == true ->
+                        "Could not read SEC feed (bad/compressed response). Update the app and retry."
+                    err.message.isNullOrBlank() ->
+                        "Scan failed. Check network and try again."
+                    else -> err.message
+                }
                 _state.update {
-                    it.copy(
-                        loading = false,
-                        error = err.message ?: "Scan failed. Check network and try again.",
-                    )
+                    it.copy(loading = false, error = message)
                 }
             }
         }

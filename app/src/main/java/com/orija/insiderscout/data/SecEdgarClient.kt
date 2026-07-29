@@ -17,7 +17,6 @@ import java.io.StringReader
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
@@ -81,7 +80,39 @@ class SecEdgarClient(
         return parseAtom(body)
     }
 
-    private fun parseAtom(xml: String): List<AtomEntry> {
+    private fun parseAtom(raw: String): List<AtomEntry> {
+        val xml = raw.trimStart('\uFEFF').trim()
+        if (xml.isEmpty()) return emptyList()
+        // Prefer regex parsing — SEC Atom is simple and XmlPullParser is brittle on some devices.
+        val regexEntries = parseAtomRegex(xml)
+        if (regexEntries.isNotEmpty()) return regexEntries
+        return parseAtomXmlPull(xml)
+    }
+
+    private fun parseAtomRegex(xml: String): List<AtomEntry> {
+        val entryPattern = Pattern.compile("<entry\\b[\\s\\S]*?</entry>", Pattern.CASE_INSENSITIVE)
+        val titlePattern = Pattern.compile("<title[^>]*>([\\s\\S]*?)</title>", Pattern.CASE_INSENSITIVE)
+        val updatedPattern = Pattern.compile("<updated[^>]*>([\\s\\S]*?)</updated>", Pattern.CASE_INSENSITIVE)
+        val idPattern = Pattern.compile("<id[^>]*>([\\s\\S]*?)</id>", Pattern.CASE_INSENSITIVE)
+        val linkPattern = Pattern.compile("<link\\b[^>]*href=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE)
+        val entries = mutableListOf<AtomEntry>()
+        val entryMatcher = entryPattern.matcher(xml)
+        while (entryMatcher.find()) {
+            val block = entryMatcher.group(0) ?: continue
+            val title = firstGroup(titlePattern, block)?.replace(Regex("<[^>]+>"), "")?.trim().orEmpty()
+            val updated = firstGroup(updatedPattern, block)?.trim().orEmpty()
+            val id = firstGroup(idPattern, block)?.trim().orEmpty()
+            val link = firstGroup(linkPattern, block)?.trim().orEmpty()
+            val accession = extractAccession(id, link) ?: link
+            val filedAt = parseUpdated(updated) ?: continue
+            if (link.isNotBlank()) {
+                entries += AtomEntry(title, link, filedAt, accession)
+            }
+        }
+        return entries
+    }
+
+    private fun parseAtomXmlPull(xml: String): List<AtomEntry> {
         val factory = XmlPullParserFactory.newInstance()
         factory.isNamespaceAware = true
         val parser = factory.newPullParser()
@@ -107,6 +138,7 @@ class SecEdgarClient(
                             "id" -> id = parser.nextText().trim()
                             "link" -> {
                                 val href = parser.getAttributeValue(null, "href")
+                                    ?: parser.getAttributeValue("http://www.w3.org/2005/Atom", "href")
                                 if (!href.isNullOrBlank()) link = href
                             }
                         }
@@ -239,20 +271,33 @@ class SecEdgarClient(
     private fun httpGet(url: String): String? {
         repeat(3) { attempt ->
             try {
+                // Do NOT set Accept-Encoding manually — OkHttp then skips transparent gzip decode
+                // and XmlPullParser blows up on compressed bytes ("Unexpected token").
                 val req = Request.Builder()
                     .url(url)
                     .header("User-Agent", userAgent)
-                    .header("Accept-Encoding", "gzip")
+                    .header("Accept", "application/atom+xml, application/xml, text/xml, text/html;q=0.9, */*;q=0.8")
                     .build()
                 client.newCall(req).execute().use { resp ->
                     if (resp.code == 429 || resp.code == 503) {
                         Thread.sleep(400L * (attempt + 1))
                         return@use
                     }
-                    if (!resp.isSuccessful) return null
-                    return resp.body?.string()
+                    if (!resp.isSuccessful) {
+                        throw IllegalStateException("SEC HTTP ${resp.code} for $url")
+                    }
+                    val body = resp.body?.string().orEmpty()
+                    if (body.isBlank()) {
+                        throw IllegalStateException("Empty response from SEC")
+                    }
+                    // Gzip leftovers start with binary magic; reject early with a clear error.
+                    if (body[0] == '\u001f' || body.startsWith("\u001f\u008b")) {
+                        throw IllegalStateException("Received compressed SEC payload without decode")
+                    }
+                    return body
                 }
-            } catch (_: Exception) {
+            } catch (exc: Exception) {
+                if (attempt == 2) throw exc
                 Thread.sleep(400L * (attempt + 1))
             }
         }
@@ -281,6 +326,11 @@ class SecEdgarClient(
             val m2 = accessionInPath.matcher(link)
             if (m2.find()) return m2.group(1)
             return null
+        }
+
+        private fun firstGroup(pattern: Pattern, text: String): String? {
+            val m = pattern.matcher(text)
+            return if (m.find()) m.group(1) else null
         }
 
         private fun parseUpdated(raw: String): OffsetDateTime? {
