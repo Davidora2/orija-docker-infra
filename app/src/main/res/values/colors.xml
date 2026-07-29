@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="teal_deep">#0A4641</color>
-    <color name="teal">#0F6B63</color>
-    <color name="ink">#10242B</color>
-    <color name="paper">#EEF3F5</color>
-    <color name="coral">#C15B3A</color>
-    <color name="ic_launcher_background">#0A4641</color>
+    <color name="ws_graphite">#32302F</color>
+    <color name="ws_paper">#FCFCFC</color>
+    <color name="ws_linen">#FAF8F5</color>
+    <color name="ws_green">#486635</color>
+    <color name="ws_warm">#FF8A71</color>
+    <color name="ic_launcher_background">#32302F</color>
 </resources>
