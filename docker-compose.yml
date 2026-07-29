@@ -1,0 +1,11 @@
+services:
+  insider-scout:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      INSIDER_SEC_USER_AGENT: ${INSIDER_SEC_USER_AGENT:-SecInsiderScout/0.1 (research; contact@example.com)}
+      INSIDER_LOOKBACK_DAYS: ${INSIDER_LOOKBACK_DAYS:-14}
+      INSIDER_MAX_FILINGS: ${INSIDER_MAX_FILINGS:-60}
+      INSIDER_MIN_BUY_VALUE: ${INSIDER_MIN_BUY_VALUE:-25000}
+    restart: unless-stopped
