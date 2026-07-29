@@ -14,3 +14,15 @@ build/
 .DS_Store
 .cache/
 data/cache/
+
+# Android
+.gradle/
+local.properties
+android-sdk/
+*.iml
+.idea/
+app/build/
+captures/
+.cxx/
+*.apk
+!releases/*.apk
