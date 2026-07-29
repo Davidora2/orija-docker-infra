@@ -1,0 +1,10 @@
+services:
+  trading-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+    command: ["trade-agent", "run", "--cycles", "1"]
+    restart: "no"

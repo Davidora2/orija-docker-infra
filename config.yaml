@@ -1,0 +1,26 @@
+broker:
+  provider: paper          # paper | alpaca
+  paper_mode: true         # keep true — live trading is blocked
+  starting_cash: 100000
+  alpaca_base_url: https://paper-api.alpaca.markets
+
+risk:
+  max_position_pct: 0.10
+  max_daily_loss_pct: 0.02
+  max_open_positions: 5
+  min_cash_reserve_pct: 0.20
+  min_confidence: 0.55
+  allow_short: false
+  cooldown_seconds: 60
+
+agent:
+  symbols:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - SPY
+  strategy: hybrid         # momentum | mean_reversion | hybrid
+  poll_interval_seconds: 60
+  lookback_bars: 30
+  dry_run: true            # default: analyze only, do not submit
+  enable_llm: false        # optional OpenAI confidence refinement
