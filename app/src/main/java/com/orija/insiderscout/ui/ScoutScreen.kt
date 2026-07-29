@@ -1,7 +1,5 @@
 package com.orija.insiderscout.ui
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -42,7 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +73,16 @@ fun ScoutScreen(
     onMaxFilingsChange: (Int) -> Unit,
     onScan: () -> Unit,
 ) {
+    var filingTarget by remember { mutableStateOf<Pair<TradeIdea, String>?>(null) }
+    filingTarget?.let { (idea, url) ->
+        Form4DetailScreen(
+            idea = idea,
+            formUrl = url,
+            onBack = { filingTarget = null },
+        )
+        return
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -175,7 +182,11 @@ fun ScoutScreen(
                         visible = true,
                         enter = fadeIn() + slideInVertically { it / 4 },
                     ) {
-                        IdeaCard(index = index, idea = idea)
+                        IdeaCard(
+                            index = index,
+                            idea = idea,
+                            onOpenFiling = { url -> filingTarget = idea to url },
+                        )
                     }
                 }
 
@@ -319,8 +330,11 @@ private fun EmptyStateCard() {
 }
 
 @Composable
-private fun IdeaCard(index: Int, idea: TradeIdea) {
-    val context = LocalContext.current
+private fun IdeaCard(
+    index: Int,
+    idea: TradeIdea,
+    onOpenFiling: (String) -> Unit,
+) {
     var expanded by remember { mutableStateOf(index == 0) }
     val money = remember { NumberFormat.getCurrencyInstance(Locale.US) }
     val sideTone = when (idea.side) {
@@ -399,11 +413,9 @@ private fun IdeaCard(index: Int, idea: TradeIdea) {
                     Spacer(modifier = Modifier.height(12.dp))
                     FactorBars(idea)
                     Spacer(modifier = Modifier.height(12.dp))
-                    idea.formUrls.take(2).forEach { url ->
+                    idea.formUrls.take(3).forEach { url ->
                         TextButton(
-                            onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                            },
+                            onClick = { onOpenFiling(url) },
                             colors = ButtonDefaults.textButtonColors(contentColor = WsGraphite),
                         ) {
                             Text("View Form 4 filing")
