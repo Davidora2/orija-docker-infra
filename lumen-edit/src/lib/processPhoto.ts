@@ -1,10 +1,14 @@
 import { Platform } from 'react-native';
+import { Buffer } from 'buffer';
 import jpeg from 'jpeg-js';
 import { Adjustments, isNeutral } from '../types/adjustments';
 import {
   applyAdjustmentsToImageData,
   resizeRgba,
 } from './imageProcessor';
+
+const g = globalThis as typeof globalThis & { Buffer?: typeof Buffer };
+if (!g.Buffer) g.Buffer = Buffer;
 
 export type ProcessResult = {
   uri: string;
@@ -26,7 +30,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   if (typeof globalThis.btoa === 'function') {
     return globalThis.btoa(binary);
   }
-  // Minimal base64 fallback
   const chars =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let out = '';
@@ -66,13 +69,11 @@ async function readBytes(uri: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-async function processViaCanvas(
+/** Decode any browser-supported image to small RGBA via canvas draw (no full-res getImageData). */
+async function decodeToRgbaWeb(
   sourceUri: string,
-  adjustments: Adjustments,
   maxEdge: number,
-  preview: boolean,
-  quality: number,
-): Promise<ProcessResult> {
+): Promise<{ data: Uint8ClampedArray; width: number; height: number }> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
     el.crossOrigin = 'anonymous';
@@ -81,10 +82,9 @@ async function processViaCanvas(
     el.src = sourceUri;
   });
 
-  let { width, height } = img;
-  const scale = Math.min(1, maxEdge / Math.max(width, height));
-  width = Math.max(1, Math.round(width * scale));
-  height = Math.max(1, Math.round(height * scale));
+  const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+  const width = Math.max(1, Math.round(img.width * scale));
+  const height = Math.max(1, Math.round(img.height * scale));
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -92,20 +92,51 @@ async function processViaCanvas(
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('Canvas unsupported');
   ctx.drawImage(img, 0, 0, width, height);
-
-  if (!isNeutral(adjustments)) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    applyAdjustmentsToImageData(imageData, adjustments, { preview });
-    ctx.putImageData(imageData, 0, 0);
-  }
-
-  const mimeType = 'image/jpeg';
+  const imageData = ctx.getImageData(0, 0, width, height);
+  // Detach from canvas ASAP
+  canvas.width = 0;
+  canvas.height = 0;
   return {
-    uri: canvas.toDataURL(mimeType, quality),
+    data: new Uint8ClampedArray(imageData.data),
     width,
     height,
-    mimeType,
   };
+}
+
+async function rgbaToObjectUrl(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  quality: number,
+): Promise<string> {
+  const encoded = jpeg.encode(
+    { data, width, height },
+    Math.round(quality * 100),
+  );
+  const jpegBytes =
+    encoded.data instanceof Uint8Array
+      ? encoded.data
+      : new Uint8Array(encoded.data);
+
+  if (Platform.OS === 'web' && typeof Blob !== 'undefined') {
+    const copy = new Uint8Array(jpegBytes.byteLength);
+    copy.set(jpegBytes);
+    const blob = new Blob([copy.buffer], { type: 'image/jpeg' });
+    return URL.createObjectURL(blob);
+  }
+
+  if (Platform.OS === 'web') {
+    return `data:image/jpeg;base64,${bytesToBase64(jpegBytes)}`;
+  }
+
+  const FileSystem = await import('expo-file-system/legacy');
+  const dir = FileSystem.cacheDirectory;
+  if (!dir) throw new Error('No cache directory');
+  const outUri = `${dir}lumen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
+  await FileSystem.writeAsStringAsync(outUri, bytesToBase64(jpegBytes), {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return outUri;
 }
 
 async function processViaJpegJs(
@@ -123,10 +154,10 @@ async function processViaJpegJs(
   }
 
   const decoded = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true });
-  let data = new Uint8ClampedArray(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength);
-  // Ensure we own a plain ArrayBuffer-backed copy
-  data = new Uint8ClampedArray(data);
-  let { width, height } = decoded;
+  let width = decoded.width;
+  let height = decoded.height;
+  let data: Uint8ClampedArray = new Uint8ClampedArray(decoded.data.length);
+  data.set(decoded.data);
 
   const resized = resizeRgba(data, width, height, maxEdge);
   data = resized.data;
@@ -139,39 +170,29 @@ async function processViaJpegJs(
     });
   }
 
-  const encoded = jpeg.encode(
-    { data, width, height },
-    Math.round(quality * 100),
-  );
-  const jpegBytes =
-    encoded.data instanceof Uint8Array
-      ? encoded.data
-      : new Uint8Array(encoded.data);
+  const uri = await rgbaToObjectUrl(data, width, height, quality);
+  return { uri, width, height, mimeType: 'image/jpeg' };
+}
 
-  if (Platform.OS === 'web') {
-    const b64 = bytesToBase64(jpegBytes);
-    return {
-      uri: `data:image/jpeg;base64,${b64}`,
-      width,
-      height,
-      mimeType: 'image/jpeg',
-    };
+async function processViaWebDecode(
+  sourceUri: string,
+  adjustments: Adjustments,
+  maxEdge: number,
+  preview: boolean,
+  quality: number,
+): Promise<ProcessResult> {
+  const { data, width, height } = await decodeToRgbaWeb(sourceUri, maxEdge);
+  if (!isNeutral(adjustments)) {
+    applyAdjustmentsToImageData({ data, width, height }, adjustments, {
+      preview,
+    });
   }
-
-  // Write to cache for native Image / share
-  const FileSystem = await import('expo-file-system/legacy');
-  const dir = FileSystem.cacheDirectory;
-  if (!dir) throw new Error('No cache directory');
-  const outUri = `${dir}lumen-${preview ? 'preview' : 'export'}-${Date.now()}.jpg`;
-  await FileSystem.writeAsStringAsync(outUri, bytesToBase64(jpegBytes), {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  return { uri: outUri, width, height, mimeType: 'image/jpeg' };
+  const uri = await rgbaToObjectUrl(data, width, height, quality);
+  return { uri, width, height, mimeType: 'image/jpeg' };
 }
 
 /**
- * Bake Lightroom adjustments into a JPEG.
- * Web uses canvas (any decodeable format). Native uses jpeg-js (JPEG sources).
+ * Bake Lightroom adjustments into a JPEG URI (blob: on web, file: on native).
  */
 export async function processPhoto(
   sourceUri: string,
@@ -182,12 +203,13 @@ export async function processPhoto(
     quality?: number;
   },
 ): Promise<ProcessResult> {
-  const maxEdge = options?.maxEdge ?? (options?.preview ? 960 : 2048);
   const preview = options?.preview ?? false;
-  const quality = options?.quality ?? (preview ? 0.82 : 0.92);
+  // Keep preview tiny to avoid tab OOM; export can be larger
+  const maxEdge =
+    options?.maxEdge ?? (preview ? 720 : Platform.OS === 'web' ? 2048 : 1600);
+  const quality = options?.quality ?? (preview ? 0.78 : 0.9);
 
   if (isNeutral(adjustments) && !preview) {
-    // Export of untouched image can pass through
     return {
       uri: sourceUri,
       width: 0,
@@ -196,19 +218,37 @@ export async function processPhoto(
     };
   }
 
-  if (Platform.OS === 'web' && typeof document !== 'undefined') {
-    try {
-      return await processViaCanvas(
+  // Prefer jpeg-js everywhere for JPEG sources — predictable memory, no GPU filters.
+  // Fall back to canvas decode on web for non-JPEG (e.g. PNG/WebP).
+  try {
+    return await processViaJpegJs(
+      sourceUri,
+      adjustments,
+      maxEdge,
+      preview,
+      quality,
+    );
+  } catch (jpegErr) {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      return processViaWebDecode(
         sourceUri,
         adjustments,
         maxEdge,
         preview,
         quality,
       );
+    }
+    throw jpegErr;
+  }
+}
+
+/** Revoke blob: URLs created for previews */
+export function revokeProcessUri(uri: string | null | undefined): void {
+  if (uri && uri.startsWith('blob:') && typeof URL !== 'undefined') {
+    try {
+      URL.revokeObjectURL(uri);
     } catch {
-      // fall through to jpeg-js for data URLs / odd cases
+      // ignore
     }
   }
-
-  return processViaJpegJs(sourceUri, adjustments, maxEdge, preview, quality);
 }

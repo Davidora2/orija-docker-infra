@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lumen",
     "slug": "lumen-edit",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -36,7 +36,7 @@
         "WRITE_EXTERNAL_STORAGE"
       ],
       "predictiveBackGestureEnabled": false,
-      "versionCode": 3
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/favicon.png",
