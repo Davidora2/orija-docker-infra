@@ -147,8 +147,11 @@ export function applyAdjustmentsToImageData(
     data[i + 2] = clamp255(b * 255);
   }
 
-  // Soft clarity pass using a cheap unsharp on luminance for stronger clarity/texture
-  if (Math.abs(clarity) > 0.05 || Math.abs(texture) > 0.05) {
+  // Soft clarity pass — skip on very large buffers to avoid OOM
+  if (
+    (Math.abs(clarity) > 0.05 || Math.abs(texture) > 0.05) &&
+    width * height <= 2_500_000
+  ) {
     unsharpLuma(data, width, height, clarity * 0.35 + texture * 0.2);
   }
 
@@ -190,22 +193,43 @@ function unsharpLuma(
 /**
  * Fast CSS filter string for live preview approximations (web).
  * Not 1:1 with the pixel processor but responsive while dragging sliders.
+ * Full fidelity is applied in exportEditedImage via applyAdjustmentsToImageData.
  */
 export function adjustmentsToCssFilter(adj: Adjustments): string {
-  const brightness = 1 + adj.exposure * 0.18 + adj.whites / 400 - adj.blacks / 500;
-  const contrast = 1 + adj.contrast / 200 + adj.clarity / 400 + adj.dehaze / 350;
+  const brightness =
+    1 +
+    adj.exposure * 0.2 +
+    adj.whites / 350 -
+    adj.blacks / 450 +
+    adj.shadows / 500 -
+    adj.highlights / 600;
+  const contrast =
+    1 +
+    adj.contrast / 180 +
+    adj.clarity / 320 +
+    adj.dehaze / 280 +
+    adj.texture / 500;
   const saturate =
-    1 + adj.saturation / 100 + adj.vibrance / 140 + adj.dehaze / 300;
-  const hue = adj.temperature * 0.12 + adj.tint * 0.08;
-  const sepia = Math.max(0, adj.temperature) / 400;
+    1 +
+    adj.saturation / 100 +
+    adj.vibrance / 130 +
+    adj.dehaze / 280;
+  const hue = adj.temperature * 0.15 + adj.tint * 0.1;
+  const sepia = Math.max(0, adj.temperature) / 350;
+  const blur = adj.clarity < -20 ? Math.min(1.2, Math.abs(adj.clarity) / 120) : 0;
 
   return [
-    `brightness(${brightness.toFixed(3)})`,
-    `contrast(${contrast.toFixed(3)})`,
-    `saturate(${Math.max(0, saturate).toFixed(3)})`,
+    `brightness(${clampFilter(brightness, 0.35, 2.2).toFixed(3)})`,
+    `contrast(${clampFilter(contrast, 0.4, 2.0).toFixed(3)})`,
+    `saturate(${clampFilter(saturate, 0, 2.5).toFixed(3)})`,
     `hue-rotate(${hue.toFixed(2)}deg)`,
-    sepia > 0.01 ? `sepia(${sepia.toFixed(3)})` : null,
+    sepia > 0.01 ? `sepia(${Math.min(0.45, sepia).toFixed(3)})` : null,
+    blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : null,
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+function clampFilter(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
 }

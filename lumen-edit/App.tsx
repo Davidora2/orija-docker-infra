@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { Asset } from 'expo-asset';
 import {
   useFonts,
   Outfit_400Regular,
@@ -26,6 +27,7 @@ import {
   Fraunces_600SemiBold,
   Fraunces_700Bold,
 } from '@expo-google-fonts/fraunces';
+import demoPhoto from './assets/demo-photo.jpg';
 
 import {
   ADJUSTMENT_META,
@@ -127,6 +129,24 @@ export default function App() {
     setActivePresetId('original');
     setTab('light');
     setScreen('editor');
+  }, []);
+
+  const openDemo = useCallback(async () => {
+    try {
+      const asset = Asset.fromModule(demoPhoto);
+      await asset.downloadAsync();
+      const demoUri = asset.localUri ?? asset.uri;
+      setUri(demoUri);
+      setAdjustments({ ...DEFAULT_ADJUSTMENTS });
+      setActivePresetId('original');
+      setTab('presets');
+      setScreen('editor');
+    } catch (err) {
+      Alert.alert(
+        'Demo unavailable',
+        err instanceof Error ? err.message : 'Could not load demo photo.',
+      );
+    }
   }, []);
 
   const importPreset = useCallback(async () => {
@@ -263,6 +283,7 @@ export default function App() {
           <Home
             onPick={pickPhoto}
             onCamera={takePhoto}
+            onDemo={openDemo}
             onImportPreset={importPreset}
             importedCount={imported.length}
           />
@@ -293,7 +314,7 @@ export default function App() {
         )}
 
         {toast ? (
-          <View style={styles.toast} pointerEvents="none">
+          <View style={styles.toast}>
             <Text style={styles.toastText}>{toast}</Text>
           </View>
         ) : null}
@@ -305,11 +326,13 @@ export default function App() {
 function Home({
   onPick,
   onCamera,
+  onDemo,
   onImportPreset,
   importedCount,
 }: {
   onPick: () => void;
   onCamera: () => void;
+  onDemo: () => void;
   onImportPreset: () => void;
   importedCount: number;
 }) {
@@ -335,6 +358,9 @@ function Home({
         </Pressable>
         <Pressable style={styles.secondaryBtn} onPress={onCamera}>
           <Text style={styles.secondaryBtnText}>Take photo</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryBtn} onPress={onDemo}>
+          <Text style={styles.secondaryBtnText}>Try demo photo</Text>
         </Pressable>
         <Pressable style={styles.ghostBtn} onPress={onImportPreset}>
           <Text style={styles.ghostBtnText}>
@@ -747,6 +773,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.panelBorder,
+    pointerEvents: 'none',
   },
   toastText: {
     color: colors.text,

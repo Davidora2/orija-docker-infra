@@ -28,7 +28,7 @@ export async function exportEditedImage(
   sourceUri: string,
   adjustments: Adjustments,
   quality = 0.92,
-  maxEdge = 4096,
+  maxEdge = 2560,
 ): Promise<ExportResult> {
   if (Platform.OS !== 'web') {
     throw new Error(

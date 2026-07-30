@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   Platform,
@@ -8,11 +8,8 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Adjustments, isNeutral } from '../types/adjustments';
-import {
-  adjustmentsToCssFilter,
-  applyAdjustmentsToImageData,
-} from '../lib/imageProcessor';
+import { Adjustments } from '../types/adjustments';
+import { adjustmentsToCssFilter } from '../lib/imageProcessor';
 import { colors } from '../theme/colors';
 
 type Props = {
@@ -22,72 +19,23 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
+/**
+ * Live preview uses CSS filters for 60fps slider feedback.
+ * Full Lightroom-faithful pixel bake happens on Export only.
+ */
 export function PhotoCanvas({ uri, adjustments, showOriginal, style }: Props) {
-  const [processedUri, setProcessedUri] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fade = useRef(new Animated.Value(0)).current;
-  const gen = useRef(0);
 
   const cssFilter = useMemo(
     () => (showOriginal ? 'none' : adjustmentsToCssFilter(adjustments)),
     [adjustments, showOriginal],
   );
 
-  const renderCanvas = useCallback(async () => {
-    if (Platform.OS !== 'web' || !uri || showOriginal || isNeutral(adjustments)) {
-      setProcessedUri(null);
-      return;
-    }
-    const myGen = ++gen.current;
-    setProcessing(true);
-    try {
-      const img = new window.Image();
-      img.crossOrigin = 'anonymous';
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('preview load failed'));
-        img.src = uri;
-      });
-      if (myGen !== gen.current) return;
-
-      const maxEdge = 1400;
-      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-
-      let canvas = canvasRef.current;
-      if (!canvas) {
-        canvas = document.createElement('canvas');
-        canvasRef.current = canvas;
-      }
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0, w, h);
-      const data = ctx.getImageData(0, 0, w, h);
-      applyAdjustmentsToImageData(data, adjustments);
-      ctx.putImageData(data, 0, 0);
-      if (myGen !== gen.current) return;
-      setProcessedUri(canvas.toDataURL('image/jpeg', 0.88));
-    } catch {
-      if (myGen === gen.current) setProcessedUri(null);
-    } finally {
-      if (myGen === gen.current) setProcessing(false);
-    }
-  }, [uri, adjustments, showOriginal]);
-
-  useEffect(() => {
-    const t = setTimeout(renderCanvas, 280);
-    return () => clearTimeout(t);
-  }, [renderCanvas]);
-
   useEffect(() => {
     Animated.timing(fade, {
       toValue: uri ? 1 : 0,
       duration: 420,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [uri, fade]);
 
@@ -95,28 +43,60 @@ export function PhotoCanvas({ uri, adjustments, showOriginal, style }: Props) {
     return <View style={[styles.empty, style]} />;
   }
 
-  const useProcessed =
-    Boolean(processedUri) && !showOriginal && Platform.OS === 'web';
-
   const imageStyle: StyleProp<ViewStyle> = [
     styles.image,
-    Platform.OS === 'web' && !useProcessed && !showOriginal
-      ? ({ filter: cssFilter } as ViewStyle)
-      : null,
+    Platform.OS === 'web' ? ({ filter: cssFilter } as ViewStyle) : null,
   ];
 
   return (
     <View style={[styles.wrap, style]}>
       <Animated.View style={[styles.imageWrap, { opacity: fade }]}>
         <Image
-          source={{ uri: useProcessed ? processedUri! : uri }}
+          source={{ uri }}
           style={imageStyle as object}
           contentFit="contain"
-          transition={200}
+          transition={180}
         />
+        {/* Native approximation overlays when CSS filter is unavailable */}
+        {Platform.OS !== 'web' && !showOriginal ? (
+          <NativeApproxOverlay adjustments={adjustments} />
+        ) : null}
       </Animated.View>
-      {processing && !useProcessed ? <View style={styles.processingDot} /> : null}
     </View>
+  );
+}
+
+function NativeApproxOverlay({ adjustments }: { adjustments: Adjustments }) {
+  const brightness = Math.max(0, Math.min(0.45, Math.abs(adjustments.exposure) * 0.08));
+  const warm = Math.max(0, adjustments.temperature) / 100;
+  const cool = Math.max(0, -adjustments.temperature) / 100;
+  return (
+    <>
+      {adjustments.exposure > 0.05 ? (
+        <View
+          pointerEvents="none"
+          style={[styles.overlay, { backgroundColor: '#fff', opacity: brightness }]}
+        />
+      ) : null}
+      {adjustments.exposure < -0.05 ? (
+        <View
+          pointerEvents="none"
+          style={[styles.overlay, { backgroundColor: '#000', opacity: brightness }]}
+        />
+      ) : null}
+      {warm > 0.05 ? (
+        <View
+          pointerEvents="none"
+          style={[styles.overlay, { backgroundColor: '#E8A14A', opacity: warm * 0.18 }]}
+        />
+      ) : null}
+      {cool > 0.05 ? (
+        <View
+          pointerEvents="none"
+          style={[styles.overlay, { backgroundColor: '#4A7A9C', opacity: cool * 0.18 }]}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -138,14 +118,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  processingDot: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
-    opacity: 0.8,
+  overlay: {
+    ...StyleSheet.absoluteFill,
   },
 });
