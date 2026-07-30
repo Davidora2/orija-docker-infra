@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { Adjustments } from '../types/adjustments';
-import { applyAdjustmentsToImageData } from './imageProcessor';
+import { processPhoto } from './processPhoto';
 
 export type ExportResult = {
   uri: string;
@@ -9,20 +9,8 @@ export type ExportResult = {
   mimeType: string;
 };
 
-function loadImage(uri: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Failed to load image for export'));
-    img.src = uri;
-  });
-}
-
 /**
- * Process and export an edited photo as a JPEG data URL / blob URI.
- * Full-fidelity path for web; native callers should prefer this when
- * Platform.OS === 'web', otherwise fall back to sharing the preview.
+ * Process and export an edited photo as JPEG (web data URL or native file URI).
  */
 export async function exportEditedImage(
   sourceUri: string,
@@ -30,32 +18,11 @@ export async function exportEditedImage(
   quality = 0.92,
   maxEdge = 2560,
 ): Promise<ExportResult> {
-  if (Platform.OS !== 'web') {
-    throw new Error(
-      'Full pixel export runs on web. On device, use Expo Go web or a dev build with canvas.',
-    );
-  }
-
-  const img = await loadImage(sourceUri);
-  let { width, height } = img;
-  const scale = Math.min(1, maxEdge / Math.max(width, height));
-  width = Math.round(width * scale);
-  height = Math.round(height * scale);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('Canvas unsupported');
-
-  ctx.drawImage(img, 0, 0, width, height);
-  const imageData = ctx.getImageData(0, 0, width, height);
-  applyAdjustmentsToImageData(imageData, adjustments);
-  ctx.putImageData(imageData, 0, 0);
-
-  const mimeType = 'image/jpeg';
-  const dataUrl = canvas.toDataURL(mimeType, quality);
-  return { uri: dataUrl, width, height, mimeType };
+  return processPhoto(sourceUri, adjustments, {
+    maxEdge,
+    preview: false,
+    quality,
+  });
 }
 
 export function downloadDataUrl(dataUrl: string, filename: string): void {
@@ -74,11 +41,19 @@ export async function shareOrSave(
   filename: string,
 ): Promise<'downloaded' | 'shared' | 'saved'> {
   if (Platform.OS === 'web') {
-    downloadDataUrl(uri, filename);
+    if (uri.startsWith('data:')) {
+      downloadDataUrl(uri, filename);
+      return 'downloaded';
+    }
+    // http(s) / blob — fetch then download
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    downloadDataUrl(objectUrl, filename);
+    URL.revokeObjectURL(objectUrl);
     return 'downloaded';
   }
 
-  // Native: share the file URI (preview/original path)
   const Sharing = await import('expo-sharing');
   const available = await Sharing.isAvailableAsync();
   if (available) {

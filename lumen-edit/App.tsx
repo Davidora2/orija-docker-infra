@@ -34,7 +34,6 @@ import {
   Adjustments,
   DEFAULT_ADJUSTMENTS,
   Preset,
-  isNeutral,
 } from './src/types/adjustments';
 import { BUILTIN_PRESETS } from './src/lib/presets';
 import { exportEditedImage, shareOrSave } from './src/lib/exportImage';
@@ -217,19 +216,10 @@ export default function App() {
     if (!uri) return;
     setExporting(true);
     try {
-      if (Platform.OS === 'web') {
-        const result = await exportEditedImage(uri, adjustments);
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        await shareOrSave(result.uri, `lumen-${stamp}.jpg`);
-        flash('Exported JPEG');
-      } else if (isNeutral(adjustments)) {
-        await shareOrSave(uri, 'lumen-export.jpg');
-        flash('Shared original');
-      } else {
-        // Native without full canvas: share source + note
-        await shareOrSave(uri, 'lumen-export.jpg');
-        flash('Shared (open in web for full bake)');
-      }
+      const result = await exportEditedImage(uri, adjustments);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      await shareOrSave(result.uri, `lumen-${stamp}.jpg`);
+      flash(Platform.OS === 'web' ? 'Exported JPEG' : 'Exported');
     } catch (err) {
       Alert.alert(
         'Export failed',
