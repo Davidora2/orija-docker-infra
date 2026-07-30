@@ -16,7 +16,7 @@ On GitHub: open this branch → `releases` → `Lumen-release.apk` → Download.
 
 - **Library / capture** — open photos from your camera roll or take a new shot
 - **Lightroom-style adjustments** — Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Temp, Tint, Vibrance, Saturation, Clarity, Dehaze, Texture, Grain
-- **Presets** — curated built-ins plus **import Adobe Lightroom / Camera Raw XMP** (and `.lrtemplate`) files
+- **Presets** — curated built-ins plus **import Adobe Lightroom / Camera Raw XMP** (and `.lrtemplate`) files, or **DNG files with embedded develop settings**
 - **Before / after** — hold **Before** to compare
 - **Export** — bake adjustments to JPEG (full fidelity on web; share / save on Android)
 
@@ -47,11 +47,13 @@ cp app/build/outputs/apk/release/app-release.apk ../../releases/Lumen-release.ap
 
 ## Lightroom presets
 
-1. In Lightroom, export a Develop preset as **`.xmp`**
+1. In Lightroom, export a Develop preset as **`.xmp`**, **or** use a **`.dng`** that has develop settings written into the file (Metadata → Save Metadata to File / export DNG)
 2. In Lumen → **Presets** → **Import** (or from the home screen)
 3. Adjustments map from Camera Raw settings (`crs:Exposure2012`, `crs:Contrast2012`, temperature, vibrance, etc.)
 
-A sample preset lives at `assets/presets/sample-golden-film.xmp`.
+Samples:
+- `assets/presets/sample-golden-film.xmp`
+- `assets/presets/sample-settings.dng` (embedded XMP / TIFF tag 700)
 
 ## Smoke-test the XMP parser
 

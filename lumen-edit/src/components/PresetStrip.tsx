@@ -47,7 +47,7 @@ export function PresetStrip({ presets, activeId, onSelect, onImport }: Props) {
             <Text style={styles.importPlus}>+</Text>
           </View>
           <Text style={styles.name} numberOfLines={1}>
-            Import
+            .xmp/.dng
           </Text>
         </Pressable>
 

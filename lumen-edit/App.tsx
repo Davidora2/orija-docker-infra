@@ -37,11 +37,6 @@ import {
   isNeutral,
 } from './src/types/adjustments';
 import { BUILTIN_PRESETS } from './src/lib/presets';
-import {
-  looksLikeLightroomPreset,
-  parseLrTemplate,
-  xmpToPreset,
-} from './src/lib/xmpParser';
 import { exportEditedImage, shareOrSave } from './src/lib/exportImage';
 import {
   addImportedPreset,
@@ -52,6 +47,7 @@ import { PhotoCanvas } from './src/components/PhotoCanvas';
 import { AdjustmentSlider } from './src/components/AdjustmentSlider';
 import { PresetStrip } from './src/components/PresetStrip';
 import { colors } from './src/theme/colors';
+import { importPresetFromBytes } from './src/lib/dngPreset';
 
 type Tab = 'light' | 'color' | 'effects' | 'presets';
 type Screen = 'home' | 'editor';
@@ -154,6 +150,7 @@ export default function App() {
       const result = await DocumentPicker.getDocumentAsync({
         type: [
           'application/octet-stream',
+          'image/*',
           'text/xml',
           'application/xml',
           'text/plain',
@@ -164,52 +161,35 @@ export default function App() {
       });
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
-      const name = asset.name ?? 'preset.xmp';
+      const name = asset.name ?? 'preset.dng';
 
-      let text = '';
+      let bytes: Uint8Array;
       if (Platform.OS === 'web' && asset.file) {
-        text = await asset.file.text();
+        bytes = new Uint8Array(await asset.file.arrayBuffer());
       } else {
         const res = await fetch(asset.uri);
-        text = await res.text();
+        bytes = new Uint8Array(await res.arrayBuffer());
       }
 
-      if (!looksLikeLightroomPreset(text) && !/\.xmp$/i.test(name)) {
-        // Try lrtemplate lua table
-        const lr = parseLrTemplate(text);
-        if (!lr) {
-          Alert.alert(
-            'Unsupported file',
-            'Drop a Lightroom .xmp or .lrtemplate preset file.',
-          );
-          return;
-        }
-        const preset: Preset = {
-          id: `imported-${Date.now()}`,
-          name: lr.name,
-          source: 'imported',
-          adjustments: lr.adjustments,
-          rawXmp: text,
-        };
-        const next = await addImportedPreset(preset);
-        setImported(next);
-        setAdjustments({ ...lr.adjustments });
-        setActivePresetId(preset.id);
-        setTab('presets');
-        flash(`Imported “${preset.name}”`);
+      const importedResult = importPresetFromBytes(bytes, name);
+      if (!importedResult.ok) {
+        Alert.alert('Unsupported file', importedResult.error);
         return;
       }
 
-      const preset = xmpToPreset(text);
-      if (/\.xmp$/i.test(name) && preset.name === 'Imported Preset') {
-        preset.name = name.replace(/\.xmp$/i, '');
-      }
+      const preset = importedResult.preset;
       const next = await addImportedPreset(preset);
       setImported(next);
       setAdjustments({ ...preset.adjustments });
       setActivePresetId(preset.id);
       setTab('presets');
-      flash(`Imported “${preset.name}”`);
+      const via =
+        importedResult.source === 'dng'
+          ? ' from DNG'
+          : importedResult.source === 'lrtemplate'
+            ? ' from template'
+            : '';
+      flash(`Imported “${preset.name}”${via}`);
     } catch (err) {
       Alert.alert(
         'Import failed',
@@ -364,14 +344,14 @@ function Home({
         </Pressable>
         <Pressable style={styles.ghostBtn} onPress={onImportPreset}>
           <Text style={styles.ghostBtnText}>
-            Import .xmp preset
+            Import .xmp / .dng preset
             {importedCount > 0 ? ` · ${importedCount} saved` : ''}
           </Text>
         </Pressable>
       </View>
 
       <Text style={styles.homeFoot}>
-        Compatible with Adobe Lightroom / Camera Raw XMP presets
+        Compatible with Adobe Lightroom XMP presets and DNG develop settings
       </Text>
     </View>
   );
@@ -515,8 +495,9 @@ function Editor({
               </ScrollView>
             ) : (
               <Text style={styles.presetHint}>
-                Import Adobe Lightroom .xmp presets — adjustments map to Exposure,
-                Contrast, Highlights, Shadows, Temp, Tint, Vibrance, and more.
+                Import Adobe Lightroom .xmp presets or .dng files with embedded
+                develop settings — Exposure, Contrast, Highlights, Shadows, Temp,
+                Tint, Vibrance, and more.
               </Text>
             )}
           </View>
