@@ -1,0 +1,18 @@
+export const colors = {
+  bg: '#0B0B0D',
+  bgElevated: '#121215',
+  panel: '#17171B',
+  panelBorder: 'rgba(255,255,255,0.08)',
+  hairline: 'rgba(255,255,255,0.06)',
+  text: '#F4F1EA',
+  textMuted: 'rgba(244,241,234,0.55)',
+  textDim: 'rgba(244,241,234,0.35)',
+  accent: '#E4A14A',
+  accentSoft: 'rgba(228,161,74,0.18)',
+  accentText: '#1A1208',
+  danger: '#E5736A',
+  success: '#7CB89A',
+  sliderTrack: 'rgba(255,255,255,0.12)',
+  sliderFill: '#E4A14A',
+  canvas: '#050506',
+};

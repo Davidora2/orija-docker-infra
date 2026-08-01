@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Lumen",
+    "slug": "lumen-edit",
+    "version": "1.2.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "lumen",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0B0D"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.lumen.edit",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Lumen needs photo access to edit and export images.",
+        "NSCameraUsageDescription": "Lumen needs camera access to capture photos for editing.",
+        "NSPhotoLibraryAddUsageDescription": "Lumen saves exported photos to your library."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0D",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "app.lumen.edit",
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 4
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Lumen to access your photos for editing.",
+          "cameraPermission": "Allow Lumen to take photos for editing."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Lumen to save exported photos.",
+          "savePhotosPermission": "Allow Lumen to save exported photos.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ]
+  }
+}
