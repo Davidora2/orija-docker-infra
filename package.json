@@ -1,0 +1,13 @@
+{
+  "name": "creatomatch",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir apps/web dev",
+    "build": "pnpm --dir apps/web build",
+    "start": "pnpm --dir apps/web start",
+    "lint": "pnpm --dir apps/web lint",
+    "db:seed": "pnpm --dir apps/web db:seed",
+    "db:reset": "pnpm --dir apps/web db:reset",
+    "db:push": "pnpm --dir apps/web db:push"
+  }
+}
