@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Orija Insider Scout</string>
-    <string name="disclaimer">Educational research only — not investment advice. Uses public SEC Form 4 filings after they are filed. Past patterns do not predict future results.</string>
+    <string name="disclaimer">Educational research only — not investment advice. Uses public government disclosures after they are filed. Past patterns do not predict future results.</string>
 </resources>

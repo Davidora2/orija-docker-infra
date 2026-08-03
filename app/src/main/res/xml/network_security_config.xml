@@ -4,5 +4,15 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">sec.gov</domain>
         <domain includeSubdomains="true">www.sec.gov</domain>
+        <domain includeSubdomains="true">congressinfor-production.up.railway.app</domain>
+        <domain includeSubdomains="true">members-api.parliament.uk</domain>
+        <domain includeSubdomains="true">api.openparliament.ca</domain>
+        <domain includeSubdomains="true">openparliament.ca</domain>
+        <domain includeSubdomains="true">query1.finance.yahoo.com</domain>
+        <domain includeSubdomains="true">query2.finance.yahoo.com</domain>
+        <domain includeSubdomains="true">disclosures-clerk.house.gov</domain>
+        <domain includeSubdomains="true">efdsearch.senate.gov</domain>
+        <domain includeSubdomains="true">ciec-ccie.parl.gc.ca</domain>
+        <domain includeSubdomains="true">unitedstates.github.io</domain>
     </domain-config>
 </network-security-config>

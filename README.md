@@ -1,10 +1,10 @@
 # Orija Insider Scout (Android)
 
-Scan **public SEC Form 4** insider filings on your phone, rank open-market buying clusters, and get research-only **buy / review / sell windows**.
+Track **serving politicians** in the **US, UK, and Canada** (public trades + private-company filings) and **SEC Form 4** corporate insiders — with ranked ideas and buy/sell windows.
 
 ## Download the APK
 
-**[`releases/InsiderScout-debug.apk`](releases/InsiderScout-debug.apk)**
+**[`releases/InsiderScout-debug.apk`](releases/InsiderScout-debug.apk)** — **v1.3.0**
 
 On GitHub: open this branch → **`releases`** → **`InsiderScout-debug.apk`** → Download.
 
@@ -13,23 +13,27 @@ On GitHub: open this branch → **`releases`** → **`InsiderScout-debug.apk`** 
 
 ## Install
 
-1. On your phone, allow **Install unknown apps** for your browser/Files
-2. Open the APK and install
-3. Launch **Orija Insider Scout** and tap **Rescan EDGAR** (needs internet)
+1. Allow **Install unknown apps**
+2. Open the APK
+3. Open the **Politicians** tab (needs internet)
 
-## What it does
+## Politicians (US / UK / Canada)
 
-1. Pulls recent Form 4 filings from SEC EDGAR
-2. Keeps **open-market purchases/sales** (codes `P` / `S`)
-3. Scores cluster buying, role (CEO/CFO/officer/director), size, recency, and sell pressure
-4. Ranks ideas (`A`–`F`) with:
-   - **Buy window** after the filing is public
-   - **Review date**
-   - **Sell / exit window** (often ~1–3 months for stronger signals)
+| Country | What you get |
+|---|---|
+| **United States** | Live House & Senate STOCK Act Periodic Transaction Reports (public securities). Open a trade for a Quiver-style price chart + % since trade/disclosure. |
+| **United Kingdom** | Register of Members’ Financial Interests — **directorships, shareholdings, partnerships, paid roles in private companies**. |
+| **Canada** | Serving MPs via OpenParliament, with deep links to the **Conflict of Interest & Ethics Commissioner** public registry (private-company assets). Canada has no STOCK Act-style trade API. |
+
+Tap a disclosure → politician header, filing facts, chart when a public ticker exists, and **Open official filing / registry**.
+
+## Corporate Insiders (SEC Form 4)
+
+Second tab: rank recent open-market Form 4 buys/sells with buy/review/sell windows and an in-app Form 4 viewer.
 
 ## Important
 
-**Not investment advice.** Public EDGAR research only. Past insider patterns do not predict future results.
+**Not investment advice.** Public disclosures only. Filings can be delayed or incomplete. Private-company interests usually have **no public price chart**.
 
 ## Build from source
 
@@ -40,12 +44,3 @@ export ANDROID_HOME=/path/to/android-sdk
 ```
 
 Requirements: JDK 17+, Android SDK platform 34, build-tools 34.
-
-## Optional Python CLI
-
-A Python research CLI/API remains under `sec_insider_scout/` for desktop use:
-
-```bash
-pip install -e ".[dev]"
-insider-scout scan
-```
