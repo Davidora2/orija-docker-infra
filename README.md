@@ -20,7 +20,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | **Study Path** | Blueprint-weighted topics (ECG 30%, ETT 18%, foundational 25%, …) |
 | **Practice** | Single-answer + multi-select quizzes with explanations |
 | **Flashcards** | CSCT Exam Guideline numbers and high-yield facts |
-| **Rhythms** | Checklist mapped to the CSCT ECG Analysis Study Guide |
+| **Rhythms** | Full CSCT ECG Analysis Study Guide identify-list + systematic read steps |
+| **Reading List** | Official refs for ECG, Holter, ETT, and EP (Garcia, Huff, ACSM, AHA, Sweesy) |
 | **Exam Intel** | Sitting dates, fees, eligibility — refresh from CSCT |
 | **Resources** | Official PDFs and pages (blueprint, candidate guide, NOCP, …) |
 

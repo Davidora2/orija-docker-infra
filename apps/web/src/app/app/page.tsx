@@ -79,6 +79,7 @@ export default function DashboardPage() {
         <PrimaryLink href="/app/quiz/ecg">Drill ECG quiz (30%)</PrimaryLink>
         <GhostLink href="/app/flashcards?deck=exam-guidelines">Guideline flashcards</GhostLink>
         <GhostLink href="/app/rhythms">Rhythm checklist</GhostLink>
+        <GhostLink href="/app/reading">Reading list</GhostLink>
       </div>
     </div>
   );

@@ -377,6 +377,86 @@ export const questions: Question[] = [
     explanation:
       "Output without capture means the spike does not depolarize myocardium (lead/threshold/metabolic issues, etc.).",
   },
+  {
+    id: "q31",
+    topicId: "ecg",
+    type: "single",
+    stem: "Lown–Ganong–Levine (LGL) pattern is best described as:",
+    choices: [
+      "Short PR with delta wave and wide QRS",
+      "Short PR with normal QRS (no delta wave)",
+      "Long PR with dropped beats",
+      "Right bundle branch block only",
+    ],
+    correct: [1],
+    explanation:
+      "LGL is on the CSCT ECG Analysis Study Guide pre-excitation list: short PR without a delta wave (unlike WPW).",
+    source: "CSCT ECG Analysis Study Guide",
+  },
+  {
+    id: "q32",
+    topicId: "ecg",
+    type: "single",
+    stem: "Wellen’s syndrome is concerning because it often indicates:",
+    choices: [
+      "Benign early repolarization in athletes",
+      "Critical proximal LAD stenosis pattern after anginal pain",
+      "Hyperkalemia until proven otherwise",
+      "Isolated right atrial enlargement",
+    ],
+    correct: [1],
+    explanation:
+      "Deep inverted or biphasic precordial T waves (esp. V2–V3) after resolved angina suggest critical proximal LAD disease.",
+    source: "CSCT ECG Analysis Study Guide",
+  },
+  {
+    id: "q33",
+    topicId: "ecg",
+    type: "multi",
+    stem: "Which belong on the CSCT ECG Analysis Study Guide “Blocks” identify list? (choose all that apply)",
+    choices: [
+      "Left anterior fascicular block",
+      "High grade AV block (ventricular standstill)",
+      "Trifascicular block",
+      "Osborne waves of hypothermia",
+    ],
+    correct: [0, 1, 2],
+    explanation:
+      "LAFB, high-grade AV block, and trifascicular block are listed under Blocks. Osborne waves are under Miscellaneous (hypothermia).",
+    source: "CSCT ECG Analysis Study Guide",
+  },
+  {
+    id: "q34",
+    topicId: "ambulatory",
+    type: "single",
+    stem: "Which resource is on the CSCT recommended reading list specifically for ambulatory ECG?",
+    choices: [
+      "ACSM’s Guidelines for Exercise Testing and Prescription only",
+      "ACC/AHA Guidelines for Ambulatory Electrocardiography (executive summary)",
+      "EP: Getting Started only",
+      "Romhilt–Estes monograph exclusively",
+    ],
+    correct: [1],
+    explanation:
+      "CSCT reading list pairs Huff’s ECG Workout with the ACC/AHA ambulatory electrocardiography guidelines for Holter content.",
+    source: "CSCT Reading List",
+  },
+  {
+    id: "q35",
+    topicId: "ett",
+    type: "multi",
+    stem: "CSCT recommended ETT reading includes: (choose all that apply)",
+    choices: [
+      "ACSM’s Guidelines for Exercise Testing and Prescription",
+      "Pocket Guide to Stress Testing (Chung)",
+      "AHA Exercise Standards for Testing and Training",
+      "EP: Getting Started as the primary ETT text",
+    ],
+    correct: [0, 1, 2],
+    explanation:
+      "ACSM, Chung’s pocket guide, and AHA exercise standards are the ETT reading-list items. Sweesy is listed under EP.",
+    source: "CSCT Reading List",
+  },
 ];
 
 export function questionsForTopic(topicId: string): Question[] {

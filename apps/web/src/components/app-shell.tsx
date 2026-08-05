@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  BookMarked,
   BookOpen,
   CalendarDays,
   ExternalLink,
@@ -22,6 +23,7 @@ const nav = [
   { href: "/app/quiz", label: "Practice", icon: Activity },
   { href: "/app/flashcards", label: "Flashcards", icon: Layers },
   { href: "/app/rhythms", label: "Rhythms", icon: Library },
+  { href: "/app/reading", label: "Reading List", icon: BookMarked },
   { href: "/app/exam-info", label: "Exam Intel", icon: CalendarDays },
   { href: "/app/resources", label: "Resources", icon: ExternalLink },
 ];

@@ -82,7 +82,7 @@ export const examMeta: ExamMeta = {
     {
       label: "ECG Analysis Study Guide",
       href: "https://www.csct.ca/ECG-Analysis-Study-Guide",
-      note: "Revised July 2026",
+      note: "Full identify checklist used in TraceReady Rhythms",
     },
     {
       label: "Exam Guidelines",
@@ -92,6 +92,7 @@ export const examMeta: ExamMeta = {
     {
       label: "Reading List",
       href: "https://www.csct.ca/reading-list",
+      note: "Garcia, Huff, ACSM, AHA, Sweesy, and related refs",
     },
     {
       label: "Accredited Programs",

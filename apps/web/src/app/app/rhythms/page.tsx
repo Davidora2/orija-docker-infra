@@ -1,3 +1,4 @@
+import { EcgAnalysisSteps } from "@/components/ecg-analysis-steps";
 import { RhythmChecklist } from "@/components/rhythm-checklist";
 import { SectionTitle } from "@/components/ui";
 
@@ -7,8 +8,9 @@ export default function RhythmsPage() {
       <SectionTitle
         eyebrow="ECG analysis"
         title="Rhythm & pattern checklist"
-        subtitle="Mapped to the CSCT ECG Analysis Study Guide categories — mark each topic as you can identify it cold."
+        subtitle="Complete identify-list from the CSCT ECG Analysis Study Guide — mark each topic as you can identify it cold."
       />
+      <EcgAnalysisSteps />
       <RhythmChecklist />
     </div>
   );
