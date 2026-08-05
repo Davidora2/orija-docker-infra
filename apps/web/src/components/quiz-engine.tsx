@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Question } from "@/data/questions";
 import { saveQuizScore } from "@/lib/progress";
 import { cn, shuffle } from "@/lib/utils";
@@ -22,13 +22,26 @@ export function QuizEngine({
   title: string;
   items: Question[];
 }) {
-  const questions = useMemo(() => shuffle(items), [items]);
+  const [questions, setQuestions] = useState<Question[]>(items);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
   const [checked, setChecked] = useState(false);
   const [done, setDone] = useState(false);
   const [finalCorrect, setFinalCorrect] = useState(0);
+  const [session, setSession] = useState(0);
   const scoreRef = useRef(0);
+
+  // Shuffle only on the client after mount / new session to avoid SSR mismatch
+  // and to keep selection state stable while answering.
+  useEffect(() => {
+    scoreRef.current = 0;
+    setQuestions(shuffle(items));
+    setIndex(0);
+    setSelected([]);
+    setChecked(false);
+    setDone(false);
+    setFinalCorrect(0);
+  }, [items, session]);
 
   if (questions.length === 0) {
     return <Panel>No questions for this topic yet.</Panel>;
@@ -37,6 +50,7 @@ export function QuizEngine({
   const q = questions[index];
   const isMulti = q.type === "multi";
   const isLast = index + 1 >= questions.length;
+  const canCheck = selected.length > 0 && !checked;
 
   function toggleChoice(i: number) {
     if (checked) return;
@@ -50,7 +64,7 @@ export function QuizEngine({
   }
 
   function checkAnswer() {
-    if (selected.length === 0 || checked) return;
+    if (!canCheck) return;
     if (isCorrect(q, selected)) {
       scoreRef.current += 1;
     }
@@ -87,14 +101,7 @@ export function QuizEngine({
         </p>
         <button
           type="button"
-          onClick={() => {
-            scoreRef.current = 0;
-            setIndex(0);
-            setSelected([]);
-            setChecked(false);
-            setFinalCorrect(0);
-            setDone(false);
-          }}
+          onClick={() => setSession((s) => s + 1)}
           className="mt-6 rounded-xl bg-navy px-4 py-2.5 text-sm font-semibold text-white"
         >
           Retry shuffled set
@@ -113,18 +120,19 @@ export function QuizEngine({
       </div>
       <Panel>
         <h2 className="font-display text-2xl text-navy">{q.stem}</h2>
-        <div className="mt-5 space-y-2">
+        <div className="mt-5 space-y-2" role="group" aria-label="Answer choices">
           {q.choices.map((choice, i) => {
             const isSelected = selected.includes(i);
             const isCorrectChoice = q.correct.includes(i);
             return (
               <button
-                key={choice}
+                key={`${q.id}-${i}`}
                 type="button"
                 onClick={() => toggleChoice(i)}
+                aria-pressed={isSelected}
                 className={cn(
                   "w-full rounded-xl border px-4 py-3 text-left text-sm transition",
-                  !checked && isSelected && "border-teal bg-mist",
+                  !checked && isSelected && "border-teal bg-mist ring-2 ring-teal/30",
                   !checked && !isSelected && "border-[var(--line)] hover:border-teal/50",
                   checked && isCorrectChoice && "border-teal-deep bg-mist",
                   checked && isSelected && !isCorrectChoice && "border-coral bg-[#fceee6]",
@@ -150,8 +158,11 @@ export function QuizEngine({
             <button
               type="button"
               onClick={checkAnswer}
-              disabled={selected.length === 0}
-              className="rounded-xl bg-coral px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              disabled={!canCheck}
+              className={cn(
+                "rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition",
+                canCheck ? "bg-teal hover:bg-teal-deep" : "cursor-not-allowed bg-navy/25",
+              )}
             >
               Check
             </button>

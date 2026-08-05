@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Flashcard } from "@/data/flashcards";
 import { bumpFlashcard } from "@/lib/progress";
 import { cn, shuffle } from "@/lib/utils";
@@ -15,9 +15,15 @@ export function FlashcardDeck({
   title: string;
   cards: Flashcard[];
 }) {
-  const deck = useMemo(() => shuffle(cards), [cards]);
+  const [deck, setDeck] = useState<Flashcard[]>(cards);
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
+
+  useEffect(() => {
+    setDeck(shuffle(cards));
+    setIndex(0);
+    setFlipped(false);
+  }, [cards, deckId]);
 
   if (deck.length === 0) {
     return <Panel>No cards in this deck.</Panel>;
