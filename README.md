@@ -12,6 +12,17 @@ Personal operating system product planning package:
 - [User Stories](./docs/life-os/USER_STORIES.md)  
 - [Product Brief](./docs/life-os/PRODUCT_BRIEF.md)  
 
+Interactive prototype:
+
+```bash
+pnpm install
+pnpm life-os:dev
+```
+
+Open [http://localhost:3001](http://localhost:3001). The prototype demonstrates
+idea capture → evaluation → project creation → capacity trade-off → scheduling →
+Daily Command Centre → Weekly CEO Review.
+
 ---
 
 # CreatoMatch

@@ -2,6 +2,9 @@
   "name": "creatomatch",
   "private": true,
   "scripts": {
+    "life-os:dev": "pnpm --dir apps/life-os dev",
+    "life-os:build": "pnpm --dir apps/life-os build",
+    "life-os:lint": "pnpm --dir apps/life-os lint",
     "dev": "pnpm --dir apps/web dev",
     "build": "pnpm --dir apps/web build",
     "start": "pnpm --dir apps/web start",
