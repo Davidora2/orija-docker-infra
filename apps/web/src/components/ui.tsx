@@ -1,38 +1,41 @@
-import { STATUS_COLORS } from "@/lib/constants";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { statusLabel } from "@/lib/format";
 
-export function Badge({
-  status,
-  className,
+export function SectionTitle({
+  eyebrow,
+  title,
+  subtitle,
 }: {
-  status: string;
-  className?: string;
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-        STATUS_COLORS[status] || "bg-slate-100 text-slate-700",
-        className,
-      )}
-    >
-      {statusLabel(status)}
-    </span>
+    <div className="max-w-2xl">
+      {eyebrow ? (
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-deep">
+          {eyebrow}
+        </p>
+      ) : null}
+      <h1 className="mt-2 font-display text-3xl tracking-tight text-navy sm:text-4xl">
+        {title}
+      </h1>
+      {subtitle ? <p className="mt-2 text-base text-navy/65">{subtitle}</p> : null}
+    </div>
   );
 }
 
-export function Card({
+export function Panel({
   children,
   className,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm",
+        "rounded-2xl border border-[var(--line)] bg-white/80 p-5 shadow-[0_1px_0_rgba(7,24,33,0.04)]",
         className,
       )}
     >
@@ -41,155 +44,73 @@ export function Card({
   );
 }
 
-export function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <Card>
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-        {value}
-      </p>
-      {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
-    </Card>
-  );
-}
-
-export function Button({
+export function PrimaryLink({
+  href,
   children,
   className,
-  variant = "primary",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
 }) {
-  const styles = {
-    primary: "bg-violet-600 text-white hover:bg-violet-500 shadow-sm",
-    secondary:
-      "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50",
-    ghost: "bg-transparent text-slate-700 hover:bg-slate-100",
-    danger: "bg-rose-600 text-white hover:bg-rose-500",
-  };
   return (
-    <button
+    <Link
+      href={href}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition disabled:opacity-50",
-        styles[variant],
+        "inline-flex items-center justify-center rounded-xl bg-teal px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-deep",
         className,
       )}
-      {...props}
     >
       {children}
-    </button>
+    </Link>
   );
 }
 
-export function Input(
-  props: React.InputHTMLAttributes<HTMLInputElement> & { label?: string },
-) {
-  const { label, className, id, ...rest } = props;
-  return (
-    <label className="block space-y-1.5">
-      {label ? (
-        <span className="text-sm font-medium text-slate-700">{label}</span>
-      ) : null}
-      <input
-        id={id}
-        className={cn(
-          "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-violet-500/30 placeholder:text-slate-400 focus:ring-2",
-          className,
-        )}
-        {...rest}
-      />
-    </label>
-  );
-}
-
-export function Textarea(
-  props: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: string },
-) {
-  const { label, className, id, ...rest } = props;
-  return (
-    <label className="block space-y-1.5">
-      {label ? (
-        <span className="text-sm font-medium text-slate-700">{label}</span>
-      ) : null}
-      <textarea
-        id={id}
-        className={cn(
-          "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-violet-500/30 placeholder:text-slate-400 focus:ring-2",
-          className,
-        )}
-        {...rest}
-      />
-    </label>
-  );
-}
-
-export function Select(
-  props: React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string },
-) {
-  const { label, className, id, children, ...rest } = props;
-  return (
-    <label className="block space-y-1.5">
-      {label ? (
-        <span className="text-sm font-medium text-slate-700">{label}</span>
-      ) : null}
-      <select
-        id={id}
-        className={cn(
-          "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-violet-500/30 focus:ring-2",
-          className,
-        )}
-        {...rest}
-      >
-        {children}
-      </select>
-    </label>
-  );
-}
-
-export function EmptyState({
-  title,
-  description,
+export function GhostLink({
+  href,
+  children,
+  className,
 }: {
-  title: string;
-  description: string;
+  href: string;
+  children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
-      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-      <p className="mt-1 text-sm text-slate-500">{description}</p>
-    </div>
+    <Link
+      href={href}
+      className={cn(
+        "inline-flex items-center justify-center rounded-xl border border-navy/15 bg-white/50 px-4 py-2.5 text-sm font-semibold text-navy transition hover:border-teal hover:bg-mist",
+        className,
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 
-export function PageHeader({
-  title,
-  description,
-  actions,
-}: {
-  title: string;
-  description?: string;
-  actions?: React.ReactNode;
-}) {
+export function WeightBar({ percent, label }: { percent: number; label?: string }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          {title}
-        </h1>
-        {description ? (
-          <p className="mt-1 text-sm text-slate-500">{description}</p>
-        ) : null}
+    <div>
+      {label ? (
+        <div className="mb-1 flex justify-between text-xs text-navy/60">
+          <span>{label}</span>
+          <span>{percent}%</span>
+        </div>
+      ) : null}
+      <div className="h-2 overflow-hidden rounded-full bg-mist">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-teal-deep to-teal"
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
+  );
+}
+
+export function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex rounded-md bg-mist px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-teal-deep">
+      {children}
+    </span>
   );
 }

@@ -6,5 +6,3 @@ dist
 *.db
 *.db-journal
 .DS_Store
-apps/web/prisma/dev.db
-apps/web/prisma/dev.db-journal

@@ -1,21 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Libre_Baskerville, Manrope } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const display = Libre_Baskerville({
+  variable: "--font-display",
   subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const body = Manrope({
+  variable: "--font-body",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "CreatoMatch — Influencer & UGC Campaigns",
+  title: "TraceReady — CSCT Exam Prep",
   description:
-    "Find creators by content, outreach with templates, manage briefs and applications, pay or affiliate, and track posts & ROI.",
+    "Study for the Canadian Society of Cardiology Technologists (CSCT) certification exam with blueprint-weighted modules, flashcards, rhythm drills, and the latest exam intel.",
 };
 
 export default function RootLayout({
@@ -24,10 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className={`${display.variable} ${body.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

@@ -1,48 +1,33 @@
-# CreatoMatch
+# TraceReady — CSCT Exam Prep
 
-Upfluence-style UGC / influencer campaign platform.
+Study app for the **Canadian Society of Cardiology Technologists (CSCT)** national certification exam.
 
-Find creators by the content they share → outreach with templates → preview brief & terms → apply → pay or affiliate → track posts & metrics.
+It turns the official exam blueprint, ECG Analysis Study Guide, Exam Guidelines, and candidate dates into a focused study path: weighted modules, practice quizzes, flashcards, rhythm checklists, and refreshable exam intel from [csct.ca](https://www.csct.ca/EXAM-CANDIDATE).
 
 ## Quick start
 
 ```bash
-cd apps/web
-pnpm install
-pnpm db:push
-pnpm db:seed
-pnpm dev
-```
-
-Or from repo root:
-
-```bash
 pnpm --dir apps/web install
-pnpm db:reset
 pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Demo personas
+## What’s inside
 
-Use the **Brand / Creator** switcher in the sidebar:
+| Area | What you get |
+|------|----------------|
+| **Study Path** | Blueprint-weighted topics (ECG 30%, ETT 18%, foundational 25%, …) |
+| **Practice** | Single-answer + multi-select quizzes with explanations |
+| **Flashcards** | CSCT Exam Guideline numbers and high-yield facts |
+| **Rhythms** | Full CSCT ECG Analysis Study Guide identify-list + systematic read steps |
+| **Reading List** | Official refs for ECG, Holter, ETT, and EP (Garcia, Huff, ACSM, AHA, Sweesy) |
+| **Exam Intel** | Sitting dates, fees, eligibility — refresh from CSCT |
+| **Resources** | Official PDFs and pages (blueprint, candidate guide, NOCP, …) |
 
-| Persona | Email | What to try |
-|---------|-------|-------------|
-| Brand | `brand@creatomatch.app` | Discovery search (`skincare`), campaign pipeline, accept applications, sync metrics, mark paid |
-| Creator | `maya@creators.app` | Opportunities, preview brief, submit posts, view affiliate assets & earnings |
+Progress (modules reviewed, quiz scores, rhythm checks, flashcard flips) is stored in your browser via `localStorage`.
 
-Seeded campaign: **Spring Glow Serum Launch** (hybrid paid + affiliate).
+## Notes
 
-## What's included (MVP)
-
-- Content-based creator discovery (caption/topic matching)
-- Campaigns with brief, terms, deliverables, paid/gift/affiliate/hybrid
-- Outreach templates with merge tags
-- Creator brief preview + application flow
-- Affiliate tracking links + promo codes
-- Deliverable submission, metric sync stub, payouts & commissions
-- Brand analytics dashboard
-
-See [PLAN.md](./PLAN.md) for full product roadmap.
+- TraceReady is a study aid, not an official CSCT product. Always confirm dates, fees, and policies on [csct.ca](https://www.csct.ca/).
+- Exam guideline values in the app follow CSCT’s published “Exam Guidelines for exam purposes.”
