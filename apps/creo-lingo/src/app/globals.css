@@ -30,6 +30,10 @@ html {
   scroll-behavior: smooth;
 }
 
+html[data-scroll-behavior="smooth"] {
+  scroll-behavior: smooth;
+}
+
 body {
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(240, 162, 2, 0.18), transparent 55%),
