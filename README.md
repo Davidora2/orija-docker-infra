@@ -1,3 +1,20 @@
+# Workspace
+
+Monorepo with multiple apps under `apps/`.
+
+## Creo-Lingo
+
+Duolingo-style African & Caribbean dialect learning app for the diaspora.
+
+```bash
+pnpm --dir apps/creo-lingo install
+pnpm --dir apps/creo-lingo dev
+```
+
+See [apps/creo-lingo/README.md](./apps/creo-lingo/README.md).
+
+---
+
 # CreatoMatch
 
 Upfluence-style UGC / influencer campaign platform.
