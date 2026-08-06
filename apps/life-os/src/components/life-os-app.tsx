@@ -15,7 +15,6 @@ import {
   Clock3,
   Compass,
   Download,
-  FileText,
   Flag,
   Focus,
   Gauge,
