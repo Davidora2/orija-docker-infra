@@ -1,3 +1,19 @@
+# Orija product workspace
+
+This repository currently hosts product experiments and MVPs.
+
+## Life OS (planning)
+
+Personal operating system product planning package:
+
+- [docs/life-os/README.md](./docs/life-os/README.md) — index  
+- [Technical Requirements](./docs/life-os/TECHNICAL_REQUIREMENTS.md)  
+- [Feature Backlog](./docs/life-os/FEATURE_BACKLOG.md)  
+- [User Stories](./docs/life-os/USER_STORIES.md)  
+- [Product Brief](./docs/life-os/PRODUCT_BRIEF.md)  
+
+---
+
 # CreatoMatch
 
 Upfluence-style UGC / influencer campaign platform.
