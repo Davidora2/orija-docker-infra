@@ -1,5 +1,43 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { examMeta, type ExamMeta, type ExamSitting } from "@/data/exam-meta";
+
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 8;
+
+type CacheEntry = {
+  at: number;
+  payload: {
+    ok: boolean;
+    meta: ExamMeta;
+    note?: string;
+    error?: string;
+  };
+};
+
+const cache: { entry: CacheEntry | null } = { entry: null };
+const hits = new Map<string, number[]>();
+
+function clientKey(req: NextRequest): string {
+  return (
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "anonymous"
+  );
+}
+
+function allowRequest(key: string): boolean {
+  const now = Date.now();
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) {
+    hits.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  hits.set(key, recent);
+  return true;
+}
 
 function extractBlock(html: string, headingPattern: RegExp): string | null {
   const match = html.match(headingPattern);
@@ -56,32 +94,70 @@ function parseSitting(
   };
 }
 
-export async function GET() {
+async function fetchExamMeta(): Promise<CacheEntry["payload"]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
   try {
     const res = await fetch("https://www.csct.ca/EXAM-CANDIDATE", {
       headers: {
         "User-Agent": "TraceReadyCSCTPrep/1.0 (study app; +https://github.com)",
         Accept: "text/html",
       },
-      next: { revalidate: 0 },
+      signal: controller.signal,
+      redirect: "follow",
+      cache: "no-store",
     });
 
     if (!res.ok) {
-      return NextResponse.json({
+      return {
         ok: false,
         error: `CSCT returned HTTP ${res.status}. Showing curated data.`,
         meta: examMeta,
-      });
+      };
     }
 
-    const html = await res.text();
-    const today = new Date().toISOString().slice(0, 10);
+    // Cap HTML size to avoid memory abuse from unexpectedly large responses.
+    const reader = res.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const maxBytes = 1_500_000;
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          total += value.byteLength;
+          if (total > maxBytes) {
+            reader.cancel().catch(() => undefined);
+            break;
+          }
+          chunks.push(value);
+        }
+      }
+    }
 
-    // Prefer the October 2026 block if present; keep May as historical fallback.
+    const html = new TextDecoder("utf-8").decode(
+      chunks.length
+        ? (() => {
+            const out = new Uint8Array(total > maxBytes ? maxBytes : total);
+            let offset = 0;
+            for (const chunk of chunks) {
+              const slice = chunk.subarray(0, Math.max(0, out.length - offset));
+              out.set(slice, offset);
+              offset += slice.length;
+              if (offset >= out.length) break;
+            }
+            return out;
+          })()
+        : await res.arrayBuffer().then((b) => new Uint8Array(b).slice(0, maxBytes)),
+    );
+
+    const today = new Date().toISOString().slice(0, 10);
     const octBlock =
       extractBlock(html, /October\s+7/i) ||
       extractBlock(html, /Registration opens:\s*August/i) ||
-      html;
+      html.slice(0, 8000);
     const mayBlock = extractBlock(html, /May\s+4/i);
 
     const sittings: ExamSitting[] = [];
@@ -103,18 +179,63 @@ export async function GET() {
 
     const foundDates = Boolean(oct?.registrationOpens || oct?.examDates);
 
-    return NextResponse.json({
+    return {
       ok: true,
       meta: merged,
       note: foundDates
         ? "Refreshed fields from https://www.csct.ca/EXAM-CANDIDATE."
         : "Fetched CSCT page; kept curated dates where parsing was uncertain.",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const key = clientKey(req);
+  if (!allowRequest(key)) {
+    const stale = cache.entry?.payload ?? {
+      ok: false,
+      error: "Rate limited. Showing curated data.",
+      meta: examMeta,
+    };
+    return NextResponse.json(
+      {
+        ...stale,
+        ok: stale.ok,
+        error: "Too many refresh requests. Try again in a minute.",
+        note: stale.note ?? "Served cached/curated exam intel due to rate limiting.",
+      },
+      {
+        status: 429,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": "60",
+        },
+      },
+    );
+  }
+
+  const now = Date.now();
+  if (cache.entry && now - cache.entry.at < CACHE_TTL_MS) {
+    return NextResponse.json({
+      ...cache.entry.payload,
+      note: `${cache.entry.payload.note ?? "Cached exam intel."} (cached)`,
+    });
+  }
+
+  try {
+    const payload = await fetchExamMeta();
+    cache.entry = { at: now, payload };
+    return NextResponse.json(payload, {
+      headers: { "Cache-Control": "public, max-age=60" },
     });
   } catch (error) {
-    return NextResponse.json({
-      ok: false,
+    const payload = {
+      ok: false as const,
       error: error instanceof Error ? error.message : "Fetch failed",
       meta: examMeta,
-    });
+    };
+    return NextResponse.json(payload);
   }
 }
