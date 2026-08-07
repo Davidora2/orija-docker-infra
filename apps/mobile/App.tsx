@@ -1055,7 +1055,7 @@ function ReviewScreen({
           <View style={styles.reviewBarRow} key={String(label)}>
             <Text style={styles.reviewBarLabel}>{label}</Text>
             <View style={styles.reviewBar}>
-              <View style={[styles.reviewBarFill, { width: `${value}%` }]} />
+              <View style={[styles.reviewBarFill, { width: `${Number(value)}%` }]} />
             </View>
             <Text style={styles.reviewBarHours}>{hours}</Text>
           </View>
@@ -1924,7 +1924,7 @@ const styles = StyleSheet.create({
   buttonTextAcid: {
     color: colors.acidInk,
     fontSize: 11,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   buttonTextGhost: {
     color: colors.muted,
@@ -2060,7 +2060,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.ink,
     fontSize: 13,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   sectionCaption: {
     color: colors.muted,
@@ -2167,7 +2167,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 10,
     lineHeight: 14,
-    fontWeight: '650',
+    fontWeight: '600',
   },
   actionTitleDone: {
     color: '#98A19B',
@@ -2289,7 +2289,7 @@ const styles = StyleSheet.create({
   filterText: {
     color: colors.muted,
     fontSize: 9,
-    fontWeight: '650',
+    fontWeight: '600',
   },
   filterTextActive: {
     color: 'white',
@@ -2376,7 +2376,7 @@ const styles = StyleSheet.create({
   choiceText: {
     color: colors.muted,
     fontSize: 9,
-    fontWeight: '650',
+    fontWeight: '600',
   },
   choiceTextSelected: {
     color: 'white',
@@ -2462,7 +2462,7 @@ const styles = StyleSheet.create({
   pillarCardName: {
     color: colors.ink,
     fontSize: 12,
-    fontWeight: '750',
+    fontWeight: '700',
     marginTop: 12,
   },
   pillarPercent: {
@@ -2596,7 +2596,7 @@ const styles = StyleSheet.create({
     color: '#95513A',
     fontSize: 9,
     lineHeight: 14,
-    fontWeight: '650',
+    fontWeight: '600',
   },
   capacityMessageTextSuccess: {
     color: colors.sageDeep,
@@ -2633,7 +2633,7 @@ const styles = StyleSheet.create({
   commitmentHours: {
     color: colors.ink,
     fontSize: 11,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   remedyGrid: {
     flexDirection: 'row',
@@ -2661,7 +2661,7 @@ const styles = StyleSheet.create({
   remedyTitle: {
     color: colors.ink,
     fontSize: 10,
-    fontWeight: '750',
+    fontWeight: '700',
     marginTop: 9,
   },
   remedyText: {
@@ -2696,7 +2696,7 @@ const styles = StyleSheet.create({
   dayLabel: {
     color: colors.ink,
     fontSize: 9,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   dayTextSelected: {
     color: 'white',
@@ -2733,7 +2733,7 @@ const styles = StyleSheet.create({
   scheduleEnergyText: {
     color: colors.sageDeep,
     fontSize: 9,
-    fontWeight: '650',
+    fontWeight: '600',
   },
   reviewHero: {
     padding: 15,
@@ -2756,7 +2756,7 @@ const styles = StyleSheet.create({
   reviewHeroTitle: {
     color: colors.ink,
     fontSize: 11,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   reviewHeroText: {
     color: colors.muted,
@@ -2789,7 +2789,7 @@ const styles = StyleSheet.create({
   reviewSectionTitle: {
     color: colors.ink,
     fontSize: 11,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   reviewSectionCaption: {
     color: colors.muted,
@@ -3096,7 +3096,7 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: colors.ink,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   tabBadge: {
     position: 'absolute',
@@ -3130,6 +3130,6 @@ const styles = StyleSheet.create({
     flex: 1,
     color: 'white',
     fontSize: 10,
-    fontWeight: '650',
+    fontWeight: '600',
   },
 });
