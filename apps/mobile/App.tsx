@@ -1503,7 +1503,10 @@ function AppContent() {
   ] as const;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView
+      style={[styles.safeArea, Platform.OS === 'web' && styles.webFrame]}
+      edges={['top']}
+    >
       <StatusBar style="dark" />
       <View style={styles.appHeader}>
         <View style={styles.brandRow}>
@@ -1680,16 +1683,32 @@ function AppContent() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={styles.host}>
       <AppContent />
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  host: {
+    flex: 1,
+    backgroundColor: '#E5EAE4',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
+  },
+  webFrame: {
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: '#D4DAD4',
+    shadowColor: '#10251F',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 0 },
   },
   appHeader: {
     height: 66,
