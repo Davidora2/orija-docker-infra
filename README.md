@@ -23,6 +23,16 @@ Open [http://localhost:3001](http://localhost:3001). The prototype demonstrates
 idea capture → evaluation → project creation → capacity trade-off → scheduling →
 Daily Command Centre → Weekly CEO Review.
 
+Native Android and iOS app:
+
+```bash
+pnpm mobile:start
+```
+
+The shared Expo app lives in [`apps/mobile`](./apps/mobile). It implements the
+same validated workflow with native navigation, haptics, safe-area handling, and
+offline prototype-state persistence.
+
 ---
 
 # CreatoMatch
