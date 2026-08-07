@@ -559,7 +559,7 @@ function IdeaScreen({
       </ScrollView>
 
       <Card style={styles.ideaList}>
-        {state.ideaTitle && (
+        {Boolean(state.ideaTitle) && (
           <View style={styles.ideaRow}>
             <View style={styles.ideaIcon}>
               <Icon name="bulb-outline" size={18} color={colors.sageDeep} />
@@ -1623,7 +1623,9 @@ function AppContent() {
                   size={20}
                   color={active ? colors.ink : '#89938D'}
                 />
-                {key === 'ideas' && state.ideaTitle && <View style={styles.tabBadge} />}
+                {key === 'ideas' && Boolean(state.ideaTitle) && (
+                  <View style={styles.tabBadge} />
+                )}
               </View>
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
             </Pressable>
