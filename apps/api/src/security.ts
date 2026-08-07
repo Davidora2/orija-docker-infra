@@ -4,22 +4,34 @@ import {
   scrypt as scryptCallback,
   timingSafeEqual,
 } from 'node:crypto';
-import { promisify } from 'node:util';
 
-const scrypt = promisify(scryptCallback);
 const keyLength = 64;
 const cost = 32_768;
 const blockSize = 8;
 const parallelization = 1;
 
+function deriveKey(
+  password: string,
+  salt: Buffer,
+  length: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(password, salt, length, options, (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const derived = (await scrypt(password, salt, keyLength, {
+  const derived = await deriveKey(password, salt, keyLength, {
     N: cost,
     r: blockSize,
     p: parallelization,
     maxmem: 64 * 1024 * 1024,
-  })) as Buffer;
+  });
 
   return [
     'scrypt',
@@ -45,7 +57,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
   }
 
   const expected = Buffer.from(hashEncoded, 'base64url');
-  const actual = (await scrypt(
+  const actual = await deriveKey(
     password,
     Buffer.from(saltEncoded, 'base64url'),
     expected.length,
@@ -55,7 +67,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
       p: Number(p),
       maxmem: 64 * 1024 * 1024,
     },
-  )) as Buffer;
+  );
 
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

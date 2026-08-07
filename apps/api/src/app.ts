@@ -65,6 +65,25 @@ const setActiveHouseholdSchema = z.object({
   householdId: z.string().uuid(),
 });
 
+type JsonValue =
+  | null
+  | string
+  | number
+  | boolean
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.null(),
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
 const itemKind = z.enum([
   'VISION',
   'PILLAR',
@@ -81,7 +100,7 @@ const createItemSchema = z.object({
   status: z.string().trim().min(1).max(50).default('ACTIVE'),
   visibility: z.enum(['PRIVATE', 'SHARED']).default('PRIVATE'),
   parentId: z.string().uuid().nullable().optional(),
-  body: z.record(z.string(), z.unknown()).default({}),
+  body: z.record(z.string(), jsonValueSchema).default({}),
   sortOrder: z.number().int().default(0),
 });
 
@@ -91,7 +110,7 @@ const updateItemSchema = z
     status: z.string().trim().min(1).max(50).optional(),
     visibility: z.enum(['PRIVATE', 'SHARED']).optional(),
     parentId: z.string().uuid().nullable().optional(),
-    body: z.record(z.string(), z.unknown()).optional(),
+    body: z.record(z.string(), jsonValueSchema).optional(),
     sortOrder: z.number().int().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
@@ -443,11 +462,12 @@ export async function buildApp(
         throw new ApiError(403, 'owner_required', 'Only the household owner can invite a partner.');
       }
 
-      const [{ count }] = await sql<{ count: number }[]>`
+      const countRows = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count
         FROM household_members
         WHERE household_id = ${user.activeHouseholdId}
       `;
+      const count = countRows[0]?.count ?? 0;
       if (count >= 2) {
         throw new ApiError(409, 'household_full', 'This couple household already has two members.');
       }
@@ -515,11 +535,12 @@ export async function buildApp(
           WHERE household_id = ${invite.householdId}
             AND user_id = ${request.authUser.id}
         `;
-        const [{ count }] = await transaction<{ count: number }[]>`
+        const countRows = await transaction<{ count: number }[]>`
           SELECT count(*)::int AS count
           FROM household_members
           WHERE household_id = ${invite.householdId}
         `;
+        const count = countRows[0]?.count ?? 0;
         if (!existing && count >= 2) {
           throw new ApiError(409, 'household_full', 'This couple household is already full.');
         }
