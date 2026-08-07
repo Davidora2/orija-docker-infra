@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Linking from 'expo-linking';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -22,6 +23,8 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { AccountSheet } from './src/account-sheet';
+import { createLifeItem, getAccount, type Account } from './src/api';
 
 const colors = {
   ink: '#14241F',
@@ -1448,11 +1451,15 @@ function ProjectModal({
 function AppContent() {
   const [tab, setTab] = useState<Tab>('command');
   const [modal, setModal] = useState<ModalName>(null);
+  const [accountVisible, setAccountVisible] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [pendingInviteToken, setPendingInviteToken] = useState<string>();
   const [state, setState] = useState<PrototypeState>(initialState);
   const [notice, setNotice] = useState('');
   const loaded = useRef(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
+  const incomingUrl = Linking.useURL();
 
   useEffect(() => {
     AsyncStorage.getItem('life-os-native-prototype')
@@ -1463,6 +1470,22 @@ function AppContent() {
         loaded.current = true;
       });
   }, []);
+
+  useEffect(() => {
+    getAccount()
+      .then(setAccount)
+      .catch(() => setAccount(null));
+  }, []);
+
+  useEffect(() => {
+    if (!incomingUrl) return;
+    const parsed = Linking.parse(incomingUrl);
+    const token = parsed.queryParams?.token;
+    if (typeof token === 'string' && token.length >= 32) {
+      setPendingInviteToken(token);
+      setAccountVisible(true);
+    }
+  }, [incomingUrl]);
 
   useEffect(() => {
     if (loaded.current) {
@@ -1509,22 +1532,34 @@ function AppContent() {
     >
       <StatusBar style="dark" />
       <View style={styles.appHeader}>
-        <View style={styles.brandRow}>
+        <Pressable style={styles.brandRow} onPress={() => setAccountVisible(true)}>
           <View style={styles.brandMark}>
             <View style={styles.brandMarkInner} />
           </View>
           <View>
             <Text style={styles.brandName}>Life OS</Text>
-            <Text style={styles.brandCaption}>Founder workspace</Text>
+            <Text style={styles.brandCaption}>
+              {account ? account.user.displayName : 'Tap to create your profile'}
+            </Text>
           </View>
-        </View>
+        </Pressable>
         <View style={styles.headerActions}>
           <Pressable style={styles.iconButton} onPress={reset}>
             <Icon name="refresh-outline" size={18} />
           </Pressable>
-          <Pressable style={styles.iconButton} onPress={() => notify('2 strategic alerts.')}>
-            <Icon name="notifications-outline" size={18} />
-            <View style={styles.notificationDot} />
+          <Pressable style={styles.iconButton} onPress={() => setAccountVisible(true)}>
+            {account ? (
+              <Text style={styles.accountInitials}>
+                {account.user.displayName
+                  .split(' ')
+                  .map((part) => part[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </Text>
+            ) : (
+              <Icon name="person-outline" size={18} />
+            )}
           </Pressable>
           <Pressable
             style={styles.captureButton}
@@ -1650,6 +1685,14 @@ function AppContent() {
           setTab('ideas');
           successTap();
           notify('Idea captured — no commitment created.');
+          if (account) {
+            void createLifeItem({
+              kind: 'IDEA',
+              title,
+              visibility: 'PRIVATE',
+              body: { note },
+            }).catch(() => notify('Idea saved on device; server sync will retry later.'));
+          }
         }}
       />
       <ProjectModal
@@ -1668,7 +1711,28 @@ function AppContent() {
           setModal(null);
           setTab('capacity');
           notify('Project created. Now check whether it fits.');
+          if (account) {
+            void createLifeItem({
+              kind: 'PROJECT',
+              title: project.title,
+              visibility: 'PRIVATE',
+              body: {
+                outcome: project.outcome,
+                estimatedHours: project.hours,
+                nextAction: project.action,
+                actionHours: project.actionHours,
+              },
+            }).catch(() => notify('Project saved on device; server sync will retry later.'));
+          }
         }}
+      />
+      <AccountSheet
+        account={account}
+        initialInviteToken={pendingInviteToken}
+        onAccountChange={setAccount}
+        onClose={() => setAccountVisible(false)}
+        notify={notify}
+        visible={accountVisible}
       />
 
       {notice ? (
@@ -1765,6 +1829,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.paper,
+  },
+  accountInitials: {
+    color: colors.ink,
+    fontSize: 10,
+    fontWeight: '800',
   },
   captureButton: {
     width: 38,

@@ -33,6 +33,13 @@ The shared Expo app lives in [`apps/mobile`](./apps/mobile). It implements the
 same validated workflow with native navigation, haptics, safe-area handling, and
 offline prototype-state persistence.
 
+Online accounts and couples:
+
+- [`apps/api`](./apps/api) — authenticated PostgreSQL API
+- [`deploy`](./deploy) — Docker/Caddy production deployment
+- Separate user profiles with one-use partner invitations
+- Explicit private/shared ownership for every synced Life OS record
+
 ---
 
 # CreatoMatch

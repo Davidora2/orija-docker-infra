@@ -1,0 +1,34 @@
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import type { Database } from './db.js';
+
+const migrations = [
+  {
+    version: '001_init',
+    path: fileURLToPath(new URL('../migrations/001_init.sql', import.meta.url)),
+  },
+];
+
+export async function runMigrations(sql: Database): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version text PRIMARY KEY,
+      applied_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+
+  for (const migration of migrations) {
+    const [existing] = await sql<{ version: string }[]>`
+      SELECT version FROM schema_migrations WHERE version = ${migration.version}
+    `;
+    if (existing) continue;
+
+    const source = await readFile(migration.path, 'utf8');
+    await sql.begin(async (transaction) => {
+      await transaction.unsafe(source);
+      await transaction`
+        INSERT INTO schema_migrations (version) VALUES (${migration.version})
+      `;
+    });
+  }
+}
