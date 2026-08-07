@@ -76,13 +76,20 @@ function Field({
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   keyboardType?: 'default' | 'email-address';
 }) {
+  const nativeId = `account-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <Text nativeID={`${nativeId}-label`} style={styles.label}>
+        {label}
+      </Text>
       <TextInput
+        accessibilityLabel={label}
+        accessibilityLabelledBy={`${nativeId}-label`}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
         keyboardType={keyboardType}
+        nativeID={nativeId}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#9BA49E"

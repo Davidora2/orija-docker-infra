@@ -220,6 +220,39 @@ async function getAccountPayload(sql: Database, userId: string) {
   };
 }
 
+async function assertParentAccessible(
+  sql: Database,
+  userId: string,
+  parentId: string | null | undefined,
+): Promise<void> {
+  if (!parentId) return;
+  const [parent] = await sql<{ id: string }[]>`
+    SELECT li.id
+    FROM life_items li
+    WHERE
+      li.id = ${parentId}
+      AND (
+        li.owner_user_id = ${userId}
+        OR (
+          li.visibility = 'SHARED'
+          AND EXISTS (
+            SELECT 1
+            FROM household_members hm
+            WHERE hm.household_id = li.household_id
+              AND hm.user_id = ${userId}
+          )
+        )
+      )
+  `;
+  if (!parent) {
+    throw new ApiError(
+      400,
+      'invalid_parent',
+      'The parent item does not exist or is not accessible.',
+    );
+  }
+}
+
 export async function buildApp(
   config: AppConfig,
   dependencies: AppDependencies = {},
@@ -361,22 +394,29 @@ export async function buildApp(
   app.post('/v1/auth/refresh', async (request) => {
     const body = refreshSchema.parse(request.body);
     const tokenHash = hashToken(body.refreshToken);
-    const [token] = await sql<{ id: string; userId: string; email: string }[]>`
-      SELECT rt.id, rt.user_id, u.email
-      FROM refresh_tokens rt
-      JOIN users u ON u.id = rt.user_id
-      WHERE
-        rt.token_hash = ${tokenHash}
-        AND rt.revoked_at IS NULL
-        AND rt.expires_at > now()
-    `;
-    if (!token) {
-      throw new ApiError(401, 'invalid_refresh_token', 'The session has expired.');
-    }
-
-    await sql`
-      UPDATE refresh_tokens SET revoked_at = now() WHERE id = ${token.id}
-    `;
+    const token = await sql.begin(async (transaction) => {
+      const [activeToken] = await transaction<{
+        id: string;
+        userId: string;
+        email: string;
+      }[]>`
+        SELECT rt.id, rt.user_id, u.email
+        FROM refresh_tokens rt
+        JOIN users u ON u.id = rt.user_id
+        WHERE
+          rt.token_hash = ${tokenHash}
+          AND rt.revoked_at IS NULL
+          AND rt.expires_at > now()
+        FOR UPDATE
+      `;
+      if (!activeToken) {
+        throw new ApiError(401, 'invalid_refresh_token', 'The session has expired.');
+      }
+      await transaction`
+        UPDATE refresh_tokens SET revoked_at = now() WHERE id = ${activeToken.id}
+      `;
+      return activeToken;
+    });
     return auth.issueSession(
       { id: token.userId, email: token.email },
       body.deviceName,
@@ -529,6 +569,11 @@ export async function buildApp(
           );
         }
 
+        await transaction`
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(${invite.householdId}::text, 0)
+          )
+        `;
         const [existing] = await transaction<{ userId: string }[]>`
           SELECT user_id
           FROM household_members
@@ -642,6 +687,7 @@ export async function buildApp(
   app.post('/v1/items', { preHandler: auth.authenticate }, async (request, reply) => {
     const body = createItemSchema.parse(request.body);
     const user = await getUser(sql, request.authUser.id);
+    await assertParentAccessible(sql, request.authUser.id, body.parentId);
     const householdId = body.visibility === 'SHARED' ? user.activeHouseholdId : null;
     if (body.visibility === 'SHARED' && !householdId) {
       throw new ApiError(400, 'no_active_household', 'Choose a household before sharing.');
@@ -671,6 +717,9 @@ export async function buildApp(
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = updateItemSchema.parse(request.body);
     const user = await getUser(sql, request.authUser.id);
+    if (body.parentId !== undefined) {
+      await assertParentAccessible(sql, request.authUser.id, body.parentId);
+    }
     const [existing] = await sql<{ id: string; visibility: 'PRIVATE' | 'SHARED' }[]>`
       SELECT id, visibility FROM life_items
       WHERE id = ${id} AND owner_user_id = ${request.authUser.id}
