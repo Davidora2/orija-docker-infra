@@ -280,6 +280,7 @@ export async function buildApp(
       callback(new Error('Origin not allowed'), false);
     },
     credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   await app.register(rateLimit, {
     max: 120,

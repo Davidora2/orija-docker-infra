@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 const sessionKey = 'life-os-api-session';
+const requestTimeoutMs = 15_000;
 
 export const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_URL ??
@@ -62,6 +63,7 @@ export class ApiError extends Error {
 }
 
 let memorySession: Session | null = null;
+let refreshPromise: Promise<Session> | null = null;
 
 export async function loadSession(): Promise<Session | null> {
   if (memorySession) return memorySession;
@@ -96,18 +98,51 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
+async function fetchWithTimeout(
+  input: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timeout = setTimeout(abort, requestTimeoutMs);
+  options.signal?.addEventListener('abort', abort, { once: true });
+
+  try {
+    return await fetch(input, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !options.signal?.aborted) {
+      throw new ApiError(
+        408,
+        'request_timeout',
+        'The Life OS server took too long to respond. Try again.',
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
 async function refreshSession(session: Session): Promise<Session> {
-  const response = await fetch(`${apiBaseUrl}/v1/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      refreshToken: session.refreshToken,
-      deviceName: `${Platform.OS} Life OS`,
-    }),
-  });
-  const refreshed = await parseResponse<Session>(response);
-  await saveSession(refreshed);
-  return refreshed;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const response = await fetchWithTimeout(`${apiBaseUrl}/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          refreshToken: session.refreshToken,
+          deviceName: `${Platform.OS} Life OS`,
+        }),
+      });
+      const refreshed = await parseResponse<Session>(response);
+      await saveSession(refreshed);
+      return refreshed;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
 }
 
 async function request<T>(
@@ -116,7 +151,7 @@ async function request<T>(
   retry = true,
 ): Promise<T> {
   const session = await loadSession();
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetchWithTimeout(`${apiBaseUrl}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -129,8 +164,14 @@ async function request<T>(
     try {
       await refreshSession(session);
       return request<T>(path, options, false);
-    } catch {
-      await saveSession(null);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        const currentSession = await loadSession();
+        if (currentSession?.refreshToken === session.refreshToken) {
+          await saveSession(null);
+        }
+      }
+      throw error;
     }
   }
   return parseResponse<T>(response);
@@ -142,7 +183,7 @@ export async function register(input: {
   password: string;
   timezone: string;
 }): Promise<Account> {
-  const response = await fetch(`${apiBaseUrl}/v1/auth/register`, {
+  const response = await fetchWithTimeout(`${apiBaseUrl}/v1/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -159,7 +200,7 @@ export async function login(input: {
   email: string;
   password: string;
 }): Promise<Account> {
-  const response = await fetch(`${apiBaseUrl}/v1/auth/login`, {
+  const response = await fetchWithTimeout(`${apiBaseUrl}/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -176,7 +217,7 @@ export async function logout(): Promise<void> {
   const session = await loadSession();
   if (session) {
     try {
-      await fetch(`${apiBaseUrl}/v1/auth/logout`, {
+      await fetchWithTimeout(`${apiBaseUrl}/v1/auth/logout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: session.refreshToken }),

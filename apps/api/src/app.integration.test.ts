@@ -144,6 +144,54 @@ suite('account and couple household API', () => {
     expect(inaccessibleParent.json<{ error: string }>().error).toBe('invalid_parent');
   });
 
+  it('allows browser preflight and switches the active household', async () => {
+    const owner = await register('switch-owner@example.com', 'Switch Owner');
+    const partner = await register('switch-partner@example.com', 'Switch Partner');
+    const originalHouseholdId = (
+      partner.account as { activeHouseholdId: string }
+    ).activeHouseholdId;
+
+    const inviteResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/households/invites',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { invitedEmail: 'switch-partner@example.com' },
+    });
+    const invite = inviteResponse.json<{ token: string }>();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/households/invites/accept',
+      headers: { authorization: `Bearer ${partner.accessToken}` },
+      payload: { token: invite.token },
+    });
+
+    const preflight = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/households/active',
+      headers: {
+        origin: 'http://localhost:3002',
+        'access-control-request-method': 'PATCH',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers['access-control-allow-origin']).toBe(
+      'http://localhost:3002',
+    );
+    expect(preflight.headers['access-control-allow-methods']).toContain('PATCH');
+
+    const switched = await app.inject({
+      method: 'PATCH',
+      url: '/v1/households/active',
+      headers: { authorization: `Bearer ${partner.accessToken}` },
+      payload: { householdId: originalHouseholdId },
+    });
+    expect(switched.statusCode).toBe(200);
+    expect(switched.json<{ activeHouseholdId: string }>().activeHouseholdId).toBe(
+      originalHouseholdId,
+    );
+  });
+
   it('does not allow a third member into a couple household', async () => {
     const owner = await register('owner@example.com', 'Owner');
     const partner = await register('partner@example.com', 'Partner');
