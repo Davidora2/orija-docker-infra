@@ -315,6 +315,7 @@ function Journey({ step }: { step: number }) {
 
 function CommandScreen({
   state,
+  displayName,
   onComplete,
   onOpenReview,
   onOpenIdeas,
@@ -322,6 +323,7 @@ function CommandScreen({
   notify,
 }: {
   state: PrototypeState;
+  displayName?: string;
   onComplete: () => void;
   onOpenReview: () => void;
   onOpenIdeas: () => void;
@@ -336,7 +338,7 @@ function CommandScreen({
     <View>
       <ScreenHeader
         eyebrow="Thursday · 06 August"
-        title="Good evening, David."
+        title={`Good evening, ${displayName?.trim().split(/\s+/)[0] || 'David'}.`}
         subtitle={
           state.scheduled
             ? 'Your plan fits. One focused move will unlock the most progress.'
@@ -1587,6 +1589,7 @@ function AppContent() {
         {tab === 'command' && (
           <CommandScreen
             state={state}
+            displayName={account?.user.displayName}
             onComplete={() => {
               patch({ complete: true, step: 6 });
               tap(Haptics.ImpactFeedbackStyle.Heavy);
