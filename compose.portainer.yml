@@ -1,7 +1,5 @@
-# Portainer / Cloudflare Tunnel stack (no Docker build — avoids CF 524 timeouts).
-# Public origin for your existing tunnel:
-#   Hostname: lifeos.orija.store
-#   Service:  http://localhost:8088
+# Portainer / Cloudflare Tunnel stack.
+# Tunnel origin: http://localhost:8088  (hostname lifeos.orija.store)
 services:
   postgres:
     image: postgres:17-alpine
@@ -38,8 +36,29 @@ services:
       LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
     volumes:
       - life-os-api-src:/opt/life-os
-      - ./deploy/portainer-entrypoint-api.sh:/entrypoint.sh:ro
-    command: ["sh", "/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        REPO_URL="$${LIFE_OS_REPO_URL}"
+        BRANCH="$${LIFE_OS_REPO_REF#refs/heads/}"
+        ROOT=/opt/life-os
+        mkdir -p "$$ROOT"
+        if [ ! -f "$$ROOT/.bootstrap-ok" ]; then
+          echo "Bootstrapping Life OS API from $$BRANCH..."
+          apk add --no-cache git
+          rm -rf "$$ROOT/repo"
+          git clone --depth 1 --branch "$$BRANCH" "$$REPO_URL" "$$ROOT/repo"
+          cd "$$ROOT/repo"
+          corepack enable
+          corepack prepare pnpm@10.33.3 --activate
+          pnpm install --frozen-lockfile --filter life-os-api...
+          pnpm --filter life-os-api build
+          touch "$$ROOT/.bootstrap-ok"
+          echo "API bootstrap complete."
+        fi
+        cd "$$ROOT/repo/apps/api"
+        exec node dist/server.js
     depends_on:
       - postgres
     networks: [life-os]
@@ -55,8 +74,33 @@ services:
       LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
     volumes:
       - life-os-web-src:/opt/life-os
-      - ./deploy/portainer-entrypoint-web.sh:/entrypoint.sh:ro
-    command: ["sh", "/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        REPO_URL="$${LIFE_OS_REPO_URL}"
+        BRANCH="$${LIFE_OS_REPO_REF#refs/heads/}"
+        ROOT=/opt/life-os
+        mkdir -p "$$ROOT"
+        if [ ! -f "$$ROOT/.bootstrap-ok" ]; then
+          echo "Bootstrapping Life OS web from $$BRANCH..."
+          apk add --no-cache git
+          rm -rf "$$ROOT/repo"
+          git clone --depth 1 --branch "$$BRANCH" "$$REPO_URL" "$$ROOT/repo"
+          cd "$$ROOT/repo"
+          corepack enable
+          corepack prepare pnpm@10.33.3 --activate
+          pnpm install --frozen-lockfile --filter life-os...
+          pnpm --filter life-os build
+          mkdir -p "$$ROOT/runtime"
+          cp -a "$$ROOT/repo/apps/life-os/.next/standalone/." "$$ROOT/runtime/"
+          mkdir -p "$$ROOT/runtime/apps/life-os/.next"
+          cp -a "$$ROOT/repo/apps/life-os/.next/static" "$$ROOT/runtime/apps/life-os/.next/static"
+          touch "$$ROOT/.bootstrap-ok"
+          echo "Web bootstrap complete."
+        fi
+        cd "$$ROOT/runtime"
+        exec node apps/life-os/server.js
     depends_on:
       - api
     networks: [life-os]
@@ -66,8 +110,28 @@ services:
     restart: unless-stopped
     ports:
       - "8088:80"
-    volumes:
-      - ./deploy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/Caddyfile <<'EOF'
+        :80 {
+        	encode zstd gzip
+        	@api path /api/*
+        	handle @api {
+        		uri strip_prefix /api
+        		reverse_proxy api:4000
+        	}
+        	handle {
+        		reverse_proxy web:3000
+        	}
+        	header {
+        		X-Content-Type-Options "nosniff"
+        		Referrer-Policy "strict-origin-when-cross-origin"
+        		-Server
+        	}
+        }
+        EOF
+        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
     depends_on:
       - web
       - api
