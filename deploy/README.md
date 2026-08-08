@@ -17,7 +17,7 @@ The production stack runs:
 ## Portainer + Cloudflare Tunnel (recommended on orija.store)
 
 Use `compose.portainer.yml`. It does **not** bind host ports 80/443. Caddy listens
-internally and publishes only `8088:80` for the tunnel origin.
+internally and publishes only `18088:80` for the tunnel origin.
 
 1. Create the Portainer stack from this Git repository:
    - Compose path: `compose.portainer.yml`
@@ -25,8 +25,8 @@ internally and publishes only `8088:80` for the tunnel origin.
    - Env: `LIFE_OS_DOMAIN`, `POSTGRES_PASSWORD`, `JWT_SECRET`
 2. In Cloudflare Zero Trust → your tunnel → Public Hostname:
    - Hostname: your Life OS domain (e.g. `lifeos.orija.store`)
-   - Service: `http://localhost:8088` if cloudflared uses host networking, else
-     `http://172.17.0.1:8088`, or join cloudflared to the Docker network `life-os`
+   - Service: `http://localhost:18088` if cloudflared uses host networking, else
+     `http://172.17.0.1:18088`, or join cloudflared to the Docker network `life-os`
      and use `http://caddy:80`
 3. Keep SSL/TLS mode **Full** (not Full Strict unless you also terminate TLS on origin).
 

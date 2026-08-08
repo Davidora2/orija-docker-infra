@@ -1,5 +1,5 @@
 # Portainer / Cloudflare Tunnel stack.
-# Tunnel origin: http://localhost:8088  (hostname lifeos.orija.store)
+# Tunnel origin: http://localhost:18088  (hostname lifeos.orija.store)
 services:
   postgres:
     image: postgres:17-alpine
@@ -109,7 +109,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "8088:80"
+      - "18088:80"
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
