@@ -10,9 +10,31 @@ The production stack runs:
 ## Server requirements
 
 - Ubuntu/Debian server with Docker Engine + Compose plugin
-- Ports 80 and 443 open
-- DNS `A`/`AAAA` record for the Life OS domain pointing to the server
-- SSH access for deployment
+- Either public ports 80/443 **or** a Cloudflare Tunnel origin
+- DNS for the Life OS domain (proxied via Cloudflare when using a tunnel)
+- SSH access **or** Portainer API access for deployment
+
+## Portainer + Cloudflare Tunnel (recommended on orija.store)
+
+Use `compose.portainer.yml`. It does **not** bind host ports 80/443. Caddy listens
+internally and publishes only `8088:80` for the tunnel origin.
+
+1. Create the Portainer stack from this Git repository:
+   - Compose path: `compose.portainer.yml`
+   - Branch: the branch that contains this file
+   - Env: `LIFE_OS_DOMAIN`, `POSTGRES_PASSWORD`, `JWT_SECRET`
+2. In Cloudflare Zero Trust → your tunnel → Public Hostname:
+   - Hostname: your Life OS domain (e.g. `lifeos.orija.store`)
+   - Service: `http://localhost:8088` if cloudflared uses host networking, else
+     `http://172.17.0.1:8088`, or join cloudflared to the Docker network `life-os`
+     and use `http://caddy:80`
+3. Keep SSL/TLS mode **Full** (not Full Strict unless you also terminate TLS on origin).
+
+Health check after the tunnel is live:
+
+```bash
+curl -fsS https://<LIFE_OS_DOMAIN>/api/health
+```
 
 ## First deployment
 

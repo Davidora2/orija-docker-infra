@@ -1,0 +1,85 @@
+# Portainer / Cloudflare Tunnel stack.
+# Publishes only host port 8088 (HTTP). Point your Cloudflare Tunnel origin to:
+#   http://<server-ip-or-host-gateway>:8088
+# Or attach cloudflared to the `life-os` network and use http://caddy:80
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lifeos
+      POSTGRES_USER: lifeos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - life-os-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifeos -d lifeos"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [life-os]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgres://lifeos:${POSTGRES_PASSWORD}@postgres:5432/lifeos
+      JWT_SECRET: ${JWT_SECRET}
+      APP_ORIGINS: https://${LIFE_OS_DOMAIN}
+      PUBLIC_APP_URL: https://${LIFE_OS_DOMAIN}
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_DAYS: 30
+      AUTO_MIGRATE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [life-os]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/life-os/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [life-os]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+    volumes:
+      - ./deploy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - web
+      - api
+    networks: [life-os]
+
+networks:
+  life-os:
+    name: life-os
+
+volumes:
+  life-os-postgres:
