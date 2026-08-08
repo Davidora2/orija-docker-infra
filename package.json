@@ -1,6 +1,7 @@
 {
   "name": "creatomatch",
   "private": true,
+  "packageManager": "pnpm@10.33.3",
   "scripts": {
     "life-os:dev": "pnpm --dir apps/life-os dev",
     "life-os:build": "pnpm --dir apps/life-os build",
@@ -21,5 +22,14 @@
     "db:seed": "pnpm --dir apps/web db:seed",
     "db:reset": "pnpm --dir apps/web db:reset",
     "db:push": "pnpm --dir apps/web db:push"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
   }
 }
