@@ -2,7 +2,6 @@
 # Public origin for your existing tunnel:
 #   Hostname: lifeos.orija.store
 #   Service:  http://localhost:8088
-#   (or http://172.17.0.1:8088 / http://caddy:80 on the life-os network)
 services:
   postgres:
     image: postgres:17-alpine
@@ -42,20 +41,7 @@ services:
       - ./deploy/portainer-entrypoint-api.sh:/entrypoint.sh:ro
     command: ["sh", "/entrypoint.sh"]
     depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-      start_period: 300s
+      - postgres
     networks: [life-os]
 
   web:
@@ -72,20 +58,7 @@ services:
       - ./deploy/portainer-entrypoint-web.sh:/entrypoint.sh:ro
     command: ["sh", "/entrypoint.sh"]
     depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-      start_period: 300s
+      - api
     networks: [life-os]
 
   caddy:
