@@ -1,7 +1,8 @@
-# Portainer / Cloudflare Tunnel stack.
-# Publishes only host port 8088 (HTTP). Point your Cloudflare Tunnel origin to:
-#   http://<server-ip-or-host-gateway>:8088
-# Or attach cloudflared to the `life-os` network and use http://caddy:80
+# Portainer / Cloudflare Tunnel stack (no Docker build — avoids CF 524 timeouts).
+# Public origin for your existing tunnel:
+#   Hostname: lifeos.orija.store
+#   Service:  http://localhost:8088
+#   (or http://172.17.0.1:8088 / http://caddy:80 on the life-os network)
 services:
   postgres:
     image: postgres:17-alpine
@@ -20,10 +21,9 @@ services:
     networks: [life-os]
 
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    image: node:22-alpine
     restart: unless-stopped
+    working_dir: /opt/life-os
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -35,6 +35,12 @@ services:
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_DAYS: 30
       AUTO_MIGRATE: "true"
+      LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
+      LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
+    volumes:
+      - life-os-api-src:/opt/life-os
+      - ./deploy/portainer-entrypoint-api.sh:/entrypoint.sh:ro
+    command: ["sh", "/entrypoint.sh"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,21 +54,38 @@ services:
         ]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 60
+      start_period: 300s
     networks: [life-os]
 
   web:
-    build:
-      context: .
-      dockerfile: apps/life-os/Dockerfile
+    image: node:22-alpine
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
+      LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
+    volumes:
+      - life-os-web-src:/opt/life-os
+      - ./deploy/portainer-entrypoint-web.sh:/entrypoint.sh:ro
+    command: ["sh", "/entrypoint.sh"]
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 300s
     networks: [life-os]
 
   caddy:
@@ -83,3 +106,5 @@ networks:
 
 volumes:
   life-os-postgres:
+  life-os-api-src:
+  life-os-web-src:
