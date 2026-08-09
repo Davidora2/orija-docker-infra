@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useEffect, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   acceptPartnerInvite,
   apiBaseUrl,
@@ -141,6 +142,7 @@ export function AccountSheet({
   onAccountChange,
   notify,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<'register' | 'login'>('register');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -249,7 +251,7 @@ export function AccountSheet({
         style={styles.backdrop}
       >
         <Pressable style={styles.dismissArea} onPress={onClose} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <View>
@@ -267,7 +269,10 @@ export function AccountSheet({
           </View>
 
           <ScrollView
-            contentContainerStyle={styles.body}
+            contentContainerStyle={[
+              styles.body,
+              { paddingBottom: 24 + Math.max(insets.bottom, 12) },
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >

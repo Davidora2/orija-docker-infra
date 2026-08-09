@@ -1036,7 +1036,12 @@ function AppContent() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalWrap}
         >
-          <View style={styles.modalCard}>
+          <View
+            style={[
+              styles.modalCard,
+              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+            ]}
+          >
             <Text style={styles.sectionTitle}>Capture idea</Text>
             <Field
               label="Title"
@@ -1093,7 +1098,12 @@ function AppContent() {
 
       <Modal visible={!!evaluateId} animationType="slide" transparent>
         <View style={styles.modalWrap}>
-          <View style={styles.modalCard}>
+          <View
+            style={[
+              styles.modalCard,
+              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+            ]}
+          >
             <Text style={styles.sectionTitle}>Evaluate idea</Text>
             <Text style={styles.cardBody}>
               Score each dimension 1–5. Higher impact/alignment/timing is better;
@@ -1157,7 +1167,12 @@ function AppContent() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalWrap}
         >
-          <ScrollView contentContainerStyle={styles.modalCard}>
+          <ScrollView
+            contentContainerStyle={[
+              styles.modalCard,
+              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+            ]}
+          >
             <Text style={styles.sectionTitle}>Create project</Text>
             <Field
               label="Project title"
