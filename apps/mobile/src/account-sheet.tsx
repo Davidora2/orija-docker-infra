@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -143,6 +144,7 @@ export function AccountSheet({
   notify,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [mode, setMode] = useState<'register' | 'login'>('register');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -164,6 +166,21 @@ export function AccountSheet({
   useEffect(() => {
     if (initialInviteToken) setInviteToken(initialInviteToken);
   }, [initialInviteToken]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   async function perform(work: () => Promise<void>) {
     setBusy(true);
@@ -251,7 +268,16 @@ export function AccountSheet({
         style={styles.backdrop}
       >
         <Pressable style={styles.dismissArea} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              paddingBottom: Math.max(insets.bottom, 12),
+              marginBottom: Platform.OS === 'android' ? keyboardHeight : 0,
+              maxHeight: '92%',
+            },
+          ]}
+        >
           <View style={styles.handle} />
           <View style={styles.header}>
             <View>
@@ -271,9 +297,12 @@ export function AccountSheet({
           <ScrollView
             contentContainerStyle={[
               styles.body,
-              { paddingBottom: 24 + Math.max(insets.bottom, 12) },
+              {
+                paddingBottom: 24 + Math.max(insets.bottom, 12),
+              },
             ]}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
             {!account ? (

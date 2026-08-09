@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -271,6 +272,7 @@ function AppContent() {
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const [captureOpen, setCaptureOpen] = useState(false);
   const [ideaTitle, setIdeaTitle] = useState('');
@@ -345,6 +347,21 @@ function AppContent() {
   useEffect(() => {
     void load('boot');
   }, [load]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!incomingUrl) return;
@@ -1031,78 +1048,109 @@ function AppContent() {
         </View>
       ) : null}
 
-      <Modal visible={captureOpen} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalWrap}
-        >
-          <View
+      <Modal
+        visible={captureOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCaptureOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.modalDismiss} onPress={() => setCaptureOpen(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={[
-              styles.modalCard,
-              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+              styles.modalSheetWrap,
+              Platform.OS === 'android' ? { marginBottom: keyboardHeight } : null,
             ]}
           >
-            <Text style={styles.sectionTitle}>Capture idea</Text>
-            <Field
-              label="Title"
-              value={ideaTitle}
-              onChangeText={setIdeaTitle}
-              placeholder="What showed up?"
-            />
-            <Field
-              label="Note"
-              value={ideaNote}
-              onChangeText={setIdeaNote}
-              placeholder="Context, why it matters"
-              multiline
-            />
-            <Text style={styles.fieldLabel}>Pillar (optional)</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipRow}>
-                {pillars.map((pillar) => (
-                  <Pressable
-                    key={pillar.id}
-                    onPress={() => setIdeaPillarId(pillar.id)}
-                    style={[
-                      styles.chip,
-                      ideaPillarId === pillar.id && styles.chipActive,
-                    ]}
-                  >
-                    <Text
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={[
+                styles.modalCard,
+                {
+                  paddingBottom: Math.max(insets.bottom, 16) + 12,
+                },
+              ]}
+            >
+              <Text style={styles.sectionTitle}>Capture idea</Text>
+              <Field
+                label="Title"
+                value={ideaTitle}
+                onChangeText={setIdeaTitle}
+                placeholder="What showed up?"
+              />
+              <Field
+                label="Note"
+                value={ideaNote}
+                onChangeText={setIdeaNote}
+                placeholder="Context, why it matters"
+                multiline
+              />
+              <Text style={styles.fieldLabel}>Pillar (optional)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.chipRow}>
+                  {pillars.map((pillar) => (
+                    <Pressable
+                      key={pillar.id}
+                      onPress={() => setIdeaPillarId(pillar.id)}
                       style={[
-                        styles.chipText,
-                        ideaPillarId === pillar.id && styles.chipTextActive,
+                        styles.chip,
+                        ideaPillarId === pillar.id && styles.chipActive,
                       ]}
                     >
-                      {pillar.title}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={[
+                          styles.chipText,
+                          ideaPillarId === pillar.id && styles.chipTextActive,
+                        ]}
+                      >
+                        {pillar.title}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+              <View style={styles.row}>
+                <Button
+                  variant="secondary"
+                  style={{ flex: 1 }}
+                  onPress={() => setCaptureOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  style={{ flex: 1 }}
+                  disabled={busy}
+                  onPress={() => void saveIdea()}
+                >
+                  Save idea
+                </Button>
               </View>
             </ScrollView>
-            <View style={styles.row}>
-              <Button
-                variant="secondary"
-                style={{ flex: 1 }}
-                onPress={() => setCaptureOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button style={{ flex: 1 }} disabled={busy} onPress={() => void saveIdea()}>
-                Save idea
-              </Button>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
-      <Modal visible={!!evaluateId} animationType="slide" transparent>
+      <Modal
+        visible={!!evaluateId}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEvaluateId(null)}
+      >
         <View style={styles.modalWrap}>
-          <View
-            style={[
+          <Pressable style={styles.modalDismiss} onPress={() => setEvaluateId(null)} />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
               styles.modalCard,
-              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+              {
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+              },
             ]}
+            style={
+              Platform.OS === 'android' ? { marginBottom: keyboardHeight } : undefined
+            }
           >
             <Text style={styles.sectionTitle}>Evaluate idea</Text>
             <Text style={styles.cardBody}>
@@ -1158,22 +1206,36 @@ function AppContent() {
                 Save scores
               </Button>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
-      <Modal visible={projectOpen} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalWrap}
-        >
-          <ScrollView
-            contentContainerStyle={[
-              styles.modalCard,
-              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+      <Modal
+        visible={projectOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setProjectOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.modalDismiss} onPress={() => setProjectOpen(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={[
+              styles.modalSheetWrap,
+              Platform.OS === 'android' ? { marginBottom: keyboardHeight } : null,
             ]}
           >
-            <Text style={styles.sectionTitle}>Create project</Text>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={[
+                styles.modalCard,
+                {
+                  paddingBottom: Math.max(insets.bottom, 16) + 12,
+                },
+              ]}
+            >
+              <Text style={styles.sectionTitle}>Create project</Text>
             <Field
               label="Project title"
               value={projectTitle}
@@ -1253,8 +1315,9 @@ function AppContent() {
                 Save project
               </Button>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       <AccountSheet
@@ -1502,13 +1565,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20,36,31,0.45)',
     justifyContent: 'flex-end',
   },
+  modalDismiss: {
+    flex: 1,
+  },
+  modalSheetWrap: {
+    maxHeight: '92%',
+  },
   modalCard: {
     backgroundColor: colors.canvas,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 18,
     gap: 12,
-    maxHeight: '92%',
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
