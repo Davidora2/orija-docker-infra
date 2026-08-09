@@ -353,7 +353,7 @@ export function AccountSheet({
                   </View>
                   <View style={styles.onlinePill}>
                     <View style={styles.onlineDot} />
-                    <Text style={styles.onlineText}>Synced</Text>
+                    <Text style={styles.onlineText}>Signed in</Text>
                   </View>
                 </View>
 

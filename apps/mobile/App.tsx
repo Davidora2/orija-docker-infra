@@ -1,14 +1,14 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
-import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,9 +22,31 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountSheet } from './src/account-sheet';
-import { createLifeItem, getAccount, type Account } from './src/api';
+import {
+  ApiError,
+  createLifeItem,
+  getAccount,
+  pingApi,
+  updateLifeItem,
+  type Account,
+  type LifeItem,
+} from './src/api';
+import {
+  WEEK_DAYS,
+  bodyNumber,
+  bodyString,
+  childrenOf,
+  ideaScore,
+  isOpen,
+  ofKind,
+  primaryAction,
+  projectRisks,
+  refreshAllItems,
+  supportingActions,
+  weeklyCapacityHours,
+} from './src/life-data';
 
 const colors = {
   ink: '#14241F',
@@ -49,54 +71,6 @@ const serif = Platform.select({
 });
 
 type Tab = 'command' | 'portfolio' | 'ideas' | 'capacity' | 'review';
-type ModalName = 'capture' | 'project' | null;
-
-type PrototypeState = {
-  step: number;
-  ideaTitle: string;
-  ideaNote: string;
-  evaluating: boolean;
-  pillar: string;
-  projectTitle: string;
-  projectOutcome: string;
-  projectHours: number;
-  actionTitle: string;
-  actionHours: number;
-  scheduleDay: string;
-  scheduled: boolean;
-  complete: boolean;
-  scorecard: boolean;
-};
-
-const initialState: PrototypeState = {
-  step: 0,
-  ideaTitle: '',
-  ideaNote: '',
-  evaluating: false,
-  pillar: 'Product',
-  projectTitle: '',
-  projectOutcome: '',
-  projectHours: 7.5,
-  actionTitle: '',
-  actionHours: 2,
-  scheduleDay: 'Fri',
-  scheduled: false,
-  complete: false,
-  scorecard: false,
-};
-
-const existingHours = 6.5;
-const availableHours = 11;
-const journey = ['Capture', 'Evaluate', 'Project', 'Capacity', 'Schedule', 'Brief', 'Review'];
-
-const pillarData = [
-  { name: 'Product', icon: 'layers-outline' as const, progress: 72, health: 'On track' },
-  { name: 'Business', icon: 'briefcase-outline' as const, progress: 58, health: 'On track' },
-  { name: 'Wealth', icon: 'wallet-outline' as const, progress: 36, health: 'Needs attention' },
-  { name: 'Career', icon: 'trending-up-outline' as const, progress: 64, health: 'On track' },
-  { name: 'Personal', icon: 'heart-outline' as const, progress: 48, health: 'Needs attention' },
-  { name: 'Creative', icon: 'sparkles-outline' as const, progress: 81, health: 'On track' },
-];
 
 function tap(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== 'web') void Haptics.impactAsync(style);
@@ -174,7 +148,7 @@ function Pill({
   tone = 'sage',
 }: {
   children: ReactNode;
-  tone?: 'sage' | 'amber' | 'ink';
+  tone?: 'sage' | 'amber' | 'ink' | 'danger';
 }) {
   return (
     <View
@@ -182,21 +156,19 @@ function Pill({
         styles.pill,
         tone === 'amber' && styles.pillAmber,
         tone === 'ink' && styles.pillInk,
+        tone === 'danger' && styles.pillDanger,
       ]}
     >
-      {typeof children === 'string' ? (
-        <Text
-          style={[
-            styles.pillText,
-            tone === 'amber' && styles.pillTextAmber,
-            tone === 'ink' && styles.pillTextInk,
-          ]}
-        >
-          {children}
-        </Text>
-      ) : (
-        children
-      )}
+      <Text
+        style={[
+          styles.pillText,
+          tone === 'amber' && styles.pillTextAmber,
+          tone === 'ink' && styles.pillTextInk,
+          tone === 'danger' && styles.pillTextDanger,
+        ]}
+      >
+        {children}
+      </Text>
     </View>
   );
 }
@@ -211,19 +183,13 @@ function Card({
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-function ProgressBar({
-  value,
-  warning = false,
-}: {
-  value: number;
-  warning?: boolean;
-}) {
+function ProgressBar({ value, warning = false }: { value: number; warning?: boolean }) {
   return (
     <View style={styles.progressTrack}>
       <View
         style={[
           styles.progressFill,
-          { width: `${Math.min(value, 100)}%` },
+          { width: `${Math.min(Math.max(value, 0), 100)}%` },
           warning && styles.progressFillWarning,
         ]}
       />
@@ -231,2998 +197,1325 @@ function ProgressBar({
   );
 }
 
-function ScreenHeader({
-  eyebrow,
+function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  multiline,
+  keyboardType,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+  keyboardType?: 'default' | 'decimal-pad' | 'number-pad';
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        multiline={multiline}
+        keyboardType={keyboardType}
+        style={[styles.input, multiline && styles.inputMultiline]}
+      />
+    </View>
+  );
+}
+
+function EmptyState({
   title,
-  subtitle,
+  body,
   action,
 }: {
-  eyebrow: string;
   title: string;
-  subtitle: string;
+  body: string;
   action?: ReactNode;
 }) {
   return (
-    <View style={styles.screenHeader}>
-      <View style={styles.eyebrowRow}>
-        <Icon name="compass-outline" size={12} color={colors.sageDeep} />
-        <Text style={styles.eyebrow}>{eyebrow}</Text>
-      </View>
-      <View style={styles.headingRow}>
-        <Text style={styles.screenTitle}>{title}</Text>
-        {action}
-      </View>
-      <Text style={styles.screenSubtitle}>{subtitle}</Text>
-    </View>
-  );
-}
-
-function Journey({ step }: { step: number }) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.journeyContent}
-      style={styles.journey}
-    >
-      {journey.map((label, index) => (
-        <View key={label} style={styles.journeyPair}>
-          <View
-            style={[
-              styles.journeyItem,
-              index === step && styles.journeyItemCurrent,
-              index < step && styles.journeyItemDone,
-            ]}
-          >
-            <View
-              style={[
-                styles.journeyNumber,
-                index === step && styles.journeyNumberCurrent,
-                index < step && styles.journeyNumberDone,
-              ]}
-            >
-              {index < step ? (
-                <Icon name="checkmark" size={10} color={colors.sageDeep} />
-              ) : (
-                <Text
-                  style={[
-                    styles.journeyNumberText,
-                    index === step && styles.journeyNumberTextCurrent,
-                  ]}
-                >
-                  {index + 1}
-                </Text>
-              )}
-            </View>
-            <Text
-              style={[
-                styles.journeyLabel,
-                index === step && styles.journeyLabelCurrent,
-                index < step && styles.journeyLabelDone,
-              ]}
-            >
-              {label}
-            </Text>
-          </View>
-          {index < journey.length - 1 && (
-            <Icon name="chevron-forward" size={10} color="#B9C0BA" />
-          )}
-        </View>
-      ))}
-    </ScrollView>
-  );
-}
-
-function CommandScreen({
-  state,
-  displayName,
-  onComplete,
-  onOpenReview,
-  onOpenIdeas,
-  onOpenCapacity,
-  notify,
-}: {
-  state: PrototypeState;
-  displayName?: string;
-  onComplete: () => void;
-  onOpenReview: () => void;
-  onOpenIdeas: () => void;
-  onOpenCapacity: () => void;
-  notify: (message: string) => void;
-}) {
-  const primary = state.scheduled
-    ? state.actionTitle
-    : 'Approve the Life OS prototype direction';
-
-  return (
-    <View>
-      <ScreenHeader
-        eyebrow="Thursday · 06 August"
-        title={`Good evening, ${displayName?.trim().split(/\s+/)[0] || 'David'}.`}
-        subtitle={
-          state.scheduled
-            ? 'Your plan fits. One focused move will unlock the most progress.'
-            : 'Three priorities are competing for attention. Choose the move with the highest leverage.'
-        }
-        action={
-          state.complete ? (
-            <Pressable onPress={onOpenReview} style={styles.headerArrow}>
-              <Icon name="arrow-forward" size={18} color={colors.ink} />
-            </Pressable>
-          ) : undefined
-        }
-      />
-
-      <LinearGradient
-        colors={['#1B3B30', '#10251F']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.primaryCard}
-      >
-        <View style={styles.primaryTop}>
-          <View style={styles.primaryLabel}>
-            <View style={styles.primaryDot} />
-            <Text style={styles.primaryLabelText}>PRIMARY MOVE</Text>
-          </View>
-          <Text style={styles.primaryTime}>
-            {state.scheduled ? `${state.scheduleDay} · 09:00–11:00` : 'Today · 10:00–11:30'}
-          </Text>
-        </View>
-        <Text style={styles.primaryTitle}>{primary}</Text>
-        <Text style={styles.primaryDescription}>
-          {state.scheduled
-            ? `The next action for “${state.projectTitle}”, directly supporting your ${state.pillar} pillar.`
-            : 'Finalize the core workflow before expanding the product surface.'}
-        </Text>
-        <View style={styles.primaryFooter}>
-          {state.complete ? (
-            <Button variant="acid" onPress={onOpenReview}>
-              <View style={styles.buttonContent}>
-                <Icon name="checkmark-circle" size={16} color={colors.acidInk} />
-                <Text style={styles.buttonTextAcid}>Review the week</Text>
-              </View>
-            </Button>
-          ) : (
-            <Button
-              variant="acid"
-              onPress={state.scheduled ? onComplete : () => notify('Focus timer started.')}
-            >
-              <View style={styles.buttonContent}>
-                <Icon
-                  name={state.scheduled ? 'checkmark' : 'scan-outline'}
-                  size={16}
-                  color={colors.acidInk}
-                />
-                <Text style={styles.buttonTextAcid}>
-                  {state.scheduled ? 'Mark complete' : 'Start focus'}
-                </Text>
-              </View>
-            </Button>
-          )}
-          <Text style={styles.primaryProject}>
-            {state.projectTitle || 'Life OS · Product'}
-          </Text>
-        </View>
-      </LinearGradient>
-
-      <View style={styles.twoColumnRow}>
-        <Card style={styles.capacitySummary}>
-          <View style={styles.sectionTitleRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Weekly capacity</Text>
-              <Text style={styles.sectionCaption}>Mon 03 – Sun 09 Aug</Text>
-            </View>
-            <Pressable onPress={onOpenCapacity}>
-              <Icon name="chevron-forward" size={16} color={colors.sageDeep} />
-            </Pressable>
-          </View>
-          <View style={styles.capacityNumberRow}>
-            <Text style={styles.capacityBig}>{state.scheduled ? '100%' : '59%'}</Text>
-            <Pill tone={state.scheduled ? 'amber' : 'sage'}>
-              {state.scheduled ? 'At capacity' : 'Healthy'}
-            </Pill>
-          </View>
-          <ProgressBar value={state.scheduled ? 100 : 59} warning={state.scheduled} />
-          <View style={styles.capacityMeta}>
-            <Text style={styles.capacityMetaText}>
-              {state.scheduled ? '11h committed' : '6.5h committed'}
-            </Text>
-            <Text style={styles.capacityMetaText}>11h available</Text>
-          </View>
-        </Card>
-
-        <Card style={styles.riskSummary}>
-          <View style={styles.riskIcon}>
-            <Icon name="alert-circle-outline" size={18} color={colors.danger} />
-          </View>
-          <Text style={styles.riskNumber}>2</Text>
-          <Text style={styles.riskLabel}>strategic alerts</Text>
-          <Text style={styles.riskDetail}>Wealth needs attention</Text>
-        </Card>
-      </View>
-
-      <Card style={styles.sectionCard}>
-        <View style={styles.sectionTitleRow}>
-          <View>
-            <Text style={styles.sectionTitle}>Supporting actions</Text>
-            <Text style={styles.sectionCaption}>Keep today intentionally small.</Text>
-          </View>
-          <Text style={styles.textLink}>View all</Text>
-        </View>
-        {[
-          ['Review capacity assumptions for the founder pilot', 'Life OS · 45 min', 'Deep focus'],
-          ['Send project handover notes', 'Career · 25 min', 'Medium'],
-          ['Complete strength session', 'Personal · 50 min', 'High'],
-        ].map(([title, meta, energy], index) => (
-          <Pressable
-            key={title}
-            onPress={() => notify(`${title} updated.`)}
-            style={[styles.actionRow, index === 0 && styles.actionRowFirst]}
-          >
-            <View style={[styles.actionCheck, index === 2 && styles.actionCheckDone]}>
-              {index === 2 && <Icon name="checkmark" size={12} color="white" />}
-            </View>
-            <View style={styles.actionCopy}>
-              <Text style={[styles.actionTitle, index === 2 && styles.actionTitleDone]}>
-                {title}
-              </Text>
-              <Text style={styles.actionMeta}>{meta}</Text>
-            </View>
-            <Pill>{energy}</Pill>
-          </Pressable>
-        ))}
-      </Card>
-
-      <View style={styles.sectionTitleRowStandalone}>
-        <View>
-          <Text style={styles.sectionTitle}>Pillar pulse</Text>
-          <Text style={styles.sectionCaption}>Where your attention is landing.</Text>
-        </View>
-        <Text style={styles.textLink}>Last 7 days</Text>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.pillarScroll}
-      >
-        {pillarData.slice(0, 4).map((pillar) => (
-          <Card key={pillar.name} style={styles.pillarMini}>
-            <View style={styles.pillarMiniTop}>
-              <View style={styles.pillarIcon}>
-                <Icon name={pillar.icon} size={16} color={colors.sageDeep} />
-              </View>
-              <View
-                style={[
-                  styles.healthDot,
-                  pillar.health !== 'On track' && styles.healthDotAmber,
-                ]}
-              />
-            </View>
-            <Text style={styles.pillarName}>{pillar.name}</Text>
-            <Text style={styles.pillarHealth}>{pillar.health}</Text>
-            <ProgressBar value={pillar.progress} />
-          </Card>
-        ))}
-      </ScrollView>
-
-      {!state.ideaTitle && (
-        <Pressable onPress={onOpenIdeas} style={styles.ideaPrompt}>
-          <View style={styles.ideaPromptIcon}>
-            <Icon name="bulb-outline" size={18} color={colors.sageDeep} />
-          </View>
-          <View style={styles.ideaPromptCopy}>
-            <Text style={styles.ideaPromptTitle}>3 ideas waiting for review</Text>
-            <Text style={styles.ideaPromptText}>
-              Capture first. Decide what becomes work later.
-            </Text>
-          </View>
-          <Icon name="chevron-forward" size={17} color={colors.muted} />
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-function IdeaScreen({
-  state,
-  onCapture,
-  onEvaluate,
-  onPillar,
-  onProject,
-}: {
-  state: PrototypeState;
-  onCapture: () => void;
-  onEvaluate: () => void;
-  onPillar: (pillar: string) => void;
-  onProject: () => void;
-}) {
-  return (
-    <View>
-      <ScreenHeader
-        eyebrow="Capture without commitment"
-        title="Idea Studio"
-        subtitle="Give ideas room to breathe. Nothing becomes work until you make a deliberate decision."
-        action={
-          <Pressable style={styles.roundAction} onPress={onCapture}>
-            <Icon name="add" size={22} color="white" />
-          </Pressable>
-        }
-      />
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {['Inbox  3', 'Incubate', 'Develop now', 'Reference'].map((filter, index) => (
-          <View key={filter} style={[styles.filterPill, index === 0 && styles.filterPillActive]}>
-            <Text style={[styles.filterText, index === 0 && styles.filterTextActive]}>
-              {filter}
-            </Text>
-          </View>
-        ))}
-      </ScrollView>
-
-      <Card style={styles.ideaList}>
-        {Boolean(state.ideaTitle) && (
-          <View style={styles.ideaRow}>
-            <View style={styles.ideaIcon}>
-              <Icon name="bulb-outline" size={18} color={colors.sageDeep} />
-            </View>
-            <View style={styles.ideaRowCopy}>
-              <Text style={styles.ideaTitle}>{state.ideaTitle}</Text>
-              <Text style={styles.ideaMeta}>Just now · {state.pillar}</Text>
-            </View>
-            {state.step < 2 ? (
-              <Button variant="secondary" onPress={onEvaluate}>
-                Evaluate
-              </Button>
-            ) : (
-              <Pill>{state.step >= 3 ? 'Converted' : 'Develop now'}</Pill>
-            )}
-          </View>
-        )}
-        {[
-          ['Quarterly founder field notes', 'Yesterday · Business', 'Incubate'],
-          ['Invite-only design leadership dinner', '3 days ago · Creative', 'Reference'],
-          ['Automate weekly investment summary', '5 days ago · Wealth', 'Incubate'],
-        ].map(([title, meta, status]) => (
-          <View style={styles.ideaRow} key={title}>
-            <View style={styles.ideaIcon}>
-              <Icon name="bulb-outline" size={18} color={colors.sageDeep} />
-            </View>
-            <View style={styles.ideaRowCopy}>
-              <Text style={styles.ideaTitle}>{title}</Text>
-              <Text style={styles.ideaMeta}>{meta}</Text>
-            </View>
-            <Pill>{status}</Pill>
-          </View>
-        ))}
-      </Card>
-
-      {(state.evaluating || state.step >= 2) && state.ideaTitle ? (
-        <Card style={styles.evaluationCard}>
-          <LinearGradient
-            colors={['#1B3B30', '#10251F']}
-            style={styles.evaluationHeader}
-          >
-            <View style={styles.eyebrowRow}>
-              <Icon name="sparkles-outline" size={12} color={colors.acid} />
-              <Text style={styles.eyebrowLight}>STRATEGIC EVALUATION</Text>
-            </View>
-            <Text style={styles.evaluationTitle}>Is this worth doing now?</Text>
-            <Text style={styles.evaluationDescription}>
-              Use the score as guidance. The decision remains yours.
-            </Text>
-          </LinearGradient>
-          <View style={styles.evaluationBody}>
-            <Text style={styles.inputLabel}>CONNECTED PILLAR</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.pillarChoiceRow}
-            >
-              {['Product', 'Business', 'Wealth', 'Creative'].map((pillar) => (
-                <Pressable
-                  key={pillar}
-                  onPress={() => onPillar(pillar)}
-                  style={[
-                    styles.choicePill,
-                    state.pillar === pillar && styles.choicePillSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.choiceText,
-                      state.pillar === pillar && styles.choiceTextSelected,
-                    ]}
-                  >
-                    {pillar}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            <View style={styles.scoreList}>
-              {[
-                ['Strategic alignment', 5],
-                ['Long-term leverage', 5],
-                ['Expected benefit', 4],
-                ['Urgency', 3],
-                ['Confidence', 4],
-                ['Effort required', 3],
-                ['Risk', 2],
-              ].map(([label, score]) => (
-                <View style={styles.scoreRow} key={String(label)}>
-                  <Text style={styles.scoreLabel}>{label}</Text>
-                  <View style={styles.scoreDots}>
-                    {[1, 2, 3, 4, 5].map((point) => (
-                      <View
-                        key={point}
-                        style={[
-                          styles.scoreDot,
-                          point <= Number(score) && styles.scoreDotFilled,
-                        ]}
-                      />
-                    ))}
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.scoreSummary}>
-              <View>
-                <Text style={styles.scoreSummaryLabel}>STRATEGIC SCORE</Text>
-                <Text style={styles.scoreSummaryHint}>Strong fit · manageable risk</Text>
-              </View>
-              <Text style={styles.scoreSummaryNumber}>16</Text>
-            </View>
-            <Button style={styles.fullButton} onPress={onProject}>
-              <View style={styles.buttonContent}>
-                <Text style={styles.buttonText}>Develop now · create project</Text>
-                <Icon name="arrow-forward" size={15} color="white" />
-              </View>
-            </Button>
-          </View>
-        </Card>
-      ) : (
-        <Card style={styles.emptyEvaluation}>
-          <Icon name="sparkles-outline" size={25} color={colors.sageDeep} />
-          <Text style={styles.emptyTitle}>Make the trade-off visible</Text>
-          <Text style={styles.emptyText}>
-            Evaluate a new idea to score alignment, leverage, effort and risk.
-          </Text>
-        </Card>
-      )}
-    </View>
-  );
-}
-
-function PortfolioScreen({ state }: { state: PrototypeState }) {
-  const projects = [
-    ['Design the Life OS command loop', 'Product', 'Active', '14 Aug'],
-    ...(state.projectTitle
-      ? [[state.projectTitle, state.pillar, state.scheduled ? 'Active' : 'Proposed', '21 Aug']]
-      : []),
-    ['Package design advisory offer', 'Business', 'Active', '18 Aug'],
-    ['Quarterly portfolio review', 'Wealth', 'At risk', '09 Aug'],
-  ];
-
-  return (
-    <View>
-      <ScreenHeader
-        eyebrow="Strategic portfolio"
-        title="Pillars & projects"
-        subtitle="Every active commitment should earn its place and connect to an outcome."
-      />
-      <View style={styles.pillarGrid}>
-        {pillarData.map((pillar) => (
-          <Card key={pillar.name} style={styles.pillarCard}>
-            <View style={styles.pillarMiniTop}>
-              <View style={styles.pillarIcon}>
-                <Icon name={pillar.icon} size={17} color={colors.sageDeep} />
-              </View>
-              <View
-                style={[
-                  styles.healthDot,
-                  pillar.health !== 'On track' && styles.healthDotAmber,
-                ]}
-              />
-            </View>
-            <Text style={styles.pillarCardName}>{pillar.name}</Text>
-            <Text style={styles.pillarHealth}>{pillar.health}</Text>
-            <Text style={styles.pillarPercent}>{pillar.progress}%</Text>
-            <ProgressBar value={pillar.progress} />
-          </Card>
-        ))}
-      </View>
-
-      <View style={styles.sectionTitleRowStandalone}>
-        <View>
-          <Text style={styles.sectionTitle}>Project portfolio</Text>
-          <Text style={styles.sectionCaption}>The commitments currently in motion.</Text>
-        </View>
-      </View>
-      <Card style={styles.projectList}>
-        {projects.map(([title, pillar, status, due]) => (
-          <View key={title} style={styles.projectRow}>
-            <View style={styles.projectIcon}>
-              <Icon name="flag-outline" size={16} color={colors.sageDeep} />
-            </View>
-            <View style={styles.projectCopy}>
-              <Text style={styles.projectTitle}>{title}</Text>
-              <Text style={styles.projectMeta}>
-                {pillar} · {due}
-              </Text>
-            </View>
-            <Pill tone={status === 'At risk' ? 'amber' : 'sage'}>{status}</Pill>
-          </View>
-        ))}
-      </Card>
-    </View>
-  );
-}
-
-function CapacityScreen({
-  state,
-  onReduce,
-  onDay,
-  onSchedule,
-  notify,
-}: {
-  state: PrototypeState;
-  onReduce: () => void;
-  onDay: (day: string) => void;
-  onSchedule: () => void;
-  notify: (message: string) => void;
-}) {
-  const hasProject = state.step >= 3 && Boolean(state.projectTitle);
-  const total = existingHours + (hasProject ? state.projectHours : 0);
-  const over = Math.max(0, total - availableHours);
-  const percent = Math.round((total / availableHours) * 100);
-  const fits = over === 0;
-
-  return (
-    <View>
-      <ScreenHeader
-        eyebrow="Reality before ambition"
-        title="Capacity"
-        subtitle="Protect the plan by comparing new commitments with the time you actually control."
-        action={<Pill tone={fits ? 'sage' : 'amber'}>{fits ? 'At capacity' : 'Over capacity'}</Pill>}
-      />
-
-      <Card style={styles.capacityHero}>
-        <View style={styles.capacityHeroTop}>
-          <View style={styles.capacityPercentBox}>
-            <Text style={[styles.capacityHeroPercent, !fits && styles.capacityHeroPercentWarning]}>
-              {percent}%
-            </Text>
-            <Text style={styles.capacityHeroLabel}>ALLOCATED</Text>
-          </View>
-          <View style={styles.capacityHeroCopy}>
-            <Text style={styles.capacityHeroTitle}>
-              {fits ? 'This plan is realistic.' : 'Something has to move.'}
-            </Text>
-            <Text style={styles.capacityHeroDescription}>
-              {fits
-                ? 'You have allocated the time available for focused work.'
-                : 'The proposed project exceeds the time you control this week.'}
-            </Text>
-          </View>
-        </View>
-        <ProgressBar value={percent} warning={!fits} />
-        <View style={styles.capacityTotals}>
-          <View>
-            <Text style={styles.capacityTotalValue}>{total}h</Text>
-            <Text style={styles.capacityTotalLabel}>COMMITTED</Text>
-          </View>
-          <View style={styles.capacityDivider} />
-          <View>
-            <Text style={styles.capacityTotalValue}>11h</Text>
-            <Text style={styles.capacityTotalLabel}>AVAILABLE</Text>
-          </View>
-          <View style={styles.capacityDivider} />
-          <View>
-            <Text style={[styles.capacityTotalValue, !fits && styles.capacityOverValue]}>
-              {over ? `${over}h` : '0h'}
-            </Text>
-            <Text style={styles.capacityTotalLabel}>{over ? 'OVER' : 'REMAINING'}</Text>
-          </View>
-        </View>
-        <View style={[styles.capacityMessage, fits && styles.capacityMessageSuccess]}>
-          <Icon
-            name={fits ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-            size={20}
-            color={fits ? colors.sageDeep : colors.danger}
-          />
-          <Text
-            style={[styles.capacityMessageText, fits && styles.capacityMessageTextSuccess]}
-          >
-            {fits
-              ? `Your ${total}-hour plan fits within 11 available hours.`
-              : `You have committed ${total} hours but only have 11 available.`}
-          </Text>
-        </View>
-      </Card>
-
-      <Card style={styles.sectionCard}>
-        <View style={styles.sectionTitleRow}>
-          <View>
-            <Text style={styles.sectionTitle}>This week’s commitments</Text>
-            <Text style={styles.sectionCaption}>Focused project hours.</Text>
-          </View>
-        </View>
-        {[
-          ['Life OS core workflow', 'Product · scheduled', '3.5h'],
-          ['Client project handover', 'Career · fixed', '3h'],
-          ...(hasProject
-            ? [[state.projectTitle, `${state.pillar} · proposed`, `${state.projectHours}h`]]
-            : []),
-        ].map(([title, meta, hours]) => (
-          <View style={styles.commitmentRow} key={title}>
-            <View style={styles.commitmentIcon}>
-              <Icon name="time-outline" size={16} color={colors.sageDeep} />
-            </View>
-            <View style={styles.commitmentCopy}>
-              <Text style={styles.commitmentTitle}>{title}</Text>
-              <Text style={styles.commitmentMeta}>{meta}</Text>
-            </View>
-            <Text style={styles.commitmentHours}>{hours}</Text>
-          </View>
-        ))}
-      </Card>
-
-      {!fits && hasProject && (
-        <View>
-          <View style={styles.sectionTitleRowStandalone}>
-            <View>
-              <Text style={styles.sectionTitle}>Make the trade-off</Text>
-              <Text style={styles.sectionCaption}>Recover {over} hours before accepting.</Text>
-            </View>
-          </View>
-          <View style={styles.remedyGrid}>
-            <Pressable style={styles.remedyCard} onPress={onReduce}>
-              <View style={styles.remedyIcon}>
-                <Icon name="cut-outline" size={19} color={colors.sageDeep} />
-              </View>
-              <Text style={styles.remedyTitle}>Reduce scope</Text>
-              <Text style={styles.remedyText}>Trim this project to 4.5h</Text>
-            </Pressable>
-            <Pressable
-              style={styles.remedyCard}
-              onPress={() => notify('Choose lower-priority work to delay.')}
-            >
-              <View style={styles.remedyIcon}>
-                <Icon name="pause-outline" size={19} color={colors.sageDeep} />
-              </View>
-              <Text style={styles.remedyTitle}>Delay work</Text>
-              <Text style={styles.remedyText}>Move a lower priority</Text>
-            </Pressable>
-            <Pressable
-              style={styles.remedyCard}
-              onPress={() => notify('Delegation note added.')}
-            >
-              <View style={styles.remedyIcon}>
-                <Icon name="people-outline" size={19} color={colors.sageDeep} />
-              </View>
-              <Text style={styles.remedyTitle}>Delegate</Text>
-              <Text style={styles.remedyText}>Assign a supporting action</Text>
-            </Pressable>
-            <Pressable
-              style={styles.remedyCard}
-              onPress={() => notify('Next week has 5.5h available.')}
-            >
-              <View style={styles.remedyIcon}>
-                <Icon name="calendar-outline" size={19} color={colors.sageDeep} />
-              </View>
-              <Text style={styles.remedyTitle}>Reschedule</Text>
-              <Text style={styles.remedyText}>Review next week</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      {fits && hasProject && !state.scheduled && (
-        <Card style={styles.scheduleCard}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.scheduleCopy}>
-              <Text style={styles.sectionTitle}>Schedule the next action</Text>
-              <Text style={styles.sectionCaption} numberOfLines={2}>
-                {state.actionTitle}
-              </Text>
-            </View>
-            <Pill>{state.actionHours}h · Focus</Pill>
-          </View>
-          <View style={styles.dayRow}>
-            {[
-              ['Mon', '10'],
-              ['Tue', '11'],
-              ['Wed', '12'],
-              ['Thu', '13'],
-              ['Fri', '14'],
-            ].map(([day, date]) => (
-              <Pressable
-                key={day}
-                onPress={() => onDay(day)}
-                style={[styles.dayButton, state.scheduleDay === day && styles.dayButtonSelected]}
-              >
-                <Text
-                  style={[
-                    styles.dayLabel,
-                    state.scheduleDay === day && styles.dayTextSelected,
-                  ]}
-                >
-                  {day}
-                </Text>
-                <Text
-                  style={[
-                    styles.dayDate,
-                    state.scheduleDay === day && styles.dayDateSelected,
-                  ]}
-                >
-                  {date}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.scheduleTimeRow}>
-            <View>
-              <Text style={styles.inputLabel}>START TIME</Text>
-              <Text style={styles.scheduleTime}>09:00</Text>
-            </View>
-            <Icon name="arrow-forward" size={15} color={colors.muted} />
-            <View>
-              <Text style={styles.inputLabel}>END TIME</Text>
-              <Text style={styles.scheduleTime}>11:00</Text>
-            </View>
-            <View style={styles.scheduleEnergy}>
-              <Icon name="flash-outline" size={14} color={colors.sageDeep} />
-              <Text style={styles.scheduleEnergyText}>Deep focus</Text>
-            </View>
-          </View>
-          <Button style={styles.fullButton} onPress={onSchedule}>
-            <View style={styles.buttonContent}>
-              <Text style={styles.buttonText}>Schedule and open Daily Brief</Text>
-              <Icon name="arrow-forward" size={15} color="white" />
-            </View>
-          </Button>
-        </Card>
-      )}
-    </View>
-  );
-}
-
-function ReviewScreen({
-  state,
-  onGenerate,
-}: {
-  state: PrototypeState;
-  onGenerate: () => void;
-}) {
-  if (state.scorecard) return <ScorecardScreen state={state} />;
-
-  return (
-    <View>
-      <ScreenHeader
-        eyebrow="Week 32 · Founder review"
-        title="Weekly CEO Review"
-        subtitle="Step out of the work. Keep what creates leverage, remove what does not, and protect next week."
-      />
-
-      <Card style={styles.reviewHero}>
-        <View style={styles.reviewHeroIcon}>
-          <Icon name="bar-chart-outline" size={20} color={colors.sageDeep} />
-        </View>
-        <View style={styles.reviewHeroCopy}>
-          <Text style={styles.reviewHeroTitle}>Six sections ready</Text>
-          <Text style={styles.reviewHeroText}>
-            Your plan uses 11 of 11 hours. New work must replace an existing commitment.
-          </Text>
-        </View>
-        <Pill>6/6</Pill>
-      </Card>
-
-      <ReviewSection
-        icon="trophy-outline"
-        title="Results"
-        caption="What moved forward this week?"
-      >
-        <View style={styles.reviewMetrics}>
-          {[
-            [state.complete ? '8' : '7', 'Actions'],
-            ['2', 'Milestones'],
-            ['78%', 'Priorities'],
-          ].map(([value, label]) => (
-            <View style={styles.reviewMetric} key={label}>
-              <Text style={styles.reviewMetricValue}>{value}</Text>
-              <Text style={styles.reviewMetricLabel}>{label}</Text>
-            </View>
-          ))}
-        </View>
-        <Text style={styles.reviewAnswer}>
-          {state.complete
-            ? `${state.actionTitle} completed, moving ${state.projectTitle} into active validation.`
-            : 'The Life OS core workflow is ready for founder validation.'}
-        </Text>
-      </ReviewSection>
-
-      <ReviewSection
-        icon="time-outline"
-        title="Time & attention"
-        caption="Planned 11h · used 10.5h"
-      >
-        {[
-          ['Product', '5.5h', 76],
-          ['Business', '2.5h', 45],
-          ['Career', '2h', 36],
-          ['Wealth', '0.5h', 12],
-        ].map(([label, hours, value]) => (
-          <View style={styles.reviewBarRow} key={String(label)}>
-            <Text style={styles.reviewBarLabel}>{label}</Text>
-            <View style={styles.reviewBar}>
-              <View style={[styles.reviewBarFill, { width: `${Number(value)}%` }]} />
-            </View>
-            <Text style={styles.reviewBarHours}>{hours}</Text>
-          </View>
-        ))}
-      </ReviewSection>
-
-      <ReviewSection
-        icon="alert-circle-outline"
-        title="Bottlenecks & decisions"
-        caption="Name the friction. Decide what changes."
-      >
-        <View style={styles.reviewDecision}>
-          <Text style={styles.inputLabel}>MAIN BOTTLENECK</Text>
-          <Text style={styles.reviewAnswer}>
-            Too many active workstreams diluted deep-focus time on Tuesday.
-          </Text>
-        </View>
-        <View style={styles.reviewDecision}>
-          <Text style={styles.inputLabel}>DECISION</Text>
-          <Text style={styles.reviewAnswer}>
-            Pause portfolio automation until the Life OS pilot is validated.
-          </Text>
-        </View>
-      </ReviewSection>
-
-      <ReviewSection
-        icon="flag-outline"
-        title="Next week’s outcomes"
-        caption="Fewer priorities. Clear finish lines."
-      >
-        {[
-          state.projectTitle
-            ? `Validate “${state.projectTitle}” with one founder workflow`
-            : 'Validate the Life OS prototype',
-          'Finalize the client handover',
-          'Complete a 60-minute wealth review',
-        ].map((outcome, index) => (
-          <View style={styles.outcomeRow} key={outcome}>
-            <View style={styles.outcomeNumber}>
-              <Text style={styles.outcomeNumberText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.outcomeText}>{outcome}</Text>
-          </View>
-        ))}
-      </ReviewSection>
-
-      <Button style={styles.fullButton} onPress={onGenerate}>
-        <View style={styles.buttonContent}>
-          <Icon name="sparkles-outline" size={16} color="white" />
-          <Text style={styles.buttonText}>Generate CEO Scorecard</Text>
-          <Icon name="arrow-forward" size={15} color="white" />
-        </View>
-      </Button>
-    </View>
-  );
-}
-
-function ReviewSection({
-  icon,
-  title,
-  caption,
-  children,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  title: string;
-  caption: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card style={styles.reviewSection}>
-      <View style={styles.reviewSectionHeader}>
-        <View style={styles.reviewSectionIcon}>
-          <Icon name={icon} size={17} color={colors.sageDeep} />
-        </View>
-        <View style={styles.reviewSectionCopy}>
-          <Text style={styles.reviewSectionTitle}>{title}</Text>
-          <Text style={styles.reviewSectionCaption}>{caption}</Text>
-        </View>
-        <Icon name="checkmark-circle" size={19} color={colors.sageDeep} />
-      </View>
-      <View style={styles.reviewSectionBody}>{children}</View>
+    <Card style={styles.emptyCard}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyBody}>{body}</Text>
+      {action}
     </Card>
   );
 }
 
-function ScorecardScreen({ state }: { state: PrototypeState }) {
-  return (
-    <View>
-      <ScreenHeader
-        eyebrow="Week 32 · Complete"
-        title="CEO Scorecard"
-        subtitle="One page. The signal from the week and the commitments that matter next."
-      />
-      <Card style={styles.scorecard}>
-        <LinearGradient
-          colors={['#1B3B30', '#10251F']}
-          style={styles.scorecardHero}
-        >
-          <View style={styles.eyebrowRow}>
-            <Icon name="checkmark-circle-outline" size={12} color={colors.acid} />
-            <Text style={styles.eyebrowLight}>WEEKLY REVIEW COMPLETE</Text>
-          </View>
-          <Text style={styles.scorecardHeadline}>Focus is translating into progress.</Text>
-          <Text style={styles.scorecardIntro}>
-            You completed 78% of planned priorities and protected your available capacity.
-          </Text>
-        </LinearGradient>
-
-        <View style={styles.scorecardSection}>
-          <Text style={styles.scorecardLabel}>NEXT WEEK’S TOP OUTCOMES</Text>
-          {[
-            state.projectTitle
-              ? `Validate “${state.projectTitle}” with one founder workflow`
-              : 'Validate the Life OS prototype',
-            'Finalize client handover',
-            'Complete wealth pillar review',
-          ].map((outcome, index) => (
-            <View style={styles.outcomeRow} key={outcome}>
-              <View style={styles.outcomeNumber}>
-                <Text style={styles.outcomeNumberText}>{index + 1}</Text>
-              </View>
-              <Text style={styles.outcomeText}>{outcome}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.scorecardSection}>
-          <Text style={styles.scorecardLabel}>PERFORMANCE</Text>
-          <View style={styles.reviewMetrics}>
-            {[
-              ['78%', 'Priorities'],
-              ['10.5h', 'Focused'],
-              ['2', 'Milestones'],
-            ].map(([value, label]) => (
-              <View style={styles.reviewMetric} key={label}>
-                <Text style={styles.reviewMetricValue}>{value}</Text>
-                <Text style={styles.reviewMetricLabel}>{label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.scorecardSection}>
-          <Text style={styles.scorecardLabel}>PILLAR HEALTH</Text>
-          {pillarData.slice(0, 4).map((pillar) => (
-            <View style={styles.reviewBarRow} key={pillar.name}>
-              <Text style={styles.reviewBarLabel}>{pillar.name}</Text>
-              <View style={styles.reviewBar}>
-                <View
-                  style={[styles.reviewBarFill, { width: `${pillar.progress}%` }]}
-                />
-              </View>
-              <Text style={styles.reviewBarHours}>{pillar.progress}%</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.scorecardSection}>
-          <Text style={styles.scorecardLabel}>CAPACITY & RISK</Text>
-          <View style={styles.reviewMetrics}>
-            {[
-              ['11h', 'Available'],
-              ['11h', 'Planned'],
-              ['1', 'At risk'],
-            ].map(([value, label]) => (
-              <View style={styles.reviewMetric} key={label}>
-                <Text style={styles.reviewMetricValue}>{value}</Text>
-                <Text style={styles.reviewMetricLabel}>{label}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.scorecardAlert}>
-            <Icon name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={styles.scorecardAlertText}>
-              Protect next week from new commitments. Wealth needs one focused action.
-            </Text>
-          </View>
-        </View>
-      </Card>
-    </View>
-  );
+function firstName(account: Account | null): string {
+  return account?.user.displayName?.trim().split(/\s+/)[0] || 'there';
 }
 
-function CaptureModal({
-  visible,
-  onClose,
-  onSave,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSave: (title: string, note: string) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [note, setNote] = useState('');
-
-  function save() {
-    if (!title.trim()) return;
-    onSave(title.trim(), note.trim());
-    setTitle('');
-    setNote('');
-  }
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.modalBackdrop}
-      >
-        <Pressable style={styles.modalDismissArea} onPress={onClose} />
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHandle} />
-          <View style={styles.modalHeader}>
-            <View>
-              <View style={styles.eyebrowRow}>
-                <Icon name="bulb-outline" size={12} color={colors.sageDeep} />
-                <Text style={styles.eyebrow}>IDEA INBOX</Text>
-              </View>
-              <Text style={styles.modalTitle}>Capture it. Don’t commit yet.</Text>
-            </View>
-            <Pressable style={styles.closeButton} onPress={onClose}>
-              <Icon name="close" size={20} />
-            </Pressable>
-          </View>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.modalBody}
-          >
-            <Text style={styles.inputLabel}>WHAT ARE YOU THINKING ABOUT?</Text>
-            <TextInput
-              autoFocus
-              placeholder="e.g. Run a five-founder pilot"
-              placeholderTextColor="#9BA49E"
-              style={styles.textInput}
-              value={title}
-              onChangeText={setTitle}
-            />
-            <Text style={styles.inputLabel}>A LITTLE CONTEXT (OPTIONAL)</Text>
-            <TextInput
-              multiline
-              placeholder="What sparked this, and why might it matter?"
-              placeholderTextColor="#9BA49E"
-              style={[styles.textInput, styles.textArea]}
-              value={note}
-              onChangeText={setNote}
-            />
-            <View style={styles.infoNote}>
-              <Icon name="archive-outline" size={17} color={colors.sageDeep} />
-              <Text style={styles.infoNoteText}>
-                This enters Idea Studio. It will not affect your projects or capacity
-                until you choose to develop it.
-              </Text>
-            </View>
-            <Button disabled={!title.trim()} style={styles.fullButton} onPress={save}>
-              <View style={styles.buttonContent}>
-                <Text style={styles.buttonText}>Save to Idea Studio</Text>
-                <Icon name="arrow-forward" size={15} color="white" />
-              </View>
-            </Button>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
-function ProjectModal({
-  visible,
-  state,
-  onClose,
-  onSave,
-}: {
-  visible: boolean;
-  state: PrototypeState;
-  onClose: () => void;
-  onSave: (project: {
-    title: string;
-    outcome: string;
-    hours: number;
-    action: string;
-    actionHours: number;
-  }) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [outcome, setOutcome] = useState('');
-  const [action, setAction] = useState('');
-
-  useEffect(() => {
-    if (visible) {
-      setTitle(state.ideaTitle || 'Run the Life OS founder pilot');
-      setOutcome(
-        state.ideaNote || 'Validate the core planning loop with five founder workflows.',
-      );
-      setAction(`Create the first working draft of ${state.ideaTitle || 'the founder pilot'}`);
-    }
-  }, [state.ideaNote, state.ideaTitle, visible]);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.modalBackdrop}
-      >
-        <Pressable style={styles.modalDismissAreaSmall} onPress={onClose} />
-        <View style={[styles.modalSheet, styles.modalSheetTall]}>
-          <View style={styles.modalHandle} />
-          <View style={styles.modalHeader}>
-            <View style={styles.modalHeaderCopy}>
-              <View style={styles.eyebrowRow}>
-                <Icon name="flag-outline" size={12} color={colors.sageDeep} />
-                <Text style={styles.eyebrow}>CONVERT IDEA · {state.pillar.toUpperCase()}</Text>
-              </View>
-              <Text style={styles.modalTitle}>Define the commitment.</Text>
-            </View>
-            <Pressable style={styles.closeButton} onPress={onClose}>
-              <Icon name="close" size={20} />
-            </Pressable>
-          </View>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.modalBody}
-          >
-            <Text style={styles.inputLabel}>PROJECT TITLE</Text>
-            <TextInput style={styles.textInput} value={title} onChangeText={setTitle} />
-            <Text style={styles.inputLabel}>DESIRED OUTCOME</Text>
-            <TextInput
-              multiline
-              style={[styles.textInput, styles.textArea]}
-              value={outcome}
-              onChangeText={setOutcome}
-            />
-            <View style={styles.formTwoColumn}>
-              <View style={styles.formColumn}>
-                <Text style={styles.inputLabel}>ESTIMATED EFFORT</Text>
-                <View style={styles.staticInput}>
-                  <Text style={styles.staticInputText}>7.5 hours</Text>
-                </View>
-              </View>
-              <View style={styles.formColumn}>
-                <Text style={styles.inputLabel}>PRIORITY</Text>
-                <View style={styles.staticInput}>
-                  <Text style={styles.staticInputText}>High</Text>
-                </View>
-              </View>
-            </View>
-            <Text style={styles.inputLabel}>CLEAR NEXT ACTION</Text>
-            <TextInput
-              style={styles.textInput}
-              value={action}
-              onChangeText={setAction}
-            />
-            <View style={styles.formTwoColumn}>
-              <View style={styles.formColumn}>
-                <Text style={styles.inputLabel}>DURATION</Text>
-                <View style={styles.staticInput}>
-                  <Text style={styles.staticInputText}>2 hours</Text>
-                </View>
-              </View>
-              <View style={styles.formColumn}>
-                <Text style={styles.inputLabel}>ENERGY</Text>
-                <View style={styles.staticInput}>
-                  <Text style={styles.staticInputText}>Deep focus</Text>
-                </View>
-              </View>
-            </View>
-            <Button
-              disabled={!title.trim() || !outcome.trim() || !action.trim()}
-              style={styles.fullButton}
-              onPress={() =>
-                onSave({
-                  title: title.trim(),
-                  outcome: outcome.trim(),
-                  hours: 7.5,
-                  action: action.trim(),
-                  actionHours: 2,
-                })
-              }
-            >
-              <View style={styles.buttonContent}>
-                <Text style={styles.buttonText}>Create project & check capacity</Text>
-                <Icon name="arrow-forward" size={15} color="white" />
-              </View>
-            </Button>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
+function todayLabel(): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  }).format(new Date());
 }
 
 function AppContent() {
-  const [tab, setTab] = useState<Tab>('command');
-  const [modal, setModal] = useState<ModalName>(null);
-  const [accountVisible, setAccountVisible] = useState(false);
-  const [account, setAccount] = useState<Account | null>(null);
-  const [pendingInviteToken, setPendingInviteToken] = useState<string>();
-  const [state, setState] = useState<PrototypeState>(initialState);
-  const [notice, setNotice] = useState('');
-  const loaded = useRef(false);
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
   const incomingUrl = Linking.useURL();
+  const [tab, setTab] = useState<Tab>('command');
+  const [account, setAccount] = useState<Account | null>(null);
+  const [items, setItems] = useState<LifeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
 
-  useEffect(() => {
-    AsyncStorage.getItem('life-os-native-prototype')
-      .then((value) => {
-        if (value) setState(JSON.parse(value) as PrototypeState);
-      })
-      .finally(() => {
-        loaded.current = true;
-      });
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [ideaTitle, setIdeaTitle] = useState('');
+  const [ideaNote, setIdeaNote] = useState('');
+  const [ideaPillarId, setIdeaPillarId] = useState<string | null>(null);
+
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [projectTitle, setProjectTitle] = useState('');
+  const [projectOutcome, setProjectOutcome] = useState('');
+  const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
+  const [actionTitle, setActionTitle] = useState('');
+  const [actionHours, setActionHours] = useState('2');
+  const [actionDay, setActionDay] = useState<string>('Fri');
+  const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
+
+  const [evaluateId, setEvaluateId] = useState<string | null>(null);
+  const [impact, setImpact] = useState(3);
+  const [effort, setEffort] = useState(2);
+  const [alignment, setAlignment] = useState(3);
+  const [timing, setTiming] = useState(3);
+
+  const [availableHoursInput, setAvailableHoursInput] = useState('11');
+
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 2800);
   }, []);
 
+  const load = useCallback(
+    async (mode: 'boot' | 'refresh' = 'boot') => {
+      if (mode === 'refresh') setRefreshing(true);
+      else setLoading(true);
+      try {
+        const reachable = await pingApi();
+        setOnline(reachable);
+        const nextAccount = await getAccount();
+        setAccount(nextAccount);
+        if (!nextAccount) {
+          setItems([]);
+          setAccountOpen(true);
+          return;
+        }
+        const nextItems = await refreshAllItems();
+        setItems(nextItems);
+        const vision = ofKind(nextItems, 'VISION').find((item) =>
+          Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
+        );
+        if (vision) {
+          setAvailableHoursInput(String(bodyNumber(vision, 'availableHours', 11)));
+        }
+      } catch (error) {
+        setOnline(false);
+        if (error instanceof ApiError && error.status === 401) {
+          setAccount(null);
+          setItems([]);
+          setAccountOpen(true);
+        } else {
+          notify(
+            error instanceof Error
+              ? error.message
+              : 'Could not load Life OS data.',
+          );
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [notify],
+  );
+
   useEffect(() => {
-    getAccount()
-      .then(setAccount)
-      .catch(() => setAccount(null));
-  }, []);
+    void load('boot');
+  }, [load]);
 
   useEffect(() => {
     if (!incomingUrl) return;
-    const parsed = Linking.parse(incomingUrl);
-    const token = parsed.queryParams?.token;
-    if (typeof token === 'string' && token.length >= 32) {
-      setPendingInviteToken(token);
-      setAccountVisible(true);
+    try {
+      const parsed = Linking.parse(incomingUrl);
+      const token =
+        typeof parsed.queryParams?.token === 'string'
+          ? parsed.queryParams.token
+          : null;
+      if (token) {
+        setInviteToken(token);
+        setAccountOpen(true);
+      }
+    } catch {
+      // ignore malformed deep links
     }
   }, [incomingUrl]);
 
-  useEffect(() => {
-    if (loaded.current) {
-      void AsyncStorage.setItem('life-os-native-prototype', JSON.stringify(state));
+  const pillars = useMemo(() => ofKind(items, 'PILLAR').filter(isOpen), [items]);
+  const ideas = useMemo(() => ofKind(items, 'IDEA').filter(isOpen), [items]);
+  const projects = useMemo(() => ofKind(items, 'PROJECT').filter(isOpen), [items]);
+  const actions = useMemo(() => ofKind(items, 'ACTION'), [items]);
+  const doneActions = useMemo(
+    () => actions.filter((item) => item.status === 'DONE'),
+    [actions],
+  );
+  const capacity = useMemo(() => weeklyCapacityHours(items), [items]);
+  const primary = useMemo(() => primaryAction(items), [items]);
+  const supporting = useMemo(
+    () => supportingActions(items, primary?.id),
+    [items, primary?.id],
+  );
+  const risks = useMemo(() => projectRisks(items), [items]);
+
+  async function run(label: string, work: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await work();
+      successTap();
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : `${label} failed. Try again.`,
+      );
+    } finally {
+      setBusy(false);
     }
-  }, [state]);
-
-  function patch(patchValue: Partial<PrototypeState>) {
-    setState((current) => ({ ...current, ...patchValue }));
   }
 
-  function notify(message: string) {
-    setNotice(message);
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setNotice(''), 2600);
+  async function reloadItems() {
+    const nextItems = await refreshAllItems();
+    setItems(nextItems);
   }
 
-  function selectTab(next: Tab) {
-    tap();
-    setTab(next);
+  async function saveIdea() {
+    if (!ideaTitle.trim()) {
+      notify('Give the idea a title.');
+      return;
+    }
+    await run('Save idea', async () => {
+      await createLifeItem({
+        kind: 'IDEA',
+        title: ideaTitle.trim(),
+        parentId: ideaPillarId,
+        body: {
+          note: ideaNote.trim(),
+          impact: 0,
+          effort: 0,
+          alignment: 0,
+          timing: 0,
+        },
+      });
+      setIdeaTitle('');
+      setIdeaNote('');
+      setIdeaPillarId(null);
+      setCaptureOpen(false);
+      await reloadItems();
+      setTab('ideas');
+      notify('Idea saved to your account.');
+    });
   }
 
-  function reset() {
-    tap(Haptics.ImpactFeedbackStyle.Medium);
-    setState(initialState);
-    setTab('command');
-    setModal(null);
-    void AsyncStorage.removeItem('life-os-native-prototype');
-    notify('Prototype journey reset.');
+  async function saveEvaluation() {
+    if (!evaluateId) return;
+    await run('Evaluate idea', async () => {
+      const existing = items.find((item) => item.id === evaluateId);
+      if (!existing) throw new Error('Idea not found.');
+      await updateLifeItem(evaluateId, {
+        status: 'EVALUATED',
+        body: {
+          ...existing.body,
+          impact,
+          effort,
+          alignment,
+          timing,
+          score: impact + alignment + timing - effort,
+        },
+      });
+      setEvaluateId(null);
+      await reloadItems();
+      notify('Evaluation saved.');
+    });
   }
 
-  const tabs = [
-    ['command', 'grid-outline', 'Command'],
-    ['portfolio', 'layers-outline', 'Pillars'],
-    ['ideas', 'bulb-outline', 'Ideas'],
-    ['capacity', 'speedometer-outline', 'Capacity'],
-    ['review', 'bar-chart-outline', 'Review'],
-  ] as const;
+  function openConvert(idea: LifeItem) {
+    setSourceIdeaId(idea.id);
+    setProjectTitle(idea.title);
+    setProjectOutcome(bodyString(idea, 'note'));
+    setProjectPillarId(idea.parentId);
+    setActionTitle(`Advance: ${idea.title}`);
+    setActionHours('2');
+    setActionDay('Fri');
+    setProjectOpen(true);
+  }
+
+  async function saveProject() {
+    if (!projectTitle.trim()) {
+      notify('Project needs a title.');
+      return;
+    }
+    if (!actionTitle.trim()) {
+      notify('Add a first next action.');
+      return;
+    }
+    const hours = Number(actionHours);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      notify('Action hours must be a positive number.');
+      return;
+    }
+    await run('Create project', async () => {
+      const project = await createLifeItem({
+        kind: 'PROJECT',
+        title: projectTitle.trim(),
+        parentId: projectPillarId,
+        body: {
+          outcome: projectOutcome.trim(),
+          fromIdeaId: sourceIdeaId,
+        },
+      });
+      await createLifeItem({
+        kind: 'ACTION',
+        title: actionTitle.trim(),
+        parentId: project.id,
+        body: {
+          hours,
+          day: actionDay,
+        },
+      });
+      if (sourceIdeaId) {
+        await updateLifeItem(sourceIdeaId, { status: 'CONVERTED' });
+      }
+      setProjectOpen(false);
+      setSourceIdeaId(null);
+      setProjectTitle('');
+      setProjectOutcome('');
+      setActionTitle('');
+      await reloadItems();
+      setTab('portfolio');
+      notify('Project and next action saved.');
+    });
+  }
+
+  async function completeAction(action: LifeItem) {
+    await run('Complete action', async () => {
+      await updateLifeItem(action.id, { status: 'DONE' });
+      await reloadItems();
+      notify('Action completed.');
+    });
+  }
+
+  async function reduceActionHours(action: LifeItem, nextHours: number) {
+    await run('Reduce scope', async () => {
+      await updateLifeItem(action.id, {
+        body: {
+          ...action.body,
+          hours: Math.max(0.5, nextHours),
+        },
+      });
+      await reloadItems();
+      notify(`Action reduced to ${Math.max(0.5, nextHours).toFixed(1)}h.`);
+    });
+  }
+
+  async function saveCapacityPreference() {
+    const hours = Number(availableHoursInput);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      notify('Available hours must be a positive number.');
+      return;
+    }
+    await run('Save capacity', async () => {
+      const vision = ofKind(items, 'VISION').find((item) =>
+        Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
+      );
+      if (vision) {
+        await updateLifeItem(vision.id, {
+          body: { ...vision.body, availableHours: hours },
+        });
+      } else {
+        await createLifeItem({
+          kind: 'VISION',
+          title: 'Weekly capacity',
+          body: { availableHours: hours },
+        });
+      }
+      await reloadItems();
+      notify('Weekly capacity updated.');
+    });
+  }
+
+  async function archiveItem(item: LifeItem) {
+    await run('Archive', async () => {
+      await updateLifeItem(item.id, { status: 'ARCHIVED' });
+      await reloadItems();
+    });
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.boot}>
+        <ActivityIndicator color={colors.ink} size="large" />
+        <Text style={styles.bootText}>Loading your Life OS…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!account) {
+    return (
+      <SafeAreaView style={styles.boot}>
+        <Text style={styles.brandMark}>Life OS</Text>
+        <Text style={styles.bootTitle}>Sign in to use your account</Text>
+        <Text style={styles.bootText}>
+          Ideas, projects, capacity and reviews sync to {`lifeos.orija.store`} so
+          phone and desktop share one source of truth.
+        </Text>
+        {!online ? (
+          <Pill tone="danger">Server unreachable — check your tunnel</Pill>
+        ) : null}
+        <Button onPress={() => setAccountOpen(true)} style={{ marginTop: 18 }}>
+          Sign in or create account
+        </Button>
+        <AccountSheet
+          visible={accountOpen}
+          account={null}
+          initialInviteToken={inviteToken ?? undefined}
+          notify={notify}
+          onClose={() => setAccountOpen(false)}
+          onAccountChange={(next) => {
+            setAccount(next);
+            if (next) void load('refresh');
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, Platform.OS === 'web' && styles.webFrame]}
-      edges={['top']}
-    >
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <StatusBar style="dark" />
-      <View style={styles.appHeader}>
-        <Pressable style={styles.brandRow} onPress={() => setAccountVisible(true)}>
-          <View style={styles.brandMark}>
-            <View style={styles.brandMarkInner} />
-          </View>
-          <View>
-            <Text style={styles.brandName}>Life OS</Text>
-            <Text style={styles.brandCaption}>
-              {account ? account.user.displayName : 'Tap to create your profile'}
-            </Text>
-          </View>
-        </Pressable>
-        <View style={styles.headerActions}>
-          <Pressable style={styles.iconButton} onPress={reset}>
-            <Icon name="refresh-outline" size={18} />
-          </Pressable>
-          <Pressable style={styles.iconButton} onPress={() => setAccountVisible(true)}>
-            {account ? (
-              <Text style={styles.accountInitials}>
-                {account.user.displayName
-                  .split(' ')
-                  .map((part) => part[0])
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase()}
-              </Text>
-            ) : (
-              <Icon name="person-outline" size={18} />
-            )}
-          </Pressable>
-          <Pressable
-            style={styles.captureButton}
-            onPress={() => {
-              tap();
-              setModal('capture');
-            }}
-          >
-            <Icon name="add" size={22} color="white" />
-          </Pressable>
+      <View style={styles.topBar}>
+        <View>
+          <Text style={styles.brandMark}>Life OS</Text>
+          <Text style={styles.topMeta}>
+            {todayLabel()} · {online ? 'Online' : 'Offline'}
+          </Text>
         </View>
+        <Pressable
+          onPress={() => {
+            tap();
+            setAccountOpen(true);
+          }}
+          style={styles.avatarButton}
+        >
+          <Text style={styles.avatarText}>
+            {account.user.displayName.slice(0, 1).toUpperCase()}
+          </Text>
+        </Pressable>
       </View>
-
-      <Journey step={Math.min(state.step, 6)} />
 
       <ScrollView
-        style={styles.contentScroll}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: Math.max(insets.bottom, 16) + 94 },
+          { paddingBottom: 108 + insets.bottom },
         ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load('refresh')} />
+        }
       >
-        {tab === 'command' && (
-          <CommandScreen
-            state={state}
-            displayName={account?.user.displayName}
-            onComplete={() => {
-              patch({ complete: true, step: 6 });
-              tap(Haptics.ImpactFeedbackStyle.Heavy);
-              notify('Primary Move complete — strong progress.');
-            }}
-            onOpenReview={() => setTab('review')}
-            onOpenIdeas={() => setTab('ideas')}
-            onOpenCapacity={() => setTab('capacity')}
-            notify={notify}
-          />
-        )}
-        {tab === 'ideas' && (
-          <IdeaScreen
-            state={state}
-            onCapture={() => setModal('capture')}
-            onEvaluate={() => {
-              patch({ evaluating: true, step: Math.max(1, state.step) });
-              tap(Haptics.ImpactFeedbackStyle.Medium);
-            }}
-            onPillar={(pillar) => patch({ pillar })}
-            onProject={() => {
-              patch({ step: 2 });
-              setModal('project');
-            }}
-          />
-        )}
-        {tab === 'portfolio' && <PortfolioScreen state={state} />}
-        {tab === 'capacity' && (
-          <CapacityScreen
-            state={state}
-            onReduce={() => {
-              patch({ projectHours: 4.5, step: 4 });
-              tap(Haptics.ImpactFeedbackStyle.Heavy);
-              notify('Scope reduced by 3 hours. The plan now fits.');
-            }}
-            onDay={(scheduleDay) => patch({ scheduleDay })}
-            onSchedule={() => {
-              patch({ scheduled: true, step: 5 });
-              setTab('command');
-              successTap();
-              notify(`Next action scheduled for ${state.scheduleDay}.`);
-            }}
-            notify={notify}
-          />
-        )}
-        {tab === 'review' && (
-          <ReviewScreen
-            state={state}
-            onGenerate={() => {
-              patch({ scorecard: true, step: 7 });
-              tap(Haptics.ImpactFeedbackStyle.Heavy);
-              notify('Weekly CEO Scorecard generated.');
-            }}
-          />
-        )}
+        {tab === 'command' ? (
+          <View style={styles.stack}>
+            <Text style={styles.greeting}>Good focus, {firstName(account)}.</Text>
+            <Text style={styles.lede}>
+              Your Command Centre is built from live projects and actions — not demo
+              cards.
+            </Text>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Primary Move</Text>
+              {primary ? (
+                <>
+                  <Text style={styles.cardTitle}>{primary.title}</Text>
+                  <Text style={styles.cardBody}>
+                    {bodyNumber(primary, 'hours', 1)}h
+                    {bodyString(primary, 'day')
+                      ? ` · ${bodyString(primary, 'day')}`
+                      : ''}
+                  </Text>
+                  <View style={styles.row}>
+                    <Button
+                      onPress={() => void completeAction(primary)}
+                      disabled={busy}
+                      style={{ flex: 1 }}
+                    >
+                      Mark done
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onPress={() => setTab('capacity')}
+                      style={{ flex: 1 }}
+                    >
+                      Capacity
+                    </Button>
+                  </View>
+                </>
+              ) : (
+                <EmptyState
+                  title="No primary move yet"
+                  body="Capture an idea and convert it into a project with a next action."
+                  action={
+                    <Button onPress={() => setCaptureOpen(true)} style={{ marginTop: 12 }}>
+                      Capture idea
+                    </Button>
+                  }
+                />
+              )}
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Supporting actions</Text>
+              {supporting.length === 0 ? (
+                <Text style={styles.cardBody}>No other open actions this week.</Text>
+              ) : (
+                supporting.map((action) => (
+                  <Pressable
+                    key={action.id}
+                    onPress={() => void completeAction(action)}
+                    style={styles.listRow}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.listTitle}>{action.title}</Text>
+                      <Text style={styles.listMeta}>
+                        {bodyNumber(action, 'hours', 1)}h
+                        {bodyString(action, 'day')
+                          ? ` · ${bodyString(action, 'day')}`
+                          : ''}
+                      </Text>
+                    </View>
+                    <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                  </Pressable>
+                ))
+              )}
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Capacity pulse</Text>
+              <Text style={styles.cardTitle}>
+                {capacity.planned.toFixed(1)}h / {capacity.available}h
+              </Text>
+              <ProgressBar
+                value={(capacity.planned / Math.max(capacity.available, 0.1)) * 100}
+                warning={capacity.planned > capacity.available}
+              />
+              <Text style={styles.cardBody}>
+                {capacity.planned > capacity.available
+                  ? 'Over capacity — reduce scope in Capacity.'
+                  : 'Within capacity for this week.'}
+              </Text>
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Risks</Text>
+              {risks.length === 0 ? (
+                <Text style={styles.cardBody}>No active risks detected.</Text>
+              ) : (
+                risks.map((risk) => (
+                  <View key={risk} style={styles.riskRow}>
+                    <Icon name="warning-outline" color={colors.danger} />
+                    <Text style={[styles.cardBody, { flex: 1 }]}>{risk}</Text>
+                  </View>
+                ))
+              )}
+            </Card>
+          </View>
+        ) : null}
+
+        {tab === 'ideas' ? (
+          <View style={styles.stack}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Idea Studio</Text>
+              <Button onPress={() => setCaptureOpen(true)}>Capture</Button>
+            </View>
+            {ideas.length === 0 ? (
+              <EmptyState
+                title="No open ideas"
+                body="Capture something rough. Evaluate it, then convert the winners into projects."
+              />
+            ) : (
+              ideas.map((idea) => {
+                const score = ideaScore(idea);
+                return (
+                  <Card key={idea.id}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.cardTitle}>{idea.title}</Text>
+                      <Pill tone={score > 0 ? 'sage' : 'amber'}>
+                        {score > 0 ? `Score ${score}` : 'Unevaluated'}
+                      </Pill>
+                    </View>
+                    {bodyString(idea, 'note') ? (
+                      <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
+                    ) : null}
+                    <View style={styles.row}>
+                      <Button
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        onPress={() => {
+                          setEvaluateId(idea.id);
+                          setImpact(bodyNumber(idea, 'impact', 3) || 3);
+                          setEffort(bodyNumber(idea, 'effort', 2) || 2);
+                          setAlignment(bodyNumber(idea, 'alignment', 3) || 3);
+                          setTiming(bodyNumber(idea, 'timing', 3) || 3);
+                        }}
+                      >
+                        Evaluate
+                      </Button>
+                      <Button
+                        style={{ flex: 1 }}
+                        onPress={() => openConvert(idea)}
+                      >
+                        Make project
+                      </Button>
+                    </View>
+                    <Button variant="ghost" onPress={() => void archiveItem(idea)}>
+                      Archive
+                    </Button>
+                  </Card>
+                );
+              })
+            )}
+          </View>
+        ) : null}
+
+        {tab === 'portfolio' ? (
+          <View style={styles.stack}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Pillars & Projects</Text>
+              <Button
+                onPress={() => {
+                  setSourceIdeaId(null);
+                  setProjectTitle('');
+                  setProjectOutcome('');
+                  setProjectPillarId(pillars[0]?.id ?? null);
+                  setActionTitle('');
+                  setActionHours('2');
+                  setProjectOpen(true);
+                }}
+              >
+                New project
+              </Button>
+            </View>
+            {pillars.map((pillar) => {
+              const pillarProjects = projects.filter(
+                (project) => project.parentId === pillar.id,
+              );
+              const openCount = pillarProjects.length;
+              return (
+                <Card key={pillar.id}>
+                  <Text style={styles.cardEyebrow}>Pillar</Text>
+                  <Text style={styles.cardTitle}>{pillar.title}</Text>
+                  <Text style={styles.cardBody}>
+                    {openCount} open project{openCount === 1 ? '' : 's'}
+                  </Text>
+                  {pillarProjects.length === 0 ? (
+                    <Text style={styles.listMeta}>No projects under this pillar yet.</Text>
+                  ) : (
+                    pillarProjects.map((project) => {
+                      const next = childrenOf(items, project.id).find(
+                        (item) => item.kind === 'ACTION' && isOpen(item),
+                      );
+                      return (
+                        <View key={project.id} style={styles.projectBlock}>
+                          <Text style={styles.listTitle}>{project.title}</Text>
+                          {bodyString(project, 'outcome') ? (
+                            <Text style={styles.listMeta}>
+                              {bodyString(project, 'outcome')}
+                            </Text>
+                          ) : null}
+                          <Text style={styles.listMeta}>
+                            Next:{' '}
+                            {next
+                              ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
+                              : 'None — add an action'}
+                          </Text>
+                          {next ? (
+                            <Button
+                              variant="secondary"
+                              onPress={() => void completeAction(next)}
+                            >
+                              Complete next action
+                            </Button>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  )}
+                </Card>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {tab === 'capacity' ? (
+          <View style={styles.stack}>
+            <Text style={styles.sectionTitle}>Capacity</Text>
+            <Card>
+              <Text style={styles.cardEyebrow}>This week</Text>
+              <Text style={styles.cardTitle}>
+                {capacity.planned.toFixed(1)}h planned / {capacity.available}h available
+              </Text>
+              <ProgressBar
+                value={(capacity.planned / Math.max(capacity.available, 0.1)) * 100}
+                warning={capacity.planned > capacity.available}
+              />
+              {capacity.planned > capacity.available ? (
+                <Pill tone="danger">Overcommitted — reduce action hours below</Pill>
+              ) : (
+                <Pill>Healthy load</Pill>
+              )}
+            </Card>
+
+            <Card>
+              <Field
+                label="Available hours / week"
+                value={availableHoursInput}
+                onChangeText={setAvailableHoursInput}
+                keyboardType="decimal-pad"
+              />
+              <Button onPress={() => void saveCapacityPreference()} disabled={busy}>
+                Save capacity preference
+              </Button>
+            </Card>
+
+            {capacity.openActions.length === 0 ? (
+              <EmptyState
+                title="No scheduled actions"
+                body="Create a project with a next action to plan the week."
+              />
+            ) : (
+              capacity.openActions.map((action) => (
+                <Card key={action.id}>
+                  <Text style={styles.listTitle}>{action.title}</Text>
+                  <Text style={styles.listMeta}>
+                    {bodyNumber(action, 'hours', 1)}h
+                    {bodyString(action, 'day')
+                      ? ` · ${bodyString(action, 'day')}`
+                      : ' · unscheduled'}
+                  </Text>
+                  <View style={styles.row}>
+                    <Button
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() =>
+                        void reduceActionHours(
+                          action,
+                          bodyNumber(action, 'hours', 1) - 1,
+                        )
+                      }
+                    >
+                      −1h
+                    </Button>
+                    <Button
+                      style={{ flex: 1 }}
+                      onPress={() => void completeAction(action)}
+                    >
+                      Done
+                    </Button>
+                  </View>
+                </Card>
+              ))
+            )}
+          </View>
+        ) : null}
+
+        {tab === 'review' ? (
+          <View style={styles.stack}>
+            <Text style={styles.sectionTitle}>Weekly Review</Text>
+            <Card>
+              <Text style={styles.cardEyebrow}>Scorecard</Text>
+              <Text style={styles.cardTitle}>
+                {doneActions.length} completed · {capacity.openActions.length} still open
+              </Text>
+              <Text style={styles.cardBody}>
+                Planned load {capacity.planned.toFixed(1)}h against {capacity.available}h
+                available. Completion rate{' '}
+                {actions.length === 0
+                  ? '0'
+                  : Math.round((doneActions.length / actions.length) * 100)}
+                %.
+              </Text>
+            </Card>
+            <Card>
+              <Text style={styles.cardEyebrow}>Open actions to close</Text>
+              {capacity.openActions.length === 0 ? (
+                <Text style={styles.cardBody}>
+                  Nothing open — capture the next idea or enjoy the clear week.
+                </Text>
+              ) : (
+                capacity.openActions.map((action) => (
+                  <Pressable
+                    key={action.id}
+                    style={styles.listRow}
+                    onPress={() => void completeAction(action)}
+                  >
+                    <Text style={[styles.listTitle, { flex: 1 }]}>{action.title}</Text>
+                    <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                  </Pressable>
+                ))
+              )}
+            </Card>
+            {risks.length > 0 ? (
+              <Card>
+                <Text style={styles.cardEyebrow}>Carry into next week</Text>
+                {risks.map((risk) => (
+                  <Text key={risk} style={styles.cardBody}>
+                    • {risk}
+                  </Text>
+                ))}
+              </Card>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
 
-      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        {tabs.map(([key, icon, label]) => {
-          const active = tab === key;
-          return (
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              key={key}
-              onPress={() => selectTab(key)}
-              style={styles.tabItem}
-            >
-              <View style={[styles.tabIcon, active && styles.tabIconActive]}>
-                <Icon
-                  name={icon}
-                  size={20}
-                  color={active ? colors.ink : '#89938D'}
-                />
-                {key === 'ideas' && Boolean(state.ideaTitle) && (
-                  <View style={styles.tabBadge} />
-                )}
-              </View>
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
-            </Pressable>
-          );
-        })}
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        {(
+          [
+            ['command', 'Command', 'grid-outline'],
+            ['ideas', 'Ideas', 'bulb-outline'],
+            ['portfolio', 'Portfolio', 'layers-outline'],
+            ['capacity', 'Capacity', 'speedometer-outline'],
+            ['review', 'Review', 'stats-chart-outline'],
+          ] as const
+        ).map(([id, label, icon]) => (
+          <Pressable
+            key={id}
+            onPress={() => {
+              tap();
+              setTab(id);
+            }}
+            style={styles.tabItem}
+          >
+            <Icon
+              name={icon}
+              color={tab === id ? colors.ink : colors.muted}
+              size={20}
+            />
+            <Text style={[styles.tabLabel, tab === id && styles.tabLabelActive]}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
-      <CaptureModal
-        visible={modal === 'capture'}
-        onClose={() => setModal(null)}
-        onSave={(title, note) => {
-          patch({
-            ideaTitle: title,
-            ideaNote: note,
-            evaluating: false,
-            step: Math.max(1, state.step),
-          });
-          setModal(null);
-          setTab('ideas');
-          successTap();
-          notify('Idea captured — no commitment created.');
-          if (account) {
-            void createLifeItem({
-              kind: 'IDEA',
-              title,
-              visibility: 'PRIVATE',
-              body: { note },
-            }).catch(() => notify('Idea saved on device; server sync will retry later.'));
-          }
+      <Pressable
+        style={[styles.fab, { bottom: 78 + insets.bottom }]}
+        onPress={() => {
+          tap();
+          setCaptureOpen(true);
         }}
-      />
-      <ProjectModal
-        visible={modal === 'project'}
-        state={state}
-        onClose={() => setModal(null)}
-        onSave={(project) => {
-          patch({
-            step: 3,
-            projectTitle: project.title,
-            projectOutcome: project.outcome,
-            projectHours: project.hours,
-            actionTitle: project.action,
-            actionHours: project.actionHours,
-          });
-          setModal(null);
-          setTab('capacity');
-          notify('Project created. Now check whether it fits.');
-          if (account) {
-            void createLifeItem({
-              kind: 'PROJECT',
-              title: project.title,
-              visibility: 'PRIVATE',
-              body: {
-                outcome: project.outcome,
-                estimatedHours: project.hours,
-                nextAction: project.action,
-                actionHours: project.actionHours,
-              },
-            }).catch(() => notify('Project saved on device; server sync will retry later.'));
-          }
-        }}
-      />
-      <AccountSheet
-        account={account}
-        initialInviteToken={pendingInviteToken}
-        onAccountChange={setAccount}
-        onClose={() => setAccountVisible(false)}
-        notify={notify}
-        visible={accountVisible}
-      />
+      >
+        <Icon name="add" color={colors.acidInk} size={28} />
+      </Pressable>
 
-      {notice ? (
-        <View style={[styles.toast, { bottom: 80 + Math.max(insets.bottom, 8) }]}>
-          <Icon name="checkmark-circle" size={17} color={colors.acid} />
-          <Text style={styles.toastText}>{notice}</Text>
+      {toast ? (
+        <View style={[styles.toast, { bottom: 120 + insets.bottom }]}>
+          <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
+
+      <Modal visible={captureOpen} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalWrap}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.sectionTitle}>Capture idea</Text>
+            <Field
+              label="Title"
+              value={ideaTitle}
+              onChangeText={setIdeaTitle}
+              placeholder="What showed up?"
+            />
+            <Field
+              label="Note"
+              value={ideaNote}
+              onChangeText={setIdeaNote}
+              placeholder="Context, why it matters"
+              multiline
+            />
+            <Text style={styles.fieldLabel}>Pillar (optional)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipRow}>
+                {pillars.map((pillar) => (
+                  <Pressable
+                    key={pillar.id}
+                    onPress={() => setIdeaPillarId(pillar.id)}
+                    style={[
+                      styles.chip,
+                      ideaPillarId === pillar.id && styles.chipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        ideaPillarId === pillar.id && styles.chipTextActive,
+                      ]}
+                    >
+                      {pillar.title}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => setCaptureOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button style={{ flex: 1 }} disabled={busy} onPress={() => void saveIdea()}>
+                Save idea
+              </Button>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={!!evaluateId} animationType="slide" transparent>
+        <View style={styles.modalWrap}>
+          <View style={styles.modalCard}>
+            <Text style={styles.sectionTitle}>Evaluate idea</Text>
+            <Text style={styles.cardBody}>
+              Score each dimension 1–5. Higher impact/alignment/timing is better;
+              higher effort is costlier.
+            </Text>
+            {(
+              [
+                ['Impact', impact, setImpact],
+                ['Effort', effort, setEffort],
+                ['Alignment', alignment, setAlignment],
+                ['Timing', timing, setTiming],
+              ] as const
+            ).map(([label, value, setter]) => (
+              <View key={label} style={styles.scoreRow}>
+                <Text style={styles.fieldLabel}>{label}</Text>
+                <View style={styles.chipRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable
+                      key={n}
+                      onPress={() => setter(n)}
+                      style={[styles.scoreChip, value === n && styles.chipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          value === n && styles.chipTextActive,
+                        ]}
+                      >
+                        {n}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ))}
+            <Pill tone="ink">
+              Score {impact + alignment + timing - effort}
+            </Pill>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => setEvaluateId(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                style={{ flex: 1 }}
+                disabled={busy}
+                onPress={() => void saveEvaluation()}
+              >
+                Save scores
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={projectOpen} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalWrap}
+        >
+          <ScrollView contentContainerStyle={styles.modalCard}>
+            <Text style={styles.sectionTitle}>Create project</Text>
+            <Field
+              label="Project title"
+              value={projectTitle}
+              onChangeText={setProjectTitle}
+            />
+            <Field
+              label="Outcome"
+              value={projectOutcome}
+              onChangeText={setProjectOutcome}
+              multiline
+            />
+            <Text style={styles.fieldLabel}>Pillar</Text>
+            <View style={styles.chipRow}>
+              {pillars.map((pillar) => (
+                <Pressable
+                  key={pillar.id}
+                  onPress={() => setProjectPillarId(pillar.id)}
+                  style={[
+                    styles.chip,
+                    projectPillarId === pillar.id && styles.chipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      projectPillarId === pillar.id && styles.chipTextActive,
+                    ]}
+                  >
+                    {pillar.title}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Field
+              label="First next action"
+              value={actionTitle}
+              onChangeText={setActionTitle}
+            />
+            <Field
+              label="Hours"
+              value={actionHours}
+              onChangeText={setActionHours}
+              keyboardType="decimal-pad"
+            />
+            <Text style={styles.fieldLabel}>Day</Text>
+            <View style={styles.chipRow}>
+              {WEEK_DAYS.map((day) => (
+                <Pressable
+                  key={day}
+                  onPress={() => setActionDay(day)}
+                  style={[styles.chip, actionDay === day && styles.chipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      actionDay === day && styles.chipTextActive,
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => setProjectOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                style={{ flex: 1 }}
+                disabled={busy}
+                onPress={() => void saveProject()}
+              >
+                Save project
+              </Button>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <AccountSheet
+        visible={accountOpen}
+        account={account}
+        initialInviteToken={inviteToken ?? undefined}
+        notify={notify}
+        onClose={() => setAccountOpen(false)}
+        onAccountChange={(next) => {
+          setAccount(next);
+          if (next) void load('refresh');
+          else {
+            setItems([]);
+            setAccountOpen(true);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
 
 export default function App() {
   return (
-    <SafeAreaProvider style={styles.host}>
+    <SafeAreaProvider>
       <AppContent />
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  host: {
-    flex: 1,
-    backgroundColor: '#E5EAE4',
-  },
-  safeArea: {
+  safe: { flex: 1, backgroundColor: colors.canvas },
+  boot: {
     flex: 1,
     backgroundColor: colors.canvas,
-  },
-  webFrame: {
-    width: '100%',
-    maxWidth: 430,
-    alignSelf: 'center',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: '#D4DAD4',
-    shadowColor: '#10251F',
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  appHeader: {
-    height: 66,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
-    backgroundColor: 'rgba(244,245,240,0.98)',
+    justifyContent: 'center',
+    padding: 28,
+    gap: 12,
   },
-  brandRow: {
+  bootTitle: {
+    fontFamily: serif,
+    fontSize: 28,
+    color: colors.ink,
+    textAlign: 'center',
+  },
+  bootText: {
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 20,
+    fontSize: 14,
+  },
+  brandMark: {
+    fontFamily: serif,
+    fontSize: 22,
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  topBar: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 10,
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  topMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  avatarButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: colors.acid, fontWeight: '700' },
+  content: { paddingHorizontal: 16, paddingTop: 4 },
+  stack: { gap: 12 },
+  greeting: {
+    fontFamily: serif,
+    fontSize: 30,
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  lede: { color: colors.muted, marginBottom: 8, lineHeight: 20 },
+  card: {
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.line,
+    gap: 10,
+  },
+  cardEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.sageDeep,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  cardTitle: {
+    fontFamily: serif,
+    fontSize: 22,
+    color: colors.ink,
+  },
+  cardBody: { color: colors.muted, lineHeight: 20, fontSize: 14 },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionTitle: {
+    fontFamily: serif,
+    fontSize: 26,
+    color: colors.ink,
+    flex: 1,
+  },
+  row: { flexDirection: 'row', gap: 10 },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: 10,
   },
-  brandMark: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: colors.sageDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandMarkInner: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.acid,
-  },
-  brandName: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  brandCaption: {
-    color: colors.muted,
-    fontSize: 9,
-    marginTop: 1,
-  },
-  headerActions: {
+  listRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
   },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.paper,
+  listTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
+  listMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  projectBlock: {
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
   },
-  accountInitials: {
-    color: colors.ink,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  captureButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.ink,
-  },
-  notificationDot: {
-    position: 'absolute',
-    top: 7,
-    right: 7,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.danger,
-    borderWidth: 1,
-    borderColor: 'white',
-  },
-  journey: {
-    maxHeight: 49,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
-    backgroundColor: 'rgba(255,255,255,0.62)',
-  },
-  journeyContent: {
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    gap: 3,
-  },
-  journeyPair: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  journeyItem: {
-    height: 33,
-    paddingHorizontal: 7,
-    borderRadius: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  journeyItemCurrent: {
-    backgroundColor: colors.ink,
-  },
-  journeyItemDone: {
-    backgroundColor: '#EEF3EA',
-  },
-  journeyNumber: {
-    width: 17,
-    height: 17,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: '#A5AFA8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  journeyNumberCurrent: {
-    borderColor: 'rgba(255,255,255,0.6)',
-  },
-  journeyNumberDone: {
-    backgroundColor: colors.sage,
-    borderColor: '#AEC5A7',
-  },
-  journeyNumberText: {
-    color: colors.muted,
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  journeyNumberTextCurrent: {
-    color: 'white',
-  },
-  journeyLabel: {
-    color: '#87918B',
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  journeyLabelCurrent: {
-    color: 'white',
-  },
-  journeyLabelDone: {
-    color: colors.sageDeep,
-  },
-  contentScroll: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 24,
-  },
-  screenHeader: {
-    marginBottom: 22,
-  },
-  eyebrowRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  eyebrow: {
-    color: colors.sageDeep,
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  eyebrowLight: {
-    color: 'rgba(255,255,255,0.62)',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  headingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  screenTitle: {
-    flex: 1,
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 32,
-    lineHeight: 37,
-    letterSpacing: -1.1,
-  },
-  screenSubtitle: {
-    maxWidth: 570,
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 7,
-  },
-  headerArrow: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.sage,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  riskRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  emptyCard: { alignItems: 'flex-start' },
+  emptyTitle: { fontFamily: serif, fontSize: 20, color: colors.ink },
+  emptyBody: { color: colors.muted, lineHeight: 20 },
   button: {
-    minHeight: 42,
-    paddingHorizontal: 16,
-    borderRadius: 11,
-    flexDirection: 'row',
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.ink,
+    paddingHorizontal: 14,
   },
   buttonSecondary: {
     backgroundColor: colors.paper,
     borderWidth: 1,
     borderColor: colors.line,
   },
-  buttonAcid: {
-    backgroundColor: colors.acid,
-  },
-  buttonGhost: {
-    backgroundColor: 'transparent',
-  },
-  buttonPressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.985 }],
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  buttonTextSecondary: {
-    color: colors.ink,
-  },
-  buttonTextAcid: {
-    color: colors.acidInk,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  buttonTextGhost: {
-    color: colors.muted,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  fullButton: {
-    width: '100%',
-  },
+  buttonAcid: { backgroundColor: colors.acid },
+  buttonGhost: { backgroundColor: 'transparent' },
+  buttonPressed: { opacity: 0.88 },
+  buttonDisabled: { opacity: 0.45 },
+  buttonText: { color: colors.paper, fontWeight: '700', fontSize: 13 },
+  buttonTextSecondary: { color: colors.ink },
+  buttonTextAcid: { color: colors.acidInk },
+  buttonTextGhost: { color: colors.muted },
   pill: {
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    backgroundColor: '#EEF3EA',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.sage,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  pillAmber: {
-    backgroundColor: colors.amberSoft,
-  },
-  pillInk: {
-    backgroundColor: colors.ink,
-  },
-  pillText: {
-    color: colors.sageDeep,
-    fontSize: 9,
-    lineHeight: 11,
-    fontWeight: '700',
-  },
-  pillTextAmber: {
-    color: '#9B573C',
-  },
-  pillTextInk: {
-    color: 'white',
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 17,
-    backgroundColor: colors.paper,
-    shadowColor: '#1C2D26',
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
-  },
-  primaryCard: {
-    minHeight: 264,
-    borderRadius: 19,
-    padding: 22,
-    overflow: 'hidden',
-    marginBottom: 14,
-  },
-  primaryTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  primaryLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  primaryDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.acid,
-  },
-  primaryLabelText: {
-    color: 'rgba(255,255,255,0.66)',
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  primaryTime: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 9,
-  },
-  primaryTitle: {
-    color: 'white',
-    fontFamily: serif,
-    fontSize: 29,
-    lineHeight: 34,
-    letterSpacing: -0.9,
-    marginTop: 27,
-  },
-  primaryDescription: {
-    color: 'rgba(255,255,255,0.58)',
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 8,
-  },
-  primaryFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 23,
-  },
-  primaryProject: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.46)',
-    fontSize: 9,
-  },
-  twoColumnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-  capacitySummary: {
-    flex: 1.55,
-    padding: 16,
-  },
-  riskSummary: {
-    flex: 0.85,
-    padding: 14,
-    justifyContent: 'center',
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  sectionTitle: {
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  sectionCaption: {
-    color: colors.muted,
-    fontSize: 9,
-    lineHeight: 13,
-    marginTop: 3,
-  },
-  textLink: {
-    color: colors.sageDeep,
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  capacityNumberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 17,
-    marginBottom: 9,
-  },
-  capacityBig: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 28,
-  },
+  pillAmber: { backgroundColor: colors.amberSoft },
+  pillInk: { backgroundColor: colors.ink },
+  pillDanger: { backgroundColor: '#F8E4DF' },
+  pillText: { color: colors.sageDeep, fontSize: 11, fontWeight: '700' },
+  pillTextAmber: { color: '#8A5A16' },
+  pillTextInk: { color: colors.acid },
+  pillTextDanger: { color: colors.danger },
   progressTrack: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#E9EDE8',
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.line,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#78996B',
-  },
-  progressFillWarning: {
-    backgroundColor: colors.danger,
-  },
-  capacityMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  capacityMetaText: {
-    color: colors.muted,
-    fontSize: 8,
-  },
-  riskIcon: {
-    width: 31,
-    height: 31,
-    borderRadius: 10,
-    backgroundColor: '#FBEBE6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 9,
-  },
-  riskNumber: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 25,
-  },
-  riskLabel: {
-    color: colors.ink,
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  riskDetail: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 4,
-  },
-  sectionCard: {
-    padding: 18,
-    marginBottom: 14,
-  },
-  actionRow: {
-    minHeight: 62,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E8ECE8',
-  },
-  actionRowFirst: {
-    marginTop: 12,
-  },
-  actionCheck: {
-    width: 21,
-    height: 21,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: '#C7CFC8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionCheckDone: {
-    borderColor: colors.sageDeep,
     backgroundColor: colors.sageDeep,
   },
-  actionCopy: {
-    flex: 1,
-  },
-  actionTitle: {
-    color: colors.ink,
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '600',
-  },
-  actionTitleDone: {
-    color: '#98A19B',
-    textDecorationLine: 'line-through',
-  },
-  actionMeta: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 4,
-  },
-  sectionTitleRowStandalone: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 7,
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  pillarScroll: {
-    gap: 10,
-    paddingBottom: 2,
-    paddingRight: 18,
-  },
-  pillarMini: {
-    width: 135,
-    padding: 13,
-  },
-  pillarMiniTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  pillarIcon: {
-    width: 31,
-    height: 31,
-    borderRadius: 10,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  healthDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#79A16A',
-  },
-  healthDotAmber: {
-    backgroundColor: '#DDA84B',
-  },
-  pillarName: {
-    color: colors.ink,
-    fontSize: 11,
+  progressFillWarning: { backgroundColor: colors.danger },
+  field: { gap: 6 },
+  fieldLabel: {
+    fontSize: 12,
     fontWeight: '700',
-    marginTop: 12,
-  },
-  pillarHealth: {
     color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
-  ideaPrompt: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
+  input: {
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 15,
-    backgroundColor: colors.paper,
-    padding: 14,
-    marginTop: 14,
-  },
-  ideaPromptIcon: {
-    width: 37,
-    height: 37,
-    borderRadius: 11,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ideaPromptCopy: {
-    flex: 1,
-  },
-  ideaPromptTitle: {
-    color: colors.ink,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  ideaPromptText: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-  },
-  roundAction: {
-    width: 39,
-    height: 39,
-    borderRadius: 13,
-    backgroundColor: colors.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterRow: {
-    gap: 7,
-    paddingRight: 16,
-    marginBottom: 14,
-  },
-  filterPill: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 20,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-  },
-  filterPillActive: {
-    backgroundColor: colors.ink,
-    borderColor: colors.ink,
-  },
-  filterText: {
-    color: colors.muted,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  filterTextActive: {
-    color: 'white',
-  },
-  ideaList: {
-    overflow: 'hidden',
-    marginBottom: 14,
-  },
-  ideaRow: {
-    minHeight: 72,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-  },
-  ideaIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF3EA',
-  },
-  ideaRowCopy: {
-    flex: 1,
-  },
-  ideaTitle: {
-    color: colors.ink,
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '700',
-  },
-  ideaMeta: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 4,
-  },
-  evaluationCard: {
-    overflow: 'hidden',
-  },
-  evaluationHeader: {
-    padding: 20,
-  },
-  evaluationTitle: {
-    color: 'white',
-    fontFamily: serif,
-    fontSize: 25,
-    lineHeight: 29,
-    marginTop: 10,
-  },
-  evaluationDescription: {
-    color: 'rgba(255,255,255,0.54)',
-    fontSize: 10,
-    lineHeight: 15,
-    marginTop: 6,
-  },
-  evaluationBody: {
-    padding: 18,
-  },
-  inputLabel: {
-    color: colors.muted,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.9,
-    marginBottom: 7,
-  },
-  pillarChoiceRow: {
-    gap: 7,
-    marginBottom: 17,
-  },
-  choicePill: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 20,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  choicePillSelected: {
-    backgroundColor: colors.ink,
-    borderColor: colors.ink,
-  },
-  choiceText: {
-    color: colors.muted,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  choiceTextSelected: {
-    color: 'white',
-  },
-  scoreList: {
-    gap: 11,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  scoreLabel: {
-    color: colors.inkSoft,
-    fontSize: 10,
-  },
-  scoreDots: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  scoreDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 4,
-    backgroundColor: '#E5EAE4',
-  },
-  scoreDotFilled: {
-    backgroundColor: '#709263',
-  },
-  scoreSummary: {
-    minHeight: 62,
-    borderRadius: 12,
-    backgroundColor: '#F0F5ED',
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginVertical: 18,
-  },
-  scoreSummaryLabel: {
-    color: colors.sageDeep,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  scoreSummaryHint: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-  },
-  scoreSummaryNumber: {
+    paddingVertical: 12,
     color: colors.ink,
-    fontFamily: serif,
-    fontSize: 27,
-  },
-  emptyEvaluation: {
-    alignItems: 'center',
-    padding: 26,
-  },
-  emptyTitle: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 21,
-    marginTop: 10,
-  },
-  emptyText: {
-    color: colors.muted,
-    textAlign: 'center',
-    fontSize: 10,
-    lineHeight: 15,
-    marginTop: 5,
-  },
-  pillarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  pillarCard: {
-    width: '48.5%',
-    minHeight: 150,
-    padding: 14,
-  },
-  pillarCardName: {
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 12,
-  },
-  pillarPercent: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 19,
-    marginBottom: 7,
-  },
-  projectList: {
-    overflow: 'hidden',
-  },
-  projectRow: {
-    minHeight: 70,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-  },
-  projectIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  projectCopy: {
-    flex: 1,
-  },
-  projectTitle: {
-    color: colors.ink,
-    fontSize: 10,
-    fontWeight: '700',
-    lineHeight: 14,
-  },
-  projectMeta: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 4,
-  },
-  capacityHero: {
-    padding: 19,
-    marginBottom: 14,
-  },
-  capacityHeroTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 18,
-  },
-  capacityPercentBox: {
-    width: 91,
-    height: 91,
-    borderRadius: 46,
-    backgroundColor: '#F0F3EE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  capacityHeroPercent: {
-    color: colors.sageDeep,
-    fontFamily: serif,
-    fontSize: 26,
-  },
-  capacityHeroPercentWarning: {
-    color: colors.danger,
-  },
-  capacityHeroLabel: {
-    color: colors.muted,
-    fontSize: 7,
-    letterSpacing: 0.8,
-    marginTop: 2,
-  },
-  capacityHeroCopy: {
-    flex: 1,
-  },
-  capacityHeroTitle: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 23,
-    lineHeight: 27,
-  },
-  capacityHeroDescription: {
-    color: colors.muted,
-    fontSize: 9,
-    lineHeight: 14,
-    marginTop: 5,
-  },
-  capacityTotals: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 18,
-  },
-  capacityTotalValue: {
-    color: colors.ink,
-    fontFamily: serif,
-    textAlign: 'center',
-    fontSize: 20,
-  },
-  capacityOverValue: {
-    color: colors.danger,
-  },
-  capacityTotalLabel: {
-    color: colors.muted,
-    fontSize: 7,
-    letterSpacing: 0.7,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-  capacityDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: colors.line,
-  },
-  capacityMessage: {
-    minHeight: 55,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: colors.amberSoft,
-  },
-  capacityMessageSuccess: {
-    backgroundColor: '#F0F5ED',
-  },
-  capacityMessageText: {
-    flex: 1,
-    color: '#95513A',
-    fontSize: 9,
-    lineHeight: 14,
-    fontWeight: '600',
-  },
-  capacityMessageTextSuccess: {
-    color: colors.sageDeep,
-  },
-  commitmentRow: {
-    minHeight: 59,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-  },
-  commitmentIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  commitmentCopy: {
-    flex: 1,
-  },
-  commitmentTitle: {
-    color: colors.ink,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  commitmentMeta: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-  },
-  commitmentHours: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  remedyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 9,
-    marginBottom: 14,
-  },
-  remedyCard: {
-    width: '48.7%',
-    minHeight: 112,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 15,
-    padding: 13,
     backgroundColor: colors.paper,
   },
-  remedyIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  remedyTitle: {
-    color: colors.ink,
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 9,
-  },
-  remedyText: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-  },
-  scheduleCard: {
-    padding: 18,
-  },
-  scheduleCopy: {
-    flex: 1,
-  },
-  dayRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginVertical: 17,
-  },
-  dayButton: {
-    flex: 1,
-    height: 59,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayButtonSelected: {
-    backgroundColor: colors.ink,
-    borderColor: colors.ink,
-  },
-  dayLabel: {
-    color: colors.ink,
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  dayTextSelected: {
-    color: 'white',
-  },
-  dayDate: {
-    color: colors.muted,
-    fontSize: 9,
-    marginTop: 4,
-  },
-  dayDateSelected: {
-    color: 'rgba(255,255,255,0.58)',
-  },
-  scheduleTimeRow: {
-    minHeight: 67,
-    borderRadius: 12,
-    backgroundColor: '#F4F6F2',
-    paddingHorizontal: 13,
-    marginBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-  },
-  scheduleTime: {
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  scheduleEnergy: {
-    marginLeft: 'auto',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  scheduleEnergyText: {
-    color: colors.sageDeep,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  reviewHero: {
-    padding: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    marginBottom: 12,
-  },
-  reviewHeroIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewHeroCopy: {
-    flex: 1,
-  },
-  reviewHeroTitle: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  reviewHeroText: {
-    color: colors.muted,
-    fontSize: 8,
-    lineHeight: 12,
-    marginTop: 3,
-  },
-  reviewSection: {
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  reviewSectionHeader: {
-    minHeight: 63,
-    paddingHorizontal: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  reviewSectionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewSectionCopy: {
-    flex: 1,
-  },
-  reviewSectionTitle: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  reviewSectionCaption: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-  },
-  reviewSectionBody: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-    padding: 15,
-    backgroundColor: '#FBFCFA',
-  },
-  reviewMetrics: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  reviewMetric: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 11,
-    padding: 11,
-    backgroundColor: colors.paper,
-  },
-  reviewMetricValue: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 20,
-  },
-  reviewMetricLabel: {
-    color: colors.muted,
-    fontSize: 8,
-    marginTop: 3,
-  },
-  reviewAnswer: {
-    color: colors.inkSoft,
-    fontSize: 10,
-    lineHeight: 16,
-    marginTop: 12,
-  },
-  reviewBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    marginTop: 10,
-  },
-  reviewBarLabel: {
-    width: 61,
-    color: colors.inkSoft,
-    fontSize: 9,
-  },
-  reviewBar: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#E9EDE8',
-    overflow: 'hidden',
-  },
-  reviewBarFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#78996B',
-  },
-  reviewBarHours: {
-    width: 35,
-    color: colors.ink,
-    fontSize: 9,
-    fontWeight: '700',
-    textAlign: 'right',
-  },
-  reviewDecision: {
-    borderRadius: 11,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: 12,
-    marginBottom: 8,
-  },
-  outcomeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginTop: 10,
-  },
-  outcomeNumber: {
-    width: 21,
-    height: 21,
-    borderRadius: 11,
-    backgroundColor: '#EEF3EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outcomeNumberText: {
-    color: colors.sageDeep,
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  outcomeText: {
-    flex: 1,
-    color: colors.ink,
-    fontSize: 10,
-    lineHeight: 15,
-  },
-  scorecard: {
-    overflow: 'hidden',
-  },
-  scorecardHero: {
-    padding: 22,
-  },
-  scorecardHeadline: {
-    color: 'white',
-    fontFamily: serif,
-    fontSize: 28,
-    lineHeight: 33,
-    letterSpacing: -0.8,
-    marginTop: 13,
-  },
-  scorecardIntro: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    lineHeight: 16,
-    marginTop: 7,
-  },
-  scorecardSection: {
-    padding: 18,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-  },
-  scorecardLabel: {
-    color: colors.muted,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  scorecardAlert: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    borderRadius: 11,
-    padding: 11,
-    backgroundColor: colors.amberSoft,
-    marginTop: 12,
-  },
-  scorecardAlertText: {
-    flex: 1,
-    color: '#95513A',
-    fontSize: 8,
-    lineHeight: 13,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(10,24,19,0.58)',
-  },
-  modalDismissArea: {
-    flex: 1,
-  },
-  modalDismissAreaSmall: {
-    flex: 0.18,
-  },
-  modalSheet: {
-    maxHeight: '86%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    backgroundColor: colors.paper,
-    overflow: 'hidden',
-  },
-  modalSheetTall: {
-    maxHeight: '94%',
-    flex: 1,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#D4DAD5',
-    marginTop: 9,
-  },
-  modalHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 17,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
-  },
-  modalHeaderCopy: {
-    flex: 1,
-  },
-  modalTitle: {
-    color: colors.ink,
-    fontFamily: serif,
-    fontSize: 25,
-    lineHeight: 29,
-    marginTop: 6,
-  },
-  closeButton: {
-    width: 35,
-    height: 35,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: colors.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalBody: {
-    padding: 20,
-    paddingBottom: 35,
-  },
-  textInput: {
-    minHeight: 46,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    color: colors.ink,
-    fontSize: 11,
-    backgroundColor: colors.paper,
-    marginBottom: 15,
-  },
-  textArea: {
-    minHeight: 92,
-    paddingTop: 12,
-    textAlignVertical: 'top',
-  },
-  infoNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: '#F0F5ED',
-    marginBottom: 16,
-  },
-  infoNoteText: {
-    flex: 1,
-    color: colors.sageDeep,
-    fontSize: 9,
-    lineHeight: 14,
-  },
-  formTwoColumn: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  formColumn: {
-    flex: 1,
-  },
-  staticInput: {
-    height: 46,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    justifyContent: 'center',
-    paddingHorizontal: 13,
-    marginBottom: 15,
-    backgroundColor: '#F7F8F6',
-  },
-  staticInputText: {
-    color: colors.ink,
-    fontSize: 11,
-  },
+  inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
   tabBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    minHeight: 70,
-    paddingTop: 7,
-    paddingHorizontal: 6,
-    flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
+    backgroundColor: colors.paper,
+    borderTopWidth: 1,
     borderTopColor: colors.line,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    shadowColor: '#1C2D26',
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: -5 },
-    elevation: 8,
+    flexDirection: 'row',
+    paddingTop: 8,
   },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 3,
-  },
-  tabIcon: {
-    position: 'relative',
-    width: 36,
-    height: 31,
-    borderRadius: 10,
+  tabItem: { flex: 1, alignItems: 'center', gap: 4 },
+  tabLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
+  tabLabelActive: { color: colors.ink },
+  fab: {
+    position: 'absolute',
+    right: 18,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.acid,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  tabIconActive: {
-    backgroundColor: '#EEF3EA',
-  },
-  tabLabel: {
-    color: '#89938D',
-    fontSize: 8,
-    fontWeight: '600',
-  },
-  tabLabelActive: {
-    color: colors.ink,
-    fontWeight: '700',
-  },
-  tabBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 5,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.danger,
-    borderWidth: 1,
-    borderColor: 'white',
+    elevation: 3,
   },
   toast: {
     position: 'absolute',
     left: 18,
     right: 18,
-    minHeight: 48,
-    borderRadius: 14,
-    paddingHorizontal: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
     backgroundColor: colors.ink,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 10,
+    borderRadius: 12,
+    padding: 12,
   },
-  toastText: {
+  toastText: { color: colors.paper, textAlign: 'center', fontWeight: '600' },
+  modalWrap: {
     flex: 1,
-    color: 'white',
-    fontSize: 10,
-    fontWeight: '600',
+    backgroundColor: 'rgba(20,36,31,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.canvas,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 18,
+    gap: 12,
+    maxHeight: '92%',
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.paper,
+  },
+  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipText: { color: colors.ink, fontWeight: '600', fontSize: 12 },
+  chipTextActive: { color: colors.acid },
+  scoreRow: { gap: 8 },
+  scoreChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper,
   },
 });

@@ -48,6 +48,32 @@ export type Session = {
   expiresIn: string;
 };
 
+export type ItemKind =
+  | 'VISION'
+  | 'PILLAR'
+  | 'GOAL'
+  | 'PROJECT'
+  | 'ACTION'
+  | 'IDEA'
+  | 'DECISION';
+
+export type ItemVisibility = 'PRIVATE' | 'SHARED';
+
+export type LifeItem = {
+  id: string;
+  ownerUserId: string;
+  householdId: string | null;
+  parentId: string | null;
+  kind: ItemKind;
+  visibility: ItemVisibility;
+  title: string;
+  status: string;
+  body: Record<string, unknown>;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type AuthResponse = Session & {
   account: Account;
 };
@@ -64,6 +90,23 @@ export class ApiError extends Error {
 
 let memorySession: Session | null = null;
 let refreshPromise: Promise<Session> | null = null;
+
+function mapItem(raw: Record<string, unknown>): LifeItem {
+  return {
+    id: String(raw.id),
+    ownerUserId: String(raw.owner_user_id ?? raw.ownerUserId),
+    householdId: (raw.household_id ?? raw.householdId ?? null) as string | null,
+    parentId: (raw.parent_id ?? raw.parentId ?? null) as string | null,
+    kind: raw.kind as ItemKind,
+    visibility: raw.visibility as ItemVisibility,
+    title: String(raw.title),
+    status: String(raw.status),
+    body: (raw.body as Record<string, unknown>) ?? {},
+    sortOrder: Number(raw.sort_order ?? raw.sortOrder ?? 0),
+    createdAt: String(raw.created_at ?? raw.createdAt),
+    updatedAt: String(raw.updated_at ?? raw.updatedAt),
+  };
+}
 
 export async function loadSession(): Promise<Session | null> {
   if (memorySession) return memorySession;
@@ -268,14 +311,63 @@ export async function setActiveHousehold(householdId: string): Promise<Account> 
   });
 }
 
+export async function listLifeItems(kind?: ItemKind): Promise<LifeItem[]> {
+  const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+  const rows = await request<Record<string, unknown>[]>(`/v1/items${query}`);
+  return rows.map(mapItem);
+}
+
 export async function createLifeItem(input: {
-  kind: 'IDEA' | 'GOAL' | 'PROJECT' | 'ACTION';
+  kind: ItemKind;
   title: string;
-  visibility: 'PRIVATE' | 'SHARED';
+  visibility?: ItemVisibility;
+  status?: string;
+  parentId?: string | null;
   body?: Record<string, unknown>;
-}): Promise<void> {
-  await request('/v1/items', {
+  sortOrder?: number;
+}): Promise<LifeItem> {
+  const raw = await request<Record<string, unknown>>('/v1/items', {
     method: 'POST',
+    body: JSON.stringify({
+      kind: input.kind,
+      title: input.title,
+      visibility: input.visibility ?? 'PRIVATE',
+      status: input.status ?? 'ACTIVE',
+      parentId: input.parentId ?? null,
+      body: input.body ?? {},
+      sortOrder: input.sortOrder ?? 0,
+    }),
+  });
+  return mapItem(raw);
+}
+
+export async function updateLifeItem(
+  id: string,
+  input: {
+    title?: string;
+    status?: string;
+    visibility?: ItemVisibility;
+    parentId?: string | null;
+    body?: Record<string, unknown>;
+    sortOrder?: number;
+  },
+): Promise<LifeItem> {
+  const raw = await request<Record<string, unknown>>(`/v1/items/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(input),
   });
+  return mapItem(raw);
+}
+
+export async function deleteLifeItem(id: string): Promise<void> {
+  await request<void>(`/v1/items/${id}`, { method: 'DELETE' });
+}
+
+export async function pingApi(): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(`${apiBaseUrl}/health`);
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

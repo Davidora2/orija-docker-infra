@@ -8,6 +8,7 @@ COPY apps/life-os/package.json apps/life-os/package.json
 RUN pnpm install --frozen-lockfile --filter life-os...
 
 COPY apps/life-os apps/life-os
+ENV NEXT_PUBLIC_API_URL=https://lifeos.orija.store/api
 RUN pnpm --filter life-os build
 
 FROM node:22-alpine AS runner
