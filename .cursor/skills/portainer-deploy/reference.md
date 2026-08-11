@@ -1,7 +1,7 @@
 # Portainer API reference (orija)
 
 Base: `https://portainer.orija.store/api`  
-Auth: header `X-API-Key: ptr_…`
+Auth: header `X-API-Key: $PORTAINER_API_TOKEN` (Cloud Agent secret)
 
 ## Useful endpoints
 
@@ -35,8 +35,6 @@ Auth: header `X-API-Key: ptr_…`
 }
 ```
 
-Optional: `"AdditionalFiles": ["deploy/Caddyfile"]` — fragile on Portainer; prefer inline config.
-
 ## Redeploy body
 
 ```json
@@ -48,7 +46,7 @@ Optional: `"AdditionalFiles": ["deploy/Caddyfile"]` — fragile on Portainer; pr
 }
 ```
 
-Include full `Env` array; omitting vars can clear them depending on Portainer version.
+Include full `Env` array when updating.
 
 ## Life OS stack (current)
 
@@ -75,8 +73,8 @@ while i + 8 <= len(raw):
 print("".join(out))
 ```
 
-## Token setup (for humans)
+## Secret setup (for humans)
 
-1. Portainer → non-admin user with access to `local`
-2. My account → Access tokens → create (`cursor-deploy`)
-3. Paste token to the agent once; revoke after the session
+1. Cursor Environment → Secrets → add `PORTAINER_API_TOKEN`
+2. Value = Portainer access token (`ptr_…`) from Portainer → My account → Access tokens
+3. Agents read it as `$PORTAINER_API_TOKEN` — never paste into the repo
