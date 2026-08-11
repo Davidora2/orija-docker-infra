@@ -20,7 +20,7 @@ Collect before mutating anything:
 | Input | Notes |
 |-------|--------|
 | `PORTAINER_URL` | e.g. `https://portainer.orija.store` |
-| `PORTAINER_TOKEN` | Access token (`ptr_…`). Store only in shell env / `/tmp`, **never commit** |
+| `PORTAINER_TOKEN` | Access token (`ptr_…`). Prefer env secret `PORTAINER_TOKEN` when set; otherwise ask the user. Store only in shell env / `/tmp`, **never commit** |
 | App domain | Public hostname (e.g. `lifeos.orija.store`) — **not** the Portainer hostname |
 | Compose file | Usually `compose.portainer.yml` for tunnel hosts |
 | Git ref | Branch/tag that contains the compose file |
@@ -31,7 +31,12 @@ If any are missing, stop and ask. Do not reuse expired tokens from chat history 
 
 ```bash
 export PORTAINER_URL='https://portainer.orija.store'
-export PORTAINER_TOKEN='ptr_…'   # from user; revoke after use when possible
+# Prefer Cloud Agent secret when present
+export PORTAINER_TOKEN="${PORTAINER_TOKEN:-}"
+if [ -z "$PORTAINER_TOKEN" ] && [ -f /tmp/portainer-token ]; then
+  PORTAINER_TOKEN=$(cat /tmp/portainer-token)
+fi
+# If still empty, ask the user for a fresh ptr_… token (do not invent one)
 AUTH=(-H "X-API-Key: $PORTAINER_TOKEN")
 ```
 
