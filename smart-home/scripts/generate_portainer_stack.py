@@ -61,7 +61,7 @@ def service_block(
         run = """
         cp -a /app/shared /tmp/shared
         pip install --no-cache-dir -q /tmp/shared -r /app/services/home-registry/requirements.txt
-        cp /app/services/home-registry/app.py /run/app.py
+        cp /app/services/home-registry/*.py /run/
         cd /run
         exec uvicorn app:app --host 0.0.0.0 --port 8000"""
     elif role == "ring":

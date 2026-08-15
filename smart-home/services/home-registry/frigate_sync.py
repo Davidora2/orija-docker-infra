@@ -43,7 +43,7 @@ def build_frigate_config(cameras: list[dict[str, Any]], *, mqtt_host: str = "mos
         else:
             # Always-on test pattern so Frigate can start before real RTSP is set
             go2rtc_streams[slug] = [
-                f"ffmpeg:testsrc=size=1280x720:rate=5#video=h264#raw=-pix_fmt yuv420p"
+                "ffmpeg:testsrc=size=1280x720:rate=5#video=h264"
             ]
         camera_blocks[slug] = {
             "enabled": True,
@@ -72,7 +72,7 @@ def build_frigate_config(cameras: list[dict[str, Any]], *, mqtt_host: str = "mos
 
     if not camera_blocks:
         go2rtc_streams["preview"] = [
-            "ffmpeg:testsrc=size=1280x720:rate=5#video=h264#raw=-pix_fmt yuv420p"
+            "ffmpeg:testsrc=size=1280x720:rate=5#video=h264"
         ]
         camera_blocks["preview"] = {
             "enabled": True,
