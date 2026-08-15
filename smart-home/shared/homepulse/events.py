@@ -1,9 +1,4 @@
-"""Canonical event / action schemas used across all HomePulse services.
-
-Designed so new device types (locks, cameras, lights, sensors) and new
-notification channels (SMS, voice, Home Assistant) plug in without
-rewriting the bus.
-"""
+"""Canonical event / action schemas used across all HomePulse services."""
 
 from __future__ import annotations
 
@@ -21,8 +16,11 @@ class EventType(str, Enum):
     LOCK_LOCKED = "lock.locked"
     LOCK_UNLOCKED = "lock.unlocked"
     CAMERA_MOTION = "camera.motion"
+    CAMERA_PERSON = "camera.person"
     SENSOR_OPEN = "sensor.open"
     SENSOR_CLOSE = "sensor.close"
+    HOME_MODE_CHANGED = "home.mode_changed"
+    LOCK_LEFT_UNLOCKED = "lock.left_unlocked"
     SYSTEM_HEALTH = "system.health"
     CUSTOM = "custom"
 
@@ -62,6 +60,8 @@ class NotificationPayload(BaseModel):
     data: dict[str, str] = Field(default_factory=dict)
     image_url: str | None = None
     priority: str = "high"
+    channel_id: str | None = None  # android notification channel override
+    sound: str | None = None
 
 
 class ActionCommand(BaseModel):
@@ -69,8 +69,10 @@ class ActionCommand(BaseModel):
 
     action_id: str = Field(default_factory=lambda: str(uuid4()))
     home_id: str
-    action_type: str  # notify.push | notify.google_home | device.command | audit.log
-    target: str | None = None
+    action_type: str
+    # notify.push | device.light_on | device.light_off | device.siren_on
+    # device.lock | device.unlock | audit.log
+    target: str | None = None  # device_id or mqtt topic hint
     event_id: str | None = None
     correlation_id: str | None = None
     notification: NotificationPayload | None = None

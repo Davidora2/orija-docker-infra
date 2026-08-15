@@ -7,3 +7,5 @@ venv/
 secrets/*
 !secrets/.gitkeep
 *.log
+*.egg-info/
+shared/**/*.egg-info/

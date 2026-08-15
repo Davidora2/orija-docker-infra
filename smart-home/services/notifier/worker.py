@@ -76,6 +76,10 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
     assert command.notification is not None
     notification = command.notification
 
+    channel = notification.channel_id or "smart_home_alerts"
+    sound = notification.sound or "default"
+    high = notification.priority in {"high", "max"}
+
     if FCM_MODE == "dry_run":
         result = {
             "mode": "dry_run",
@@ -83,6 +87,10 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
             "title": notification.title,
             "body": notification.body,
             "data": notification.data,
+            "image_url": notification.image_url,
+            "priority": notification.priority,
+            "channel_id": channel,
+            "sound": sound,
         }
         logger.info("DRY-RUN FCM → %s", json.dumps(result))
         return result
@@ -98,11 +106,11 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
         ),
         data={k: str(v) for k, v in notification.data.items()},
         android=messaging.AndroidConfig(
-            priority="high" if notification.priority == "high" else "normal",
+            priority="high" if high else "normal",
             notification=messaging.AndroidNotification(
-                channel_id="smart_home_alerts",
-                priority="max" if notification.priority == "high" else "default",
-                sound="default",
+                channel_id=channel,
+                priority="max" if notification.priority == "max" else ("high" if high else "default"),
+                sound=sound,
             ),
         ),
     )

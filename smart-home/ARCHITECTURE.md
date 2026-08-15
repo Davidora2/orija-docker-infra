@@ -30,12 +30,19 @@ Ring Doorbell
 | Service | Role | Scale notes |
 |---------|------|-------------|
 | **gateway** | TLS termination point (add certs in prod), rate limits, blocks `/v1/internal/*` | Horizontally scalable nginx/Envoy |
-| **home-registry** | Homes, members, devices, hashed API keys, FCM tokens | Stateless app + Postgres |
-| **ring-ingest** | Vendor adapter → normalized `DeviceEvent` | Stateless; add more vendor ingest services later |
-| **rules-engine** | Event → `ActionCommand` (notify, device cmds, audit) | Redis consumer group → N replicas |
+| **home-registry** | Homes, members, devices, hashed API keys, FCM tokens, mode/armed | Stateless app + Postgres |
+| **ring-ingest** | Ring webhook / simulator → `DeviceEvent` | Stateless vendor adapter |
+| **mqtt-ingest** | ESP doorbell, Zigbee2MQTT sensors, Frigate MQTT → `DeviceEvent` | Stateless; subscribe more topics as needed |
+| **rules-engine** | Event → `ActionCommand` (notify, light, siren, lock) | Redis consumer group → N replicas |
 | **notifier** | Executes `notify.push` via FCM | Consumer group → N replicas |
+| **mqtt-commander** | Executes `device.*` over MQTT (lights/siren/locks) | Consumer group → N replicas |
+| **scheduler** | Sunset lock-left-unlocked checks | Single active instance (or leader election later) |
+| **mosquitto** | Local MQTT bus for Zigbee2MQTT / ESPHome / Frigate | Cluster / TLS in prod |
 | **postgres** | System of record | Managed Postgres / HA in prod |
 | **redis** | Event bus (`home.events`, `home.actions`, `home.audit`) | Redis Cluster / MSK / NATS later |
+
+Implemented automation details: [AUTOMATIONS.md](./AUTOMATIONS.md).
+
 
 ## Security model (designed to harden over time)
 

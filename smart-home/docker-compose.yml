@@ -1,5 +1,4 @@
-# HomePulse — secure, scalable smart-home notification platform
-# Ring doorbell → event bus → rules → Google phone (FCM) notifications
+# HomePulse — secure, scalable smart-home notification + automation platform
 
 name: homepulse
 
@@ -33,6 +32,23 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - backend
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -t homepulse/health -m ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   home-registry:
@@ -69,17 +85,45 @@ services:
       - edge
     restart: unless-stopped
 
+  mqtt-ingest:
+    build:
+      context: .
+      dockerfile: services/mqtt-ingest/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      home-registry:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
   rules-engine:
     build:
       context: .
       dockerfile: services/rules-engine/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
+      PORCH_LIGHT_MINUTES: ${PORCH_LIGHT_MINUTES:-5}
+      SIREN_SECONDS: ${SIREN_SECONDS:-30}
       NOTIFY_ON_MOTION: ${NOTIFY_ON_MOTION:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: rules-1
     depends_on:
       redis:
+        condition: service_healthy
+      home-registry:
         condition: service_healthy
     networks:
       - backend
@@ -110,6 +154,51 @@ services:
       - backend
     restart: unless-stopped
 
+  mqtt-commander:
+    build:
+      context: .
+      dockerfile: services/mqtt-commander/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: mqtt-commander-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      home-registry:
+        condition: service_healthy
+      rules-engine:
+        condition: service_started
+    networks:
+      - backend
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      LOCK_CHECK_INTERVAL_SECONDS: ${LOCK_CHECK_INTERVAL_SECONDS:-60}
+      SUNSET_HOUR_LOCAL: ${SUNSET_HOUR_LOCAL:-20}
+      SUNSET_MINUTE_LOCAL: ${SUNSET_MINUTE_LOCAL:-0}
+      AUTO_LOCK_AFTER_SUNSET: ${AUTO_LOCK_AFTER_SUNSET:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
   gateway:
     image: nginx:1.27-alpine
     ports:
@@ -127,10 +216,8 @@ services:
     restart: unless-stopped
 
 networks:
-  # Public-facing ingress only
   edge:
     driver: bridge
-  # Internal services — no host ports exposed
   backend:
     driver: bridge
     internal: false
