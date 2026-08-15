@@ -140,7 +140,10 @@ def main() -> None:
     # Split for readability / avoid some parsers choking; join in shell
     chunk_size = 80
     chunks = [bundle[i : i + chunk_size] for i in range(0, len(bundle), chunk_size)]
-    bundle_literal = "\n".join(chunks)
+    # YAML-safe: append via printf (no nested heredoc terminator issues)
+    bundle_printfs = "\n".join(
+        f"        printf '%s' '{c}' >> bundle.b64" for c in chunks
+    )
 
     content = f"""# HomePulse — self-contained Portainer stack (ORIJA)
 # Gateway: http://HOST:18091
@@ -166,9 +169,8 @@ services:
       - |
         set -eu
         cd /tmp
-        cat > bundle.b64 <<'BUNDLE'
-{bundle_literal}
-BUNDLE
+        : > bundle.b64
+{bundle_printfs}
         base64 -d bundle.b64 | tar -xz -C /app
         echo "HomePulse app bundle extracted:"
         ls -la /app
