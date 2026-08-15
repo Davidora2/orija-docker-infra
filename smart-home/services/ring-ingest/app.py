@@ -41,6 +41,7 @@ class SimulateRingRequest(BaseModel):
     external_device_id: str
     event: str = "ding"
     snapshot_url: str | None = None
+    vendor: str = "ring"
 
 
 @asynccontextmanager
@@ -94,8 +95,10 @@ def map_ring_event(kind: str | None, event: str) -> EventType:
     return EventType.DOORBELL_RING
 
 
-async def ingest_ring_event(body: RingDingPayload, home_id: str) -> dict[str, Any]:
-    device = await resolve_device("ring", body.device_id)
+async def ingest_ring_event(
+    body: RingDingPayload, home_id: str, *, vendor: str = "ring"
+) -> dict[str, Any]:
+    device = await resolve_device(vendor, body.device_id)
     if device["home_id"] != home_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Device does not belong to this home")
 
@@ -112,17 +115,18 @@ async def ingest_ring_event(body: RingDingPayload, home_id: str) -> dict[str, An
         home_id=device["home_id"],
         device_id=device["device_id"],
         device_type=device.get("device_type", "doorbell"),
-        vendor="ring",
+        vendor=vendor,
         event_type=event_type,
         occurred_at=body.created_at or datetime.now(timezone.utc),
         title=title,
         body=body_text,
         payload={
-            "ring_device_id": body.device_id,
+            "external_device_id": body.device_id,
             "ding_id": body.ding_id,
             "snapshot_url": body.snapshot_url,
             "raw_event": body.event,
             "kind": body.kind,
+            "vendor": vendor,
         },
         source="ring-ingest.webhook",
     )
@@ -182,4 +186,4 @@ async def simulate_ring(
         snapshot_url=body.snapshot_url,
         ding_id=f"sim-{datetime.now(timezone.utc).timestamp()}",
     )
-    return await ingest_ring_event(payload, auth["home_id"])
+    return await ingest_ring_event(payload, auth["home_id"], vendor=body.vendor or "ring")

@@ -6,12 +6,12 @@ import json
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Annotated
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -19,11 +19,18 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    func,
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "shared"))
+from homepulse.passwords import (  # noqa: E402
+    generate_session_token,
+    hash_password,
+    hash_session_token,
+    verify_password,
+)
 from homepulse.security import generate_api_key, hash_api_key, verify_api_key  # noqa: E402
 
 DATABASE_URL = os.getenv(
@@ -31,6 +38,7 @@ DATABASE_URL = os.getenv(
 )
 API_KEY_PEPPER = os.getenv("API_KEY_PEPPER", "change-me-in-production")
 BOOTSTRAP_ADMIN_TOKEN = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "bootstrap-dev-token")
+ADMIN_SESSION_DAYS = int(os.getenv("ADMIN_SESSION_DAYS", "14"))
 
 
 class Base(DeclarativeBase):
@@ -136,6 +144,37 @@ class ApiKey(Base):
     home: Mapped[Home] = relationship(back_populates="api_keys")
 
 
+class AdminAccount(Base):
+    __tablename__ = "admin_accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str] = mapped_column(String(120), default="Admin")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    sessions: Mapped[list["AdminSession"]] = relationship(back_populates="admin")
+
+
+class AdminSession(Base):
+    __tablename__ = "admin_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    admin_id: Mapped[str] = mapped_column(ForeignKey("admin_accounts.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    admin: Mapped[AdminAccount] = relationship(back_populates="sessions")
+
+
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -215,6 +254,38 @@ class UpdateDeviceStateRequest(BaseModel):
     state: str
 
 
+class AdminSetupRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str = "Admin"
+    bootstrap_token: str | None = None
+
+    @field_validator("username")
+    @classmethod
+    def username_clean(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v.replace("_", "").replace("-", "").isalnum():
+            raise ValueError("username must be alphanumeric (with - _)")
+        return v
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AdminRecoverRequest(BaseModel):
+    username: str
+    recovery_token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class AdminChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -223,25 +294,77 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="HomePulse Home Registry",
-    version="0.2.0",
-    description="Homes, security mode, devices, FCM tokens, and scoped API keys.",
+    version="0.3.0",
+    description="Homes, security mode, devices, FCM tokens, admin auth, and scoped API keys.",
     lifespan=lifespan,
 )
 
 
-def require_bootstrap(
+def _extract_bearer(authorization: str | None) -> str | None:
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ").strip()
+    return None
+
+
+def _is_bootstrap(token: str | None) -> bool:
+    return bool(token) and token == BOOTSTRAP_ADMIN_TOKEN
+
+
+def require_admin(
+    db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
     x_bootstrap_token: str | None = Header(default=None, alias="X-Bootstrap-Token"),
-) -> None:
-    token = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.removeprefix("Bearer ").strip()
-    elif x_bootstrap_token:
-        token = x_bootstrap_token.strip()
-    if not token:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bootstrap token")
-    if token != BOOTSTRAP_ADMIN_TOKEN:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid bootstrap token")
+) -> dict[str, Any]:
+    """Accept admin session Bearer token, or break-glass bootstrap token."""
+    bearer = _extract_bearer(authorization)
+    if _is_bootstrap(bearer) or _is_bootstrap(x_bootstrap_token):
+        return {"auth": "bootstrap", "admin_id": None, "username": "bootstrap"}
+
+    if not bearer:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Missing admin session or bootstrap token"
+        )
+
+    token_hash = hash_session_token(bearer, API_KEY_PEPPER)
+    row = db.scalar(
+        select(AdminSession).where(
+            AdminSession.token_hash == token_hash,
+            AdminSession.revoked.is_(False),
+        )
+    )
+    if row is None or row.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired admin session")
+    admin = db.get(AdminAccount, row.admin_id)
+    if admin is None or not admin.active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin account disabled")
+    return {
+        "auth": "session",
+        "admin_id": admin.id,
+        "username": admin.username,
+        "session_id": row.id,
+    }
+
+
+def _issue_session(db: Session, admin: AdminAccount) -> dict[str, Any]:
+    raw = generate_session_token()
+    session = AdminSession(
+        admin_id=admin.id,
+        token_hash=hash_session_token(raw, API_KEY_PEPPER),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=ADMIN_SESSION_DAYS),
+    )
+    db.add(session)
+    db.commit()
+    return {
+        "session_token": raw,
+        "token_type": "Bearer",
+        "expires_in_days": ADMIN_SESSION_DAYS,
+        "admin": {
+            "admin_id": admin.id,
+            "username": admin.username,
+            "email": admin.email,
+            "display_name": admin.display_name,
+        },
+    }
 
 
 @app.get("/health")
@@ -249,10 +372,96 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "home-registry"}
 
 
+@app.get("/v1/admin/auth/status")
+def admin_auth_status(db: Session = Depends(get_db)) -> dict[str, Any]:
+    count = db.scalar(select(func.count()).select_from(AdminAccount)) or 0
+    return {
+        "has_admin": count > 0,
+        "setup_required": count == 0,
+        "recovery": "Use BOOTSTRAP_ADMIN_TOKEN on the recover form to reset a password.",
+    }
+
+
+@app.post("/v1/admin/auth/setup", status_code=201)
+def admin_setup(body: AdminSetupRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    count = db.scalar(select(func.count()).select_from(AdminAccount)) or 0
+    if count > 0:
+        raise HTTPException(400, "Admin already exists — use login or password recovery")
+    if body.bootstrap_token is not None and not _is_bootstrap(body.bootstrap_token):
+        raise HTTPException(403, "Invalid bootstrap token")
+    admin = AdminAccount(
+        username=body.username,
+        email=str(body.email).lower(),
+        password_hash=hash_password(body.password, API_KEY_PEPPER),
+        display_name=body.display_name,
+    )
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+    return _issue_session(db, admin)
+
+
+@app.post("/v1/admin/auth/login")
+def admin_login(body: AdminLoginRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    username = body.username.strip().lower()
+    admin = db.scalar(select(AdminAccount).where(AdminAccount.username == username))
+    if admin is None or not admin.active:
+        raise HTTPException(401, "Invalid username or password")
+    if not verify_password(body.password, admin.password_hash, API_KEY_PEPPER):
+        raise HTTPException(401, "Invalid username or password")
+    return _issue_session(db, admin)
+
+
+@app.post("/v1/admin/auth/recover")
+def admin_recover(body: AdminRecoverRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    if not _is_bootstrap(body.recovery_token.strip()):
+        raise HTTPException(403, "Invalid recovery token")
+    username = body.username.strip().lower()
+    admin = db.scalar(select(AdminAccount).where(AdminAccount.username == username))
+    if admin is None:
+        raise HTTPException(404, "Admin user not found")
+    admin.password_hash = hash_password(body.new_password, API_KEY_PEPPER)
+    for s in db.scalars(select(AdminSession).where(AdminSession.admin_id == admin.id)).all():
+        s.revoked = True
+    db.commit()
+    return {"status": "ok", "message": "Password updated. Sign in with the new password."}
+
+
+@app.post("/v1/admin/auth/change-password")
+def admin_change_password(
+    body: AdminChangePasswordRequest,
+    db: Session = Depends(get_db),
+    auth: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    if auth.get("auth") != "session" or not auth.get("admin_id"):
+        raise HTTPException(400, "Sign in with username/password to change password")
+    admin = db.get(AdminAccount, auth["admin_id"])
+    if admin is None:
+        raise HTTPException(404, "Admin not found")
+    if not verify_password(body.current_password, admin.password_hash, API_KEY_PEPPER):
+        raise HTTPException(401, "Current password is incorrect")
+    admin.password_hash = hash_password(body.new_password, API_KEY_PEPPER)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/v1/admin/auth/logout")
+def admin_logout(
+    db: Session = Depends(get_db),
+    auth: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    if auth.get("session_id"):
+        row = db.get(AdminSession, auth["session_id"])
+        if row:
+            row.revoked = True
+            db.commit()
+    return {"status": "ok"}
+
+
 @app.get("/v1/homes")
 def list_homes(
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     homes = db.scalars(select(Home).order_by(Home.created_at.desc())).all()
     return {
@@ -275,7 +484,7 @@ def list_homes(
 def create_home(
     body: CreateHomeRequest,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     if body.mode not in {"home", "away"}:
         raise HTTPException(400, "mode must be home or away")
@@ -321,7 +530,7 @@ def update_security(
     home_id: str,
     body: UpdateHomeSecurityRequest,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     home = db.get(Home, home_id)
     if home is None:
@@ -346,7 +555,7 @@ def register_device(
     home_id: str,
     body: RegisterDeviceRequest,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     home = db.get(Home, home_id)
     if home is None:
@@ -388,7 +597,7 @@ def update_device_state(
 def register_push_token(
     body: RegisterPushTokenRequest,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     user = db.scalar(select(User).where(User.email == body.user_email.lower()))
     if user is None:
@@ -409,7 +618,7 @@ def register_push_token(
 def list_push_tokens(
     home_id: str,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     home = db.get(Home, home_id)
     if home is None:
@@ -449,7 +658,7 @@ def create_api_key(
     home_id: str,
     body: CreateApiKeyRequest,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     if db.get(Home, home_id) is None:
         raise HTTPException(404, "Home not found")
@@ -569,7 +778,7 @@ def list_homes_internal(db: Session = Depends(get_db)) -> dict[str, Any]:
 def get_home(
     home_id: str,
     db: Session = Depends(get_db),
-    _: None = Depends(require_bootstrap),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     home = db.get(Home, home_id)
     if home is None:

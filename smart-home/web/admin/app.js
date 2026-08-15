@@ -1,5 +1,5 @@
 (() => {
-  const TOKEN_KEY = "homepulse_admin_token";
+  const TOKEN_KEY = "homepulse_admin_session";
   const API_KEYS = "homepulse_home_api_keys";
 
   function $(id) {
@@ -18,7 +18,7 @@
     try {
       sessionStorage.setItem(key, value);
     } catch {
-      /* private mode / blocked storage — ignore */
+      /* ignore */
     }
   }
 
@@ -57,6 +57,7 @@
     selectedId: null,
     home: null,
     tokens: [],
+    setupRequired: false,
   };
 
   function apiKeysMap() {
@@ -83,9 +84,13 @@
 
   function showLoginError(msg) {
     note(loginError, msg, Boolean(msg));
-    if (msg) {
-      loginError.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
+    if (msg) loginError.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function showAuthPanel(name) {
+    setVisible($("panel-setup"), name === "setup");
+    setVisible($("panel-login"), name === "login");
+    setVisible($("panel-recover"), name === "recover");
   }
 
   async function api(path, options = {}) {
@@ -96,7 +101,6 @@
     }
     if (state.token && !headers.Authorization && !headers["X-API-Key"]) {
       headers.Authorization = `Bearer ${state.token}`;
-      headers["X-Bootstrap-Token"] = state.token;
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20000);
@@ -118,13 +122,8 @@
     }
     if (!res.ok) {
       let msg = data && data.detail != null ? data.detail : data && data.message;
-      if (Array.isArray(msg)) {
-        msg = msg.map((m) => m.msg || JSON.stringify(m)).join("; ");
-      }
+      if (Array.isArray(msg)) msg = msg.map((m) => m.msg || JSON.stringify(m)).join("; ");
       if (!msg) msg = text || `${res.status} ${res.statusText}`;
-      if (res.status === 401 || res.status === 403) {
-        msg = `Login rejected (${res.status}): ${msg}`;
-      }
       throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
     }
     return data;
@@ -133,13 +132,11 @@
   function showApp() {
     setVisible(gate, false);
     setVisible(app, true);
-    document.body.classList.add("in-app");
   }
 
   function showGate(err) {
     setVisible(app, false);
     setVisible(gate, true);
-    document.body.classList.remove("in-app");
     showLoginError(err || "");
   }
 
@@ -174,16 +171,12 @@
     const wrap = $("device-table");
     const devices = state.home?.devices || [];
     if (!devices.length) {
-      wrap.innerHTML = `<p class="muted">No devices yet. Add a doorbell to start.</p>`;
+      wrap.innerHTML = `<p class="muted">No devices yet. Add a Blink/Ring doorbell to start.</p>`;
       return;
     }
     wrap.innerHTML = `
       <table>
-        <thead>
-          <tr>
-            <th>Name</th><th>Role</th><th>Vendor</th><th>External ID</th><th>State</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Name</th><th>Role</th><th>Vendor</th><th>External ID</th><th>State</th></tr></thead>
         <tbody>
           ${devices
             .map(
@@ -271,91 +264,146 @@
     renderHomeDetail();
   }
 
-  async function doLogin(rawToken) {
-    const token = String(rawToken || "")
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .trim();
-    if (!token) {
-      showLoginError("Enter the bootstrap admin token first.");
-      return;
-    }
-    if (loginBtn) {
-      loginBtn.disabled = true;
-      loginBtn.textContent = "Signing in…";
-    }
-    showLoginError("Checking token…");
-    state.token = token;
-    storageSet(TOKEN_KEY, token);
-    try {
-      await loadHomes();
-      showApp();
-      showLoginError("");
-      if (!state.selectedId && state.homes[0]) {
-        await selectHome(state.homes[0].home_id);
-      }
-    } catch (err) {
-      storageDel(TOKEN_KEY);
-      state.token = "";
-      showGate(err.message || "Login failed");
-    } finally {
-      if (loginBtn) {
-        loginBtn.disabled = false;
-        loginBtn.textContent = "Enter console";
-      }
+  function acceptSession(data) {
+    state.token = data.session_token;
+    storageSet(TOKEN_KEY, data.session_token);
+  }
+
+  async function enterConsole() {
+    await loadHomes();
+    showApp();
+    showLoginError("");
+    if (!state.selectedId && state.homes[0]) {
+      await selectHome(state.homes[0].home_id);
     }
   }
 
   async function boot() {
-    showLoginError("");
+    const status = await api("/v1/admin/auth/status");
+    state.setupRequired = Boolean(status.setup_required);
+    if (state.setupRequired) {
+      storageDel(TOKEN_KEY);
+      state.token = "";
+      showGate();
+      showAuthPanel("setup");
+      return;
+    }
+    showAuthPanel("login");
     if (!state.token) {
       showGate();
       return;
     }
     try {
       showLoginError("Restoring session…");
-      await loadHomes();
-      showApp();
-      showLoginError("");
-      if (!state.selectedId && state.homes[0]) {
-        await selectHome(state.homes[0].home_id);
-      }
+      await enterConsole();
     } catch (err) {
       storageDel(TOKEN_KEY);
       state.token = "";
-      showGate(err.message || "Invalid token");
+      showGate(err.message || "Session expired — sign in again");
+      showAuthPanel("login");
     }
   }
 
-  const form = $("login-form");
-  if (form) {
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      doLogin($("admin-token").value);
-    });
-  }
-  if (loginBtn) {
-    loginBtn.addEventListener("click", (e) => {
-      // Extra path for mobile browsers that swallow submit oddly
-      if (form && form.contains(loginBtn)) {
-        /* submit handler will also fire; only use click if type=button */
-      }
-    });
-  }
+  $("setup-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    if (body.password !== body.password2) {
+      showLoginError("Passwords do not match");
+      return;
+    }
+    delete body.password2;
+    const btn = $("setup-btn");
+    btn.disabled = true;
+    btn.textContent = "Creating…";
+    showLoginError("Creating admin…");
+    try {
+      const data = await api("/v1/admin/auth/setup", { method: "POST", body: JSON.stringify(body) });
+      acceptSession(data);
+      await enterConsole();
+    } catch (err) {
+      showLoginError(err.message || "Setup failed");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Create admin";
+    }
+  });
 
-  $("btn-logout").addEventListener("click", () => {
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = $("login-username").value.trim();
+    const password = $("login-password").value;
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.textContent = "Signing in…";
+    }
+    showLoginError("Signing in…");
+    try {
+      const data = await api("/v1/admin/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      });
+      acceptSession(data);
+      await enterConsole();
+    } catch (err) {
+      storageDel(TOKEN_KEY);
+      state.token = "";
+      showLoginError(err.message || "Login failed");
+    } finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.textContent = "Sign in";
+      }
+    }
+  });
+
+  $("recover-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    const btn = $("recover-btn");
+    btn.disabled = true;
+    btn.textContent = "Resetting…";
+    showLoginError("Resetting password…");
+    try {
+      const data = await api("/v1/admin/auth/recover", { method: "POST", body: JSON.stringify(body) });
+      showAuthPanel("login");
+      showLoginError(data.message || "Password updated — sign in");
+      $("login-username").value = body.username;
+    } catch (err) {
+      showLoginError(err.message || "Recovery failed");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Reset password";
+    }
+  });
+
+  $("btn-show-recover").addEventListener("click", () => {
+    showAuthPanel("recover");
+    showLoginError("");
+  });
+  $("btn-show-login").addEventListener("click", () => {
+    showAuthPanel("login");
+    showLoginError("");
+  });
+
+  $("btn-logout").addEventListener("click", async () => {
+    try {
+      await api("/v1/admin/auth/logout", { method: "POST", body: "{}" });
+    } catch {
+      /* ignore */
+    }
     storageDel(TOKEN_KEY);
-    state = { token: "", homes: [], selectedId: null, home: null, tokens: [] };
+    state = { token: "", homes: [], selectedId: null, home: null, tokens: [], setupRequired: false };
     showGate();
+    showAuthPanel("login");
   });
 
   $("btn-refresh").addEventListener("click", () =>
     loadHomes().catch((e) => note($("workspace-note"), e.message))
   );
 
-  $("btn-new-home").addEventListener("click", () => {
-    setVisible($("create-home-form"), true);
-  });
+  $("btn-new-home").addEventListener("click", () => setVisible($("create-home-form"), true));
   $("btn-cancel-home").addEventListener("click", () => {
     setVisible($("create-home-form"), false);
     note($("create-home-note"), "", false);
@@ -405,6 +453,28 @@
   $("btn-add-device").addEventListener("click", () => setVisible($("device-form"), true));
   $("btn-cancel-device").addEventListener("click", () => setVisible($("device-form"), false));
 
+  function fillDevicePreset(preset) {
+    const form = $("device-form");
+    if (preset === "blink") {
+      form.name.value = "Front Door Blink";
+      form.device_type.value = "doorbell";
+      form.role.value = "doorbell";
+      form.vendor.value = "blink";
+      form.external_id.value = "G8T1-TW02-3422-0BEA";
+      form.location_label.value = "Front Door";
+    } else if (preset === "ring") {
+      form.name.value = "Front Door Ring";
+      form.device_type.value = "doorbell";
+      form.role.value = "doorbell";
+      form.vendor.value = "ring";
+      form.external_id.value = "";
+      form.location_label.value = "Front Door";
+    }
+    setVisible(form, true);
+  }
+  $("preset-blink").addEventListener("click", () => fillDevicePreset("blink"));
+  $("preset-ring").addEventListener("click", () => fillDevicePreset("ring"));
+
   $("device-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!state.home) return;
@@ -412,6 +482,13 @@
     const body = Object.fromEntries(fd.entries());
     for (const k of ["mqtt_command_topic", "mqtt_state_topic", "state", "location_label", "external_id"]) {
       if (!body[k]) delete body[k];
+    }
+    if (body.vendor === "blink" && body.external_id) {
+      body.meta = {
+        dsn: body.external_id,
+        model: "BDM00200U",
+        note: "Blink Video Doorbell — live ding events need a bridge (HA/MQTT/Alexa).",
+      };
     }
     try {
       await api(`/v1/homes/${state.home.home_id}/devices`, {
@@ -486,12 +563,14 @@
       return;
     }
     try {
+      // ring-ingest simulate currently expects ring vendor resolution; for blink use vendor-aware simulate via same API with external id
       const result = await api("/v1/simulate/ring", {
         method: "POST",
         headers: { "X-API-Key": key },
         body: JSON.stringify({
           external_device_id: doorbell.external_id,
           event: "ding",
+          vendor: doorbell.vendor || "ring",
         }),
       });
       note($("workspace-note"), `Simulated ding for ${doorbell.name}: ${JSON.stringify(result)}`, true);
@@ -500,6 +579,8 @@
     }
   });
 
-  window.homepulseLogin = doLogin;
-  boot().catch((err) => showGate(err.message || String(err)));
+  boot().catch((err) => {
+    showGate(err.message || String(err));
+    showAuthPanel("login");
+  });
 })();

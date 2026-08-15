@@ -17,14 +17,41 @@
       <p class="eyebrow">ORIJA · Smart Home</p>
       <h1 class="brand">HomePulse</h1>
       <p class="lede">Admin console for homes, devices, and Google phone push targets.</p>
-      <form id="login-form" class="stack" action="#" method="post">
-        <label>
-          <span>Bootstrap admin token</span>
-          <input id="admin-token" type="text" autocomplete="off" spellcheck="false" required placeholder="HomepulseBootstrap2026" />
-        </label>
-        <button id="login-btn" type="submit" class="btn primary">Enter console</button>
-      </form>
-      <p class="muted" style="margin-top:1rem;font-size:0.85rem">Token: <code>HomepulseBootstrap2026</code> · URL must be port <strong>18091</strong></p>
+
+      <div id="panel-setup" class="stack" hidden>
+        <h2 class="gate-title">Create admin account</h2>
+        <form id="setup-form" class="stack" action="#" method="post">
+          <label><span>Username</span><input name="username" required autocomplete="username" placeholder="david" /></label>
+          <label><span>Email</span><input name="email" type="email" required autocomplete="email" placeholder="you@example.com" /></label>
+          <label><span>Password</span><input name="password" type="password" required minlength="8" autocomplete="new-password" /></label>
+          <label><span>Confirm password</span><input name="password2" type="password" required minlength="8" autocomplete="new-password" /></label>
+          <button type="submit" class="btn primary" id="setup-btn">Create admin</button>
+        </form>
+      </div>
+
+      <div id="panel-login" class="stack" hidden>
+        <h2 class="gate-title">Sign in</h2>
+        <form id="login-form" class="stack" action="#" method="post">
+          <label><span>Username</span><input id="login-username" name="username" required autocomplete="username" /></label>
+          <label><span>Password</span><input id="login-password" name="password" type="password" required autocomplete="current-password" /></label>
+          <button id="login-btn" type="submit" class="btn primary">Sign in</button>
+        </form>
+        <button type="button" id="btn-show-recover" class="btn ghost">Forgot password?</button>
+      </div>
+
+      <div id="panel-recover" class="stack" hidden>
+        <h2 class="gate-title">Reset password</h2>
+        <p class="muted">Use the Portainer <code>BOOTSTRAP_ADMIN_TOKEN</code> as the recovery token.</p>
+        <form id="recover-form" class="stack" action="#" method="post">
+          <label><span>Username</span><input name="username" required autocomplete="username" /></label>
+          <label><span>Recovery token</span><input name="recovery_token" required autocomplete="off" placeholder="BOOTSTRAP_ADMIN_TOKEN" /></label>
+          <label><span>New password</span><input name="new_password" type="password" required minlength="8" autocomplete="new-password" /></label>
+          <button type="submit" class="btn primary" id="recover-btn">Reset password</button>
+        </form>
+        <button type="button" id="btn-show-login" class="btn ghost">Back to sign in</button>
+      </div>
+
+      <p class="muted" style="margin-top:1rem;font-size:0.85rem">URL must be port <strong>18091</strong> · e.g. <code>http://192.168.2.200:18091/admin/</code></p>
       <p id="login-error" class="error" style="display:none"></p>
       <noscript><p class="error">JavaScript is required for this admin console.</p></noscript>
     </div>
@@ -112,7 +139,11 @@
               <div id="device-table" class="table-wrap"></div>
               <form id="device-form" class="panel stack" hidden>
                 <h4>Register device</h4>
-                <label><span>Name</span><input name="name" required placeholder="Front Door Ring" /></label>
+                <div class="row">
+                  <button type="button" id="preset-blink" class="btn small">Preset: Blink doorbell</button>
+                  <button type="button" id="preset-ring" class="btn small">Preset: Ring doorbell</button>
+                </div>
+                <label><span>Name</span><input name="name" required placeholder="Front Door Blink" /></label>
                 <div class="row-2">
                   <label><span>Type</span>
                     <select name="device_type">
@@ -138,6 +169,7 @@
                 <div class="row-2">
                   <label><span>Vendor</span>
                     <select name="vendor">
+                      <option value="blink">blink</option>
                       <option value="ring">ring</option>
                       <option value="esphome">esphome</option>
                       <option value="zigbee2mqtt">zigbee2mqtt</option>
@@ -145,12 +177,13 @@
                       <option value="frigate">frigate</option>
                     </select>
                   </label>
-                  <label><span>External ID</span><input name="external_id" placeholder="ring-front-door-001" /></label>
+                  <label><span>External ID (DSN)</span><input name="external_id" placeholder="G8T1-TW02-3422-0BEA" /></label>
                 </div>
                 <label><span>Location label</span><input name="location_label" placeholder="Front Door" /></label>
                 <label><span>MQTT command topic</span><input name="mqtt_command_topic" placeholder="optional" /></label>
                 <label><span>MQTT state topic</span><input name="mqtt_state_topic" placeholder="optional" /></label>
                 <label><span>Initial state</span><input name="state" placeholder="optional" /></label>
+                <p class="muted" style="font-size:0.82rem">Blink/Ring need an event bridge for live dings. After saving, use <strong>Simulate ding</strong> to test notifications.</p>
                 <div class="row">
                   <button type="submit" class="btn primary">Save device</button>
                   <button type="button" id="btn-cancel-device" class="btn ghost">Cancel</button>
