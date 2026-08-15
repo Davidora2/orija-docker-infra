@@ -37,16 +37,18 @@ https://homepulse.YOUR_DOMAIN  →  http://localhost:18091
 
 Same pattern as life-os → `localhost:18088`. Terminate TLS on Cloudflare; do not publish 80/443 on the Docker host.
 
-## After deploy
+## Firebase (Google phone push)
 
-Admin UI: `https://homepulse.YOUR_DOMAIN/admin/`
+Project ID: `home-pulse-99808` (Android package `home.pulse`).
 
-Sign in with `BOOTSTRAP_ADMIN_TOKEN`, then create homes and register devices from the console.
+1. Register FCM device token in Admin → **Phone push tokens**
+2. Put Firebase **service account** JSON in volume `homepulse_homepulse-secrets` as `firebase-service-account.json`
+3. Stack env:
 
-Or via script:
+| Name | Value |
+|------|--------|
+| `FCM_MODE` | `firebase` |
+| `FCM_PROJECT_ID` | `home-pulse-99808` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `/secrets/firebase-service-account.json` |
 
-```bash
-export GATEWAY=https://homepulse.YOUR_DOMAIN   # or http://HOST:18091
-export BOOTSTRAP_ADMIN_TOKEN=...               # same as stack env
-./scripts/bootstrap_demo.sh
-```
+Details: [`docs/FIREBASE.md`](./docs/FIREBASE.md)

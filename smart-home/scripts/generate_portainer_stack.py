@@ -21,6 +21,7 @@ INCLUDE_DIRS = [
     ROOT / "config",
     ROOT / "scripts",
     ROOT / "web",
+    ROOT / "docs",
 ]
 
 
