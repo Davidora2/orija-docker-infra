@@ -116,6 +116,13 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Could not join home");
     saveStore({ joined: true, home_name: data.home_name });
+    if (data.member_session_token) {
+      try {
+        localStorage.setItem("homepulse_member_session", data.member_session_token);
+      } catch (_) {}
+      const open = $("open-app");
+      if (open) open.href = data.app_path || `/app/?token=${encodeURIComponent(data.member_session_token)}`;
+    }
     $("done-msg").textContent = data.message || "This phone will get doorbell alerts.";
     show("step-done");
   }

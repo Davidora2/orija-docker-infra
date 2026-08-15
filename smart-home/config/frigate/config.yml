@@ -1,0 +1,73 @@
+# Frigate base config for HomePulse (14-day activity recording).
+# HomePulse registry overwrites /config/config.yml from registered cameras.
+# Until cameras are registered, this preview stream keeps Frigate healthy.
+
+mqtt:
+  enabled: true
+  host: mosquitto
+  port: 1883
+  topic_prefix: frigate
+  client_id: homepulse-frigate
+
+detectors:
+  cpu:
+    type: cpu
+    num_threads: 2
+
+database:
+  path: /config/frigate.db
+
+record:
+  enabled: true
+  retain:
+    days: 14
+    mode: motion
+  alerts:
+    retain:
+      days: 14
+      mode: motion
+  detections:
+    retain:
+      days: 14
+      mode: motion
+
+snapshots:
+  enabled: true
+  retain:
+    default: 14
+
+go2rtc:
+  streams:
+    preview:
+      - ffmpeg:testsrc=size=1280x720:rate=5#video=h264#raw=-pix_fmt yuv420p
+
+cameras:
+  preview:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/preview
+          roles:
+            - detect
+            - record
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+    record:
+      enabled: true
+      retain:
+        days: 14
+        mode: motion
+    snapshots:
+      enabled: true
+      retain:
+        default: 14
+    objects:
+      track:
+        - person
+
+ui:
+  timezone: Europe/London
+
+version: "0.14"

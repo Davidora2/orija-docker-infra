@@ -11,7 +11,9 @@ from typing import Any, Annotated
 import secrets
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
+import httpx
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import (
     Boolean,
@@ -42,6 +44,12 @@ BOOTSTRAP_ADMIN_TOKEN = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "bootstrap-dev-token"
 ADMIN_SESSION_DAYS = int(os.getenv("ADMIN_SESSION_DAYS", "14"))
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 INVITE_TTL_DAYS = int(os.getenv("INVITE_TTL_DAYS", "30"))
+MEMBER_SESSION_DAYS = int(os.getenv("MEMBER_SESSION_DAYS", "30"))
+FRIGATE_BASE_URL = os.getenv("FRIGATE_BASE_URL", "http://frigate:5000")
+FRIGATE_CONFIG_PATH = os.getenv("FRIGATE_CONFIG_PATH", "/frigate-config/config.yml")
+FRIGATE_MQTT_HOST = os.getenv("FRIGATE_MQTT_HOST", "mosquitto")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")  # e.g. https://homepulse.orija.store
 
 
 class Base(DeclarativeBase):
@@ -192,6 +200,22 @@ class HomeInvite(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class MemberSession(Base):
+    """Family member session for the home app (cameras + devices)."""
+
+    __tablename__ = "member_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    home_id: Mapped[str] = mapped_column(ForeignKey("homes.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -312,13 +336,21 @@ class AdminChangePasswordRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    try:
+        db = SessionLocal()
+        try:
+            _sync_frigate_config(db)
+        finally:
+            db.close()
+    except Exception:
+        pass
     yield
 
 
 app = FastAPI(
     title="HomePulse Home Registry",
-    version="0.3.0",
-    description="Homes, security mode, devices, FCM tokens, admin auth, and scoped API keys.",
+    version="0.4.0",
+    description="Homes, devices, cameras, member app auth, FCM tokens, and admin auth.",
     lifespan=lifespan,
 )
 
@@ -388,6 +420,100 @@ def _issue_session(db: Session, admin: AdminAccount) -> dict[str, Any]:
             "display_name": admin.display_name,
         },
     }
+
+
+def _issue_member_session(db: Session, *, user_id: str, home_id: str) -> str:
+    raw = generate_session_token()
+    db.add(
+        MemberSession(
+            user_id=user_id,
+            home_id=home_id,
+            token_hash=hash_session_token(raw, API_KEY_PEPPER),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=MEMBER_SESSION_DAYS),
+        )
+    )
+    db.flush()
+    return raw
+
+
+def require_member(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_member_token: str | None = Header(default=None, alias="X-Member-Token"),
+    token: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Accept member session via Bearer, X-Member-Token, or ?token= (for media tags)."""
+    bearer = _extract_bearer(authorization) or (x_member_token or "").strip() or (token or "").strip()
+    if not bearer:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing member session")
+    token_hash = hash_session_token(bearer, API_KEY_PEPPER)
+    row = db.scalar(
+        select(MemberSession).where(
+            MemberSession.token_hash == token_hash,
+            MemberSession.revoked.is_(False),
+        )
+    )
+    if row is None or row.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired member session")
+    user = db.get(User, row.user_id)
+    member = db.scalar(
+        select(HomeMember).where(HomeMember.home_id == row.home_id, HomeMember.user_id == row.user_id)
+    )
+    if user is None or member is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Membership not found")
+    return {
+        "auth": "member",
+        "user_id": user.id,
+        "home_id": row.home_id,
+        "display_name": user.display_name,
+        "role": member.role,
+        "session_id": row.id,
+        "raw_token": bearer,
+    }
+
+
+def _camera_devices(db: Session, home_id: str) -> list[Device]:
+    devices = db.scalars(select(Device).where(Device.home_id == home_id, Device.enabled.is_(True))).all()
+    return [
+        d
+        for d in devices
+        if d.device_type == "camera" or d.role in {"frigate_camera", "camera"} or d.vendor == "frigate"
+    ]
+
+
+def _sync_frigate_config(db: Session) -> dict[str, Any]:
+    from pathlib import Path
+
+    from frigate_sync import write_frigate_config
+
+    cameras: list[dict[str, Any]] = []
+    for d in db.scalars(select(Device).where(Device.enabled.is_(True))).all():
+        if d.device_type == "camera" or d.role in {"frigate_camera", "camera"} or d.vendor == "frigate":
+            cameras.append(device_dict(d))
+    path = write_frigate_config(Path(FRIGATE_CONFIG_PATH), cameras, mqtt_host=FRIGATE_MQTT_HOST)
+    return {"path": str(path), "camera_count": max(len(cameras), 1), "retain_days": 14}
+
+
+async def _publish_device_action(
+    home_id: str, device_id: str, action_type: str, params: dict[str, Any] | None = None
+) -> str:
+    import redis.asyncio as redis_async
+
+    from homepulse.events import ActionCommand
+    from homepulse.streams import ACTIONS_STREAM, publish
+
+    cmd = ActionCommand(
+        home_id=home_id,
+        action_type=action_type,
+        target=device_id,
+        params=params or {"source": "member-app"},
+    )
+    client = redis_async.from_url(REDIS_URL, decode_responses=True)
+    try:
+        await publish(client, ACTIONS_STREAM, cmd.to_stream_fields())
+    finally:
+        await client.aclose()
+    return cmd.action_id
 
 
 @app.get("/health")
@@ -599,7 +725,13 @@ def register_device(
     db.add(device)
     db.commit()
     db.refresh(device)
-    return device_dict(device)
+    result = device_dict(device)
+    if device.device_type == "camera" or device.role in {"frigate_camera", "camera"} or device.vendor == "frigate":
+        try:
+            result["frigate_sync"] = _sync_frigate_config(db)
+        except Exception as exc:  # noqa: BLE001
+            result["frigate_sync"] = {"ok": False, "error": str(exc)}
+    return result
 
 
 @app.patch("/v1/devices/{device_id}/state")
@@ -918,9 +1050,18 @@ class PublicJoinRequest(BaseModel):
     code: str
     display_name: str = Field(min_length=1, max_length=120)
     platform: str = "web"
-    # Web Push subscription JSON string, or raw FCM token for native apps
-    push_subscription: str = Field(min_length=20)
+    # Web Push subscription JSON string, or raw FCM token for native apps (optional for app-only)
+    push_subscription: str | None = None
     label: str | None = None
+
+
+class MemberDeviceCommandRequest(BaseModel):
+    action: str  # on | off | lock | unlock | siren | light_on | light_off | etc.
+
+
+class MemberAppJoinRequest(BaseModel):
+    code: str
+    display_name: str = Field(min_length=1, max_length=120)
 
 
 def _invite_code() -> str:
@@ -981,27 +1122,32 @@ def public_join(body: PublicJoinRequest, db: Session = Depends(get_db)) -> dict[
     if member is None:
         db.add(HomeMember(home_id=home.id, user_id=user.id, role="member"))
 
-    token_value = body.push_subscription.strip()
-    existing = db.scalar(select(PushToken).where(PushToken.user_id == user.id, PushToken.token == token_value))
-    if existing is None:
-        db.add(
-            PushToken(
-                user_id=user.id,
-                token=token_value,
-                platform=body.platform or "web",
-                label=body.label or body.display_name.strip(),
+    token_value = (body.push_subscription or "").strip()
+    if token_value:
+        existing = db.scalar(select(PushToken).where(PushToken.user_id == user.id, PushToken.token == token_value))
+        if existing is None:
+            db.add(
+                PushToken(
+                    user_id=user.id,
+                    token=token_value,
+                    platform=body.platform or "web",
+                    label=body.label or body.display_name.strip(),
+                )
             )
-        )
-    else:
-        existing.active = True
-        existing.platform = body.platform or existing.platform
-        existing.label = body.label or existing.label
+        else:
+            existing.active = True
+            existing.platform = body.platform or existing.platform
+            existing.label = body.label or existing.label
+    member_token = _issue_member_session(db, user_id=user.id, home_id=home.id)
     db.commit()
     return {
         "status": "ok",
+        "home_id": home.id,
         "home_name": home.name,
         "display_name": user.display_name,
-        "message": f"You will get alerts for {home.name} on this phone.",
+        "member_session_token": member_token,
+        "app_path": f"/app/?token={member_token}",
+        "message": f"You can view cameras and devices for {home.name}.",
     }
 
 
@@ -1060,3 +1206,274 @@ def list_invites(
             if i.active
         ]
     }
+
+
+def _assert_member_home(member: dict[str, Any], home_id: str) -> None:
+    if member["home_id"] != home_id:
+        raise HTTPException(403, "Not a member of this home")
+
+
+def _camera_name(device: Device) -> str:
+    meta = {}
+    if device.meta_json:
+        try:
+            meta = json.loads(device.meta_json)
+        except json.JSONDecodeError:
+            meta = {}
+    name = meta.get("frigate_camera") or device.external_id or device.name
+    slug = "".join(ch.lower() if ch.isalnum() else "_" for ch in str(name)).strip("_")
+    return slug or "cam"
+
+
+@app.get("/v1/member/me")
+def member_me(
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    home = db.get(Home, member["home_id"])
+    return {
+        "display_name": member["display_name"],
+        "role": member["role"],
+        "home": {
+            "home_id": home.id if home else member["home_id"],
+            "name": home.name if home else "Home",
+            "mode": home.mode if home else "home",
+            "armed": home.armed if home else False,
+            "timezone": home.timezone if home else "UTC",
+        },
+        "capabilities": {
+            "cameras": True,
+            "devices": True,
+            "recording_days": 14,
+        },
+    }
+
+
+@app.get("/v1/member/homes/{home_id}/devices")
+def member_list_devices(
+    home_id: str,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    devices = db.scalars(
+        select(Device).where(Device.home_id == home_id, Device.enabled.is_(True)).order_by(Device.name)
+    ).all()
+    return {
+        "devices": [
+            {
+                **device_dict(d),
+                "controllable": bool(d.mqtt_command_topic)
+                or d.role in {"porch_light", "siren", "entry_lock", "google_home"},
+                "is_camera": d.device_type == "camera"
+                or d.role in {"frigate_camera", "camera"}
+                or d.vendor == "frigate",
+            }
+            for d in devices
+        ]
+    }
+
+
+@app.get("/v1/member/homes/{home_id}/cameras")
+def member_list_cameras(
+    home_id: str,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    cams = _camera_devices(db, home_id)
+    tok = member["raw_token"]
+    return {
+        "retain_days": 14,
+        "cameras": [
+            {
+                "device_id": d.id,
+                "name": d.name,
+                "camera_name": _camera_name(d),
+                "location_label": d.location_label,
+                "live_url": f"/v1/member/homes/{home_id}/cameras/{_camera_name(d)}/live.jpg?token={tok}",
+                "mjpeg_url": f"/v1/member/homes/{home_id}/cameras/{_camera_name(d)}/mjpeg?token={tok}",
+                "events_path": f"/v1/member/homes/{home_id}/cameras/{_camera_name(d)}/events",
+            }
+            for d in cams
+        ],
+    }
+
+
+@app.post("/v1/member/homes/{home_id}/devices/{device_id}/command")
+async def member_device_command(
+    home_id: str,
+    device_id: str,
+    body: MemberDeviceCommandRequest,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    device = db.get(Device, device_id)
+    if device is None or device.home_id != home_id or not device.enabled:
+        raise HTTPException(404, "Device not found")
+    action = body.action.strip().lower()
+    mapping = {
+        "on": "device.light_on",
+        "off": "device.light_off",
+        "light_on": "device.light_on",
+        "light_off": "device.light_off",
+        "lock": "device.lock",
+        "unlock": "device.unlock",
+        "siren": "device.siren_on",
+        "siren_on": "device.siren_on",
+        "siren_off": "device.siren_off",
+    }
+    action_type = mapping.get(action)
+    if not action_type:
+        raise HTTPException(400, f"Unsupported action '{body.action}'")
+    if not device.mqtt_command_topic and device.role not in {"porch_light", "siren", "entry_lock"}:
+        # Still allow queueing; mqtt-commander will no-op with a log if topic missing
+        pass
+    action_id = await _publish_device_action(home_id, device_id, action_type)
+    return {"status": "queued", "action_id": action_id, "action_type": action_type, "device_id": device_id}
+
+
+@app.patch("/v1/member/homes/{home_id}/security")
+def member_patch_security(
+    home_id: str,
+    body: UpdateHomeSecurityRequest,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    home = db.get(Home, home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+    if body.mode is not None:
+        if body.mode not in {"home", "away"}:
+            raise HTTPException(400, "mode must be home or away")
+        home.mode = body.mode
+        if body.mode == "away" and body.armed is None:
+            home.armed = True
+        if body.mode == "home" and body.armed is None:
+            home.armed = False
+    if body.armed is not None:
+        home.armed = body.armed
+    db.commit()
+    return {"home_id": home.id, "mode": home.mode, "armed": home.armed}
+
+
+async def _proxy_frigate(path: str) -> StreamingResponse:
+    url = f"{FRIGATE_BASE_URL.rstrip('/')}{path}"
+    client = httpx.AsyncClient(timeout=60.0)
+    req = client.build_request("GET", url)
+    try:
+        resp = await client.send(req, stream=True)
+    except Exception as exc:  # noqa: BLE001
+        await client.aclose()
+        raise HTTPException(502, f"Camera service unavailable: {exc}") from exc
+    if resp.status_code >= 400:
+        body = await resp.aread()
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(resp.status_code, body.decode(errors="replace")[:300])
+
+    async def stream():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    media = resp.headers.get("content-type", "application/octet-stream")
+    return StreamingResponse(stream(), media_type=media, status_code=resp.status_code)
+
+
+@app.get("/v1/member/homes/{home_id}/cameras/{camera_name}/live.jpg")
+async def member_camera_live(
+    home_id: str,
+    camera_name: str,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+):
+    _assert_member_home(member, home_id)
+    known = {_camera_name(d) for d in _camera_devices(db, home_id)}
+    if known and camera_name not in known and camera_name != "preview":
+        raise HTTPException(404, "Camera not found in this home")
+    return await _proxy_frigate(f"/api/{camera_name}/latest.jpg")
+
+
+@app.get("/v1/member/homes/{home_id}/cameras/{camera_name}/mjpeg")
+async def member_camera_mjpeg(
+    home_id: str,
+    camera_name: str,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+):
+    _assert_member_home(member, home_id)
+    return await _proxy_frigate(f"/api/{camera_name}/latest.jpg")
+
+
+@app.get("/v1/member/homes/{home_id}/cameras/{camera_name}/events")
+async def member_camera_events(
+    home_id: str,
+    camera_name: str,
+    member: dict[str, Any] = Depends(require_member),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    _assert_member_home(member, home_id)
+    tok = member["raw_token"]
+    url = f"{FRIGATE_BASE_URL.rstrip('/')}/api/events"
+    params = {"cameras": camera_name, "limit": limit, "has_clip": 1}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        try:
+            resp = await client.get(url, params=params)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"Camera service unavailable: {exc}") from exc
+    if resp.status_code >= 400:
+        # Soft-fail empty list when Frigate not ready
+        return {"events": [], "retain_days": 14, "error": resp.text[:200]}
+    raw = resp.json()
+    events = []
+    for ev in raw if isinstance(raw, list) else []:
+        eid = ev.get("id")
+        events.append(
+            {
+                "id": eid,
+                "camera": ev.get("camera"),
+                "label": ev.get("label"),
+                "start_time": ev.get("start_time"),
+                "end_time": ev.get("end_time"),
+                "thumbnail_url": f"/v1/member/media/frigate/events/{eid}/thumbnail.jpg?token={tok}"
+                if eid
+                else None,
+                "clip_url": f"/v1/member/media/frigate/events/{eid}/clip.mp4?token={tok}" if eid else None,
+            }
+        )
+    return {"events": events, "retain_days": 14}
+
+
+@app.get("/v1/member/media/frigate/{path:path}")
+async def member_media_proxy(
+    path: str,
+    member: dict[str, Any] = Depends(require_member),
+):
+    """Authenticated proxy into Frigate media/API paths (clips, thumbnails, recordings)."""
+    _ = member
+    clean = path.lstrip("/")
+    if clean.startswith("events/"):
+        # events/{id}/thumbnail.jpg or clip.mp4
+        return await _proxy_frigate(f"/api/{clean}")
+    if clean.startswith("api/"):
+        return await _proxy_frigate(f"/{clean}")
+    return await _proxy_frigate(f"/api/{clean}")
+
+
+@app.post("/v1/admin/frigate/sync")
+async def admin_frigate_sync(
+    db: Session = Depends(get_db),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    result = _sync_frigate_config(db)
+    from frigate_sync import reload_frigate
+
+    reload = await reload_frigate(FRIGATE_BASE_URL)
+    return {**result, "reload": reload}

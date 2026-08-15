@@ -143,6 +143,7 @@
                   <button type="button" id="preset-blink" class="btn small">Preset: Blink doorbell</button>
                   <button type="button" id="preset-ring" class="btn small">Preset: Ring doorbell</button>
                   <button type="button" id="preset-google-home" class="btn small">Preset: Google Home</button>
+                  <button type="button" id="preset-camera" class="btn small">Preset: Camera (14-day record)</button>
                 </div>
                 <label><span>Name</span><input name="name" required placeholder="Front Door Blink" /></label>
                 <div class="row-2">
@@ -181,13 +182,14 @@
                       <option value="frigate">frigate</option>
                     </select>
                   </label>
-                  <label><span>External ID / Cast IP</span><input name="external_id" placeholder="192.168.2.50 or DSN" /></label>
+                  <label><span>External ID / Cast IP / Camera name</span><input name="external_id" placeholder="front or 192.168.2.50" /></label>
                 </div>
+                <label><span>RTSP URL (cameras)</span><input name="rtsp_url" placeholder="rtsp://user:pass@192.168.2.50:554/stream1" /></label>
                 <label><span>Location label</span><input name="location_label" placeholder="Front Door" /></label>
                 <label><span>MQTT command topic</span><input name="mqtt_command_topic" placeholder="optional" /></label>
                 <label><span>MQTT state topic</span><input name="mqtt_state_topic" placeholder="optional" /></label>
                 <label><span>Initial state</span><input name="state" placeholder="optional" /></label>
-                <p class="muted" style="font-size:0.82rem">Google Home: set <strong>External ID / Cast IP</strong> to the speaker’s LAN IP (e.g. 192.168.2.50). On ding, all google_home devices announce.</p>
+    <p class="muted" style="font-size:0.82rem">Google Home: set <strong>External ID / Cast IP</strong> to the speaker’s LAN IP. Cameras: set camera name + RTSP; recordings keep <strong>14 days</strong> of activity then rotate.</p>
                 <div class="row">
                   <button type="submit" class="btn primary">Save device</button>
                   <button type="button" id="btn-cancel-device" class="btn ghost">Cancel</button>

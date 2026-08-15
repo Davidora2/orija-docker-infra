@@ -36,6 +36,7 @@ python3 smart-home/scripts/generate_portainer_stack.py
 2. Text/email the link (or open `https://homepulse.YOUR_DOMAIN/join/?code=…`)
 3. On **iPhone**: Safari → Share → **Add to Home Screen** → open the HomePulse icon → **Enable alerts**
 4. On **Android**: open the link in Chrome → **Enable alerts** → Allow
+5. Tap **Open cameras & devices** for the home app (`/app/`) — live cameras + device controls
 
 Requires HTTPS (Cloudflare Tunnel) and Web Push VAPID keys:
 
@@ -87,3 +88,13 @@ Project ID: `home-pulse-99808` (Android package `home.pulse`).
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/secrets/firebase-service-account.json` |
 
 Details: [`docs/FIREBASE.md`](./docs/FIREBASE.md)
+
+## Cameras (14-day recordings)
+
+Frigate runs inside the HomePulse stack. Activity footage is kept for **14 days**, then older segments are removed.
+
+See [`docs/CAMERAS.md`](./docs/CAMERAS.md).
+
+- Member app: `/app/`
+- Admin: add device with **Preset: Camera**, set RTSP URL
+- Volumes: `homepulse-frigate-media` (recordings), `homepulse-frigate-config`

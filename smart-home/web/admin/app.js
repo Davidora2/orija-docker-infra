@@ -548,18 +548,29 @@
       form.vendor.value = "google_cast";
       form.external_id.value = "192.168.2.";
       form.location_label.value = "Living Room";
+    } else if (preset === "camera") {
+      form.name.value = "Front Camera";
+      form.device_type.value = "camera";
+      form.role.value = "frigate_camera";
+      form.vendor.value = "frigate";
+      form.external_id.value = "front";
+      form.location_label.value = "Front Door";
+      if (form.rtsp_url) form.rtsp_url.value = "rtsp://";
     }
     setVisible(form, true);
   }
   $("preset-blink").addEventListener("click", () => fillDevicePreset("blink"));
   $("preset-ring").addEventListener("click", () => fillDevicePreset("ring"));
   $("preset-google-home").addEventListener("click", () => fillDevicePreset("google-home"));
+  $("preset-camera").addEventListener("click", () => fillDevicePreset("camera"));
 
   $("device-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!state.home) return;
     const fd = new FormData(e.target);
     const body = Object.fromEntries(fd.entries());
+    const rtspUrl = body.rtsp_url;
+    delete body.rtsp_url;
     for (const k of ["mqtt_command_topic", "mqtt_state_topic", "state", "location_label", "external_id"]) {
       if (!body[k]) delete body[k];
     }
@@ -576,6 +587,17 @@
         cast_ip: body.external_id,
         note: "Cast announcements on doorbell ring",
       };
+    }
+    if (body.vendor === "frigate" || body.role === "frigate_camera" || body.device_type === "camera") {
+      body.meta = {
+        ...(body.meta || {}),
+        frigate_camera: body.external_id || "front",
+        frigate_base_url: "http://frigate:5000",
+        retain_days: 14,
+      };
+      if (rtspUrl && rtspUrl.trim() && rtspUrl.trim() !== "rtsp://") {
+        body.meta.rtsp_url = rtspUrl.trim();
+      }
     }
     try {
       await api(`/v1/homes/${state.home.home_id}/devices`, {

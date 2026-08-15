@@ -165,6 +165,7 @@ services:
     restart: "no"
     volumes:
       - homepulse-app:/app
+      - homepulse-frigate-config:/frigate-config
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -178,6 +179,12 @@ services:
         ls -la /app
         ls -la /app/services
         ls -la /app/web/admin || true
+        ls -la /app/web/app || true
+        mkdir -p /frigate-config
+        if [ -f /app/config/frigate/config.yml ]; then
+          cp /app/config/frigate/config.yml /frigate-config/config.yml
+          echo "Seeded Frigate config (14-day retain)"
+        fi
     networks: [homepulse]
 
   postgres:
@@ -231,7 +238,13 @@ services:
         extra_env="""      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-homepulse}
       API_KEY_PEPPER: ${API_KEY_PEPPER}
       BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN}
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}""",
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      REDIS_URL: redis://redis:6379/0
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
+      FRIGATE_CONFIG_PATH: /frigate-config/config.yml
+      FRIGATE_MQTT_HOST: mosquitto
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}""",
+        extra_volumes="""      - homepulse-frigate-config:/frigate-config""",
     )}
 {service_block(
         "ring-ingest",
@@ -342,6 +355,28 @@ services:
       AUTO_LOCK_AFTER_SUNSET: ${AUTO_LOCK_AFTER_SUNSET:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}""",
     )}
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    restart: unless-stopped
+    shm_size: "256mb"
+    environment:
+      FRIGATE_RTSP_PASSWORD: ${{FRIGATE_RTSP_PASSWORD:-homepulse}}
+    volumes:
+      - homepulse-frigate-config:/config
+      - homepulse-frigate-media:/media/frigate
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 512000000
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
+      home-registry:
+        condition: service_started
+    networks: [homepulse]
+
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -362,6 +397,8 @@ services:
         condition: service_started
       ring-ingest:
         condition: service_started
+      frigate:
+        condition: service_started
     networks: [homepulse]
 
 networks:
@@ -373,6 +410,8 @@ volumes:
   homepulse-pgdata:
   homepulse-redis:
   homepulse-secrets:
+  homepulse-frigate-config:
+  homepulse-frigate-media:
 """
     # Convert doubled compose interpolations written as ${{VAR}} → ${VAR}
     import re

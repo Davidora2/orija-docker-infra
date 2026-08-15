@@ -1,0 +1,91 @@
+:root {
+  --bg: #0f1412;
+  --ink: #e8f0ea;
+  --muted: #9bb0a4;
+  --amber: #d4a35c;
+  --line: rgba(232, 240, 234, 0.14);
+  --danger: #e07a6a;
+  --ok: #7cbc8a;
+  --font: "Outfit", system-ui, sans-serif;
+  --display: "Source Serif 4", Georgia, serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(900px 480px at 10% -20%, rgba(212,163,92,.2), transparent 55%),
+    linear-gradient(165deg, #101714, #0c100e 55%, #141a17);
+}
+.atmosphere { position: fixed; inset: 0; pointer-events: none; opacity: .35;
+  background: radial-gradient(circle at 80% 20%, rgba(124,188,138,.12), transparent 40%); }
+.top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 1rem; padding: 1.25rem 1.25rem 0; max-width: 980px; margin: 0 auto;
+}
+.eyebrow { letter-spacing: .18em; text-transform: uppercase; color: var(--amber); font-size: .7rem; margin: 0 0 .25rem; font-weight: 600; }
+h1 { margin: 0; font-family: var(--display); font-size: 2rem; font-weight: 600; }
+h2 { margin: 0; font-size: 1.15rem; }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.top-actions { display: flex; gap: .5rem; }
+.layout { max-width: 980px; margin: 0 auto; padding: 1rem 1.25rem 3rem; display: grid; gap: 1.1rem; }
+.panel, .block {
+  border: 1px solid var(--line); border-radius: 18px;
+  background: rgba(31, 43, 38, .55); padding: 1rem 1.1rem;
+}
+.block-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .55rem; }
+.row { display: flex; flex-wrap: wrap; gap: .85rem; align-items: center; }
+label { display: grid; gap: .35rem; color: var(--muted); font-size: .86rem; }
+input[type="text"], input:not([type]), input[type="password"] {
+  width: 100%; border: 1px solid var(--line); background: rgba(255,255,255,.04);
+  color: var(--ink); border-radius: 12px; padding: .8rem 1rem; font: inherit;
+}
+.toggle { display: flex; align-items: center; gap: .5rem; flex-direction: row; }
+.btn {
+  border: 0; border-radius: 999px; padding: .7rem 1rem; font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn.primary { background: linear-gradient(135deg, var(--amber), #b9843f); color: #1a1208; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.small { padding: .45rem .8rem; font-size: .82rem; }
+.pill {
+  display: inline-flex; align-items: center; border-radius: 999px; padding: .25rem .65rem;
+  border: 1px solid var(--line); color: var(--amber); font-size: .75rem; font-weight: 600;
+}
+.camera-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .9rem;
+}
+.cam-card {
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: rgba(0,0,0,.25);
+}
+.cam-card img {
+  display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; background: #0a0e0c;
+}
+.cam-meta { padding: .7rem .8rem; display: grid; gap: .35rem; }
+.device-list { display: grid; gap: .65rem; }
+.device-row {
+  display: flex; justify-content: space-between; gap: .75rem; align-items: center;
+  border: 1px solid var(--line); border-radius: 12px; padding: .75rem .85rem;
+}
+.device-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.events { display: grid; gap: .65rem; }
+.event {
+  display: grid; grid-template-columns: 96px 1fr; gap: .75rem; align-items: center;
+  border: 1px solid var(--line); border-radius: 12px; padding: .55rem;
+}
+.event img { width: 96px; height: 64px; object-fit: cover; border-radius: 8px; background: #000; }
+.note {
+  margin: 0; padding: .7rem .8rem; border-left: 3px solid var(--amber);
+  background: rgba(212,163,92,.1); color: var(--ink); font-size: .92rem;
+}
+.error {
+  color: var(--danger); background: rgba(224,122,106,.12);
+  border: 1px solid rgba(224,122,106,.35); border-radius: 12px; padding: .8rem;
+}
+[hidden] { display: none !important; }
+@media (max-width: 640px) {
+  h1 { font-size: 1.65rem; }
+  .event { grid-template-columns: 72px 1fr; }
+}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#d4a35c" />
+  <title>HomePulse Home</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/app/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="top">
+    <div>
+      <p class="eyebrow">ORIJA</p>
+      <h1 id="home-title">HomePulse</h1>
+      <p id="home-sub" class="muted">Cameras &amp; devices</p>
+    </div>
+    <div class="top-actions">
+      <button type="button" id="btn-refresh" class="btn ghost">Refresh</button>
+      <button type="button" id="btn-signout" class="btn ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section id="gate" class="panel" hidden>
+      <h2>Open your home</h2>
+      <p class="muted">Use the invite link from your family admin, or paste your session token.</p>
+      <label><span>Member session token</span><input id="token-input" autocomplete="off" /></label>
+      <button type="button" id="btn-enter" class="btn primary">Enter</button>
+      <p id="gate-err" class="error" hidden></p>
+    </section>
+
+    <section id="workspace" hidden>
+      <div class="security row">
+        <label class="toggle"><input type="checkbox" id="mode-away" /><span>Away mode</span></label>
+        <label class="toggle"><input type="checkbox" id="armed" /><span>Armed</span></label>
+      </div>
+      <p id="note" class="note" hidden></p>
+
+      <section class="block">
+        <div class="block-head">
+          <h2>Cameras</h2>
+          <span class="pill">14-day recording</span>
+        </div>
+        <p class="muted small">Live view plus recent activity. Footage older than 14 days is replaced automatically.</p>
+        <div id="camera-grid" class="camera-grid"></div>
+      </section>
+
+      <section class="block">
+        <div class="block-head"><h2>Recent activity</h2></div>
+        <div id="events" class="events"></div>
+      </section>
+
+      <section class="block">
+        <div class="block-head"><h2>Devices</h2></div>
+        <div id="device-list" class="device-list"></div>
+      </section>
+    </section>
+  </main>
+  <script src="/app/app.js"></script>
+</body>
+</html>
