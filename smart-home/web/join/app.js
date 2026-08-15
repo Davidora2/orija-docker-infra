@@ -1,5 +1,6 @@
 (() => {
   const STORE_KEY = "homepulse_join";
+  const ASSET_VER = "20260815c";
   const params = new URLSearchParams(location.search);
   const codeFromUrl = (params.get("code") || "").toUpperCase();
   const $ = (id) => document.getElementById(id);
@@ -12,13 +13,12 @@
   const isStandalone =
     window.matchMedia("(display-mode: standalone)").matches ||
     window.navigator.standalone === true;
-  // Instagram/FB/Messenger/Gmail in-app browsers often lack PushManager
   const isInAppBrowser =
-    /\bwv\b/i.test(ua) ||
-    /FBAN|FBAV|Instagram|Line\/|Twitter|LinkedInApp|GSA\//i.test(ua) ||
-    (/\bAndroid\b/i.test(ua) && /\bVersion\/\d+\.\d+\b/.test(ua) && /; wv\)/.test(ua));
+    /; wv\)/i.test(ua) ||
+    /FBAN|FBAV|Instagram|Line\/|Twitter|LinkedInApp|GSA\//i.test(ua);
 
   let inviteMeta = null;
+  let swRegPromise = null;
 
   function publicHttpsOrigin() {
     const fromMeta = (inviteMeta && inviteMeta.public_base_url) || "";
@@ -38,6 +38,26 @@
     return { secure, sw, push, notif, ok: secure && sw && push && notif };
   }
 
+  function notificationState() {
+    try {
+      return Notification.permission; // "granted" | "denied" | "default"
+    } catch {
+      return "unknown";
+    }
+  }
+
+  function deniedPermissionMessage() {
+    const host = location.hostname || "homepulse.orija.store";
+    return (
+      `Chrome blocked notifications for this site (permission=${notificationState()}).\n\n` +
+      `Fix on Android:\n` +
+      `1) Tap the lock / tune icon left of the address bar\n` +
+      `2) Permissions → Notifications → Allow\n` +
+      `3) Or Chrome ⋮ → Settings → Site settings → ${host} → Notifications → Allow\n` +
+      `4) Reload this page, then tap Enable alerts again`
+    );
+  }
+
   function pushBlockedMessage(cap) {
     const httpsBase = publicHttpsOrigin();
     const code = ($("invite-code").value || codeFromUrl || "").trim().toUpperCase();
@@ -45,25 +65,21 @@
 
     if (!cap.secure) {
       return (
-        `Alerts need a secure link (https). On Android open Chrome and go to:\n${httpsJoin}\n` +
-        `Do not use the local IP (http://192.168...).`
+        `Alerts need https. Open Chrome and go to:\n${httpsJoin}\n` +
+        `Do not use a local http://192.168... address.`
       );
     }
-    if (isInAppBrowser || (!cap.sw || !cap.push)) {
-      if (isAndroid) {
+    if (isInAppBrowser || !cap.sw || !cap.push) {
+      if (isAndroid || !isIos) {
         return (
-          "This app browser cannot receive alerts. On Android: open the invite in Chrome " +
-          "(⋯ menu → Open in Chrome), then tap Enable alerts. " +
-          `Direct link: ${httpsJoin}`
+          "This browser cannot receive alerts. Open the invite in Chrome " +
+          `(⋮ → Open in Chrome).\n${httpsJoin}`
         );
       }
-      if (isIos) {
-        return "On iPhone use Safari, then Add to Home Screen, open the HomePulse icon, and Enable alerts.";
-      }
-      return `This browser cannot receive alerts. Open ${httpsJoin} in Chrome or Edge.`;
+      return "On iPhone use Safari, Add to Home Screen, open the HomePulse icon, then Enable alerts.";
     }
     if (!cap.notif) {
-      return "Notifications are blocked or unavailable in this browser. Check Android Settings → Apps → Chrome → Notifications.";
+      return "Notifications are unavailable. Android Settings → Apps → Chrome → Notifications → On.";
     }
     return "This browser cannot receive alerts.";
   }
@@ -96,25 +112,34 @@
     ["step-name", "step-ios", "step-android", "step-done"].forEach((s) => {
       $(s).hidden = s !== id;
     });
-    if (id === "step-android") updateAndroidHints();
+    if (id === "step-android") {
+      updateAndroidHints();
+      ensureServiceWorker();
+    }
   }
 
   function updateAndroidHints() {
     const hint = $("android-hint");
     if (!hint) return;
     const cap = pushCapability();
-    const httpsBase = publicHttpsOrigin();
+    const perm = notificationState();
     if (!cap.secure) {
+      hint.textContent = `Open ${publicHttpsOrigin()} in Chrome (https), not a local IP.`;
+      return;
+    }
+    if (perm === "denied") {
       hint.textContent =
-        `Open this page in Chrome using ${httpsBase} (not a local http:// address), then tap Enable alerts.`;
+        "Notifications are blocked for this site. Tap the lock icon → Notifications → Allow, then reload.";
       return;
     }
     if (isInAppBrowser || !cap.ok) {
-      hint.textContent =
-        "If Enable alerts fails: tap ⋯ → Open in Chrome (not Instagram, Messages, or Facebook).";
+      hint.textContent = "Use Chrome (⋮ → Open in Chrome), not Messages / Instagram / Facebook.";
       return;
     }
-    hint.textContent = "Chrome on Android works here — tap Enable alerts and choose Allow.";
+    hint.textContent =
+      perm === "granted"
+        ? "Notifications already allowed — tap Enable alerts to finish."
+        : "Tap Enable alerts, then tap Allow on the Chrome prompt.";
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -124,6 +149,19 @@
     const out = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
     return out;
+  }
+
+  function ensureServiceWorker() {
+    if (!("serviceWorker" in navigator)) return null;
+    if (!swRegPromise) {
+      swRegPromise = navigator.serviceWorker
+        .register(`/join/sw.js?v=${ASSET_VER}`, { scope: "/join/" })
+        .catch((err) => {
+          swRegPromise = null;
+          throw err;
+        });
+    }
+    return swRegPromise;
   }
 
   async function loadInvite(code) {
@@ -155,17 +193,37 @@
       throw new Error("On iPhone, add HomePulse to your Home Screen first, then tap Enable alerts.");
     }
 
-    const perm = await Notification.requestPermission();
-    if (perm !== "granted") {
-      throw new Error(
-        isAndroid
-          ? "Please tap Allow. If you don’t see a prompt: Android Settings → Apps → Chrome → Notifications → On."
-          : "Please tap Allow so this phone can get doorbell alerts."
-      );
+    // Already blocked from a previous Deny — Chrome will not show the prompt again.
+    if (notificationState() === "denied") {
+      updateAndroidHints();
+      throw new Error(deniedPermissionMessage());
     }
 
-    const reg = await navigator.serviceWorker.register("/join/sw.js", { scope: "/join/" });
-    await navigator.serviceWorker.ready;
+    // Register SW before asking — more reliable on Android Chrome.
+    let reg;
+    try {
+      reg = await ensureServiceWorker();
+      await navigator.serviceWorker.ready;
+      if (!reg) reg = await navigator.serviceWorker.ready;
+    } catch (e) {
+      throw new Error(`Could not start alerts service (${(e && e.message) || e}). Reload and retry in Chrome.`);
+    }
+
+    let perm = notificationState();
+    if (perm !== "granted") {
+      try {
+        perm = await Notification.requestPermission();
+      } catch (e) {
+        throw new Error(`Could not ask for notification permission: ${(e && e.message) || e}`);
+      }
+    }
+    if (perm !== "granted") {
+      updateAndroidHints();
+      if (perm === "denied") throw new Error(deniedPermissionMessage());
+      throw new Error(
+        "No Allow tap detected. When Chrome asks “homepulse.orija.store wants to show notifications”, tap Allow — not Block / X."
+      );
+    }
 
     let vapid = inviteMeta?.vapid_public_key;
     if (!vapid) {
@@ -173,6 +231,14 @@
       vapid = vk.publicKey;
     }
     if (!vapid) throw new Error("Alerts are not configured on the server yet.");
+
+    // Drop a stale subscription if present, then create a fresh one.
+    try {
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+    } catch (_) {
+      /* ignore */
+    }
 
     let sub;
     try {
@@ -183,9 +249,7 @@
     } catch (e) {
       const msg = (e && e.message) || String(e);
       throw new Error(
-        isAndroid
-          ? `Could not enable Chrome push (${msg}). Use Chrome on https://homepulse.orija.store — not a local IP or in-app browser.`
-          : `Could not enable alerts: ${msg}`
+        `Could not subscribe for push (${msg}). Confirm Chrome notifications are Allowed for this site, then retry.`
       );
     }
 
@@ -202,7 +266,7 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Could not join home");
-    saveStore({ joined: true, home_name: data.home_name });
+    saveStore({ joined: true, home_name: data.home_name, asset_ver: ASSET_VER });
     if (data.member_session_token) {
       try {
         localStorage.setItem("homepulse_member_session", data.member_session_token);
@@ -238,10 +302,16 @@
     }
   });
   $("btn-enable-android").addEventListener("click", async () => {
+    const btn = $("btn-enable-android");
+    btn.disabled = true;
+    btn.textContent = "Working…";
     try {
       await enableAlerts();
     } catch (e) {
       showErr(e.message || String(e));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Enable alerts";
     }
   });
 
@@ -263,6 +333,7 @@
         }
         if (isIos && !isStandalone && stored.name) show("step-ios");
         else if (isIos && isStandalone && stored.name) show("step-ios");
+        else if (!isIos && stored.name) show("step-android");
       })
       .catch((e) => showErr(e.message || String(e)));
   }

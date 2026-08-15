@@ -45,8 +45,13 @@
 
     <section id="step-android" class="card" hidden>
       <h2>Almost done</h2>
-      <p class="lede">On Android, open this page in <strong>Chrome</strong> (not Messages / Instagram / Facebook), then tap the button and choose <strong>Allow</strong>.</p>
-      <p id="android-hint" class="note">Chrome on Android works here — tap Enable alerts and choose Allow.</p>
+      <p class="lede">On Android use <strong>Chrome</strong>. When Chrome asks to show notifications, tap <strong>Allow</strong> (not Block).</p>
+      <ol class="steps">
+        <li>Tap <strong>Enable alerts</strong> below</li>
+        <li>Tap <strong>Allow</strong> on the Chrome popup</li>
+        <li>If you already tapped Block: lock icon → Notifications → Allow → reload</li>
+      </ol>
+      <p id="android-hint" class="note">Tap Enable alerts, then tap Allow on the Chrome prompt.</p>
       <button id="btn-enable-android" class="btn primary" type="button">Enable alerts</button>
     </section>
 
@@ -58,6 +63,6 @@
 
     <p id="err" class="error" hidden></p>
   </main>
-  <script src="/join/app.js"></script>
+  <script src="/join/app.js?v=20260815c"></script>
 </body>
 </html>
