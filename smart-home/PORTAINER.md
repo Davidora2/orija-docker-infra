@@ -103,7 +103,8 @@ See [`docs/CAMERAS.md`](./docs/CAMERAS.md).
 
 Home Assistant is included in the stack:
 
-- UI: `https://homepulse.YOUR_DOMAIN/hass/` or host port **18123**
+- UI helper: `/hass/` (points you to HA)
+- HA UI: host port **18123** (or Cloudflare hostname → `localhost:18123`)
 - Set `HA_TOKEN` (long-lived access token) after first HA login
 - Optional: `HA_BASE_URL=http://homeassistant:8123`
 

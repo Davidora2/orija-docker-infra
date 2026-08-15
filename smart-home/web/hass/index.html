@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open Home Assistant — HomePulse</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet" />
+  <style>
+    :root { --amber:#d4a35c; --ink:#e8f0ea; --muted:#9bb0a4; --font:Outfit,system-ui,sans-serif; --display:"Source Serif 4",Georgia,serif; }
+    body { margin:0; min-height:100vh; font-family:var(--font); color:var(--ink);
+      background: radial-gradient(700px 420px at 20% -10%, rgba(212,163,92,.22), transparent 60%), linear-gradient(165deg,#101714,#0c100e); }
+    main { max-width:520px; margin:0 auto; padding:2.5rem 1.25rem; }
+    .eyebrow { letter-spacing:.18em; text-transform:uppercase; color:var(--amber); font-size:.72rem; font-weight:600; }
+    h1 { font-family:var(--display); font-size:2.2rem; margin:.3rem 0 0.6rem; }
+    p { color:var(--muted); line-height:1.5; }
+    a.btn { display:inline-block; margin:.4rem .4rem .4rem 0; padding:.9rem 1.15rem; border-radius:999px; text-decoration:none; font-weight:600; background:linear-gradient(135deg,var(--amber),#b9843f); color:#1a1208; }
+    a.ghost { background:transparent; color:var(--ink); border:1px solid rgba(232,240,234,.2); }
+    code { color:var(--amber); }
+    ol { color:var(--muted); line-height:1.55; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">ORIJA · HomePulse</p>
+    <h1>Home Assistant</h1>
+    <p>HA needs its own URL (it doesn’t work under <code>/hass/</code>). Use the LAN link below, or point a Cloudflare hostname at port <code>18123</code>.</p>
+    <p>
+      <a class="btn" id="lan-link" href="http://192.168.2.200:18123/">Open on LAN :18123</a>
+      <a class="btn ghost" href="/app/">Back to HomePulse app</a>
+    </p>
+    <h2 style="font-size:1.1rem;margin-top:1.6rem">Get Blink into the app</h2>
+    <ol>
+      <li>Open Home Assistant and create your account</li>
+      <li>Settings → Devices &amp; services → Add <strong>Blink</strong></li>
+      <li>Profile → Security → create a <strong>Long-Lived Access Token</strong></li>
+      <li>Portainer → stack <code>homepulse</code> → set <code>HA_TOKEN</code> → update stack / restart <code>home-registry</code></li>
+      <li>Refresh HomePulse <code>/app/</code> — Blink cameras appear under Home Assistant</li>
+    </ol>
+  </main>
+  <script>
+    const host = location.hostname;
+    if (host && host !== 'homepulse.orija.store') {
+      document.getElementById('lan-link').href = `${location.protocol}//${host}:18123/`;
+      document.getElementById('lan-link').textContent = `Open ${host}:18123`;
+    }
+  </script>
+</body>
+</html>
