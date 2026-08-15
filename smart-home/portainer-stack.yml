@@ -1,0 +1,349 @@
+# HomePulse — Portainer standalone stack (ORIJA)
+# Gateway: http://HOST:18091
+# Rules: no host 80/443; image pull + git bootstrap (no Docker build:)
+
+name: homepulse
+
+services:
+  sync:
+    image: alpine/git:2.47.2
+    restart: "no"
+    environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
+    volumes:
+      - homepulse-src:/src
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        if [ -n "$${GIT_TOKEN:-}" ]; then
+          AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
+        else
+          AUTH_URL="$${HOMEPULSE_REPO_URL}"
+        fi
+        if [ ! -d /src/repo/.git ]; then
+          rm -rf /src/repo
+          git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" /src/repo
+        else
+          cd /src/repo
+          git remote set-url origin "$$AUTH_URL"
+          git fetch --depth 1 origin "$$BRANCH"
+          git checkout -f "$$BRANCH" || true
+          git reset --hard "origin/$$BRANCH"
+        fi
+        echo "HomePulse source ready at /src/repo ($$BRANCH)"
+        ls -la /src/repo/smart-home
+    networks: [homepulse]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-homepulse}
+      POSTGRES_USER: ${POSTGRES_USER:-homepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - homepulse-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-homepulse} -d ${POSTGRES_DB:-homepulse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [homepulse]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - homepulse-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [homepulse]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mkdir -p /mosquitto/config
+        if [ -f /src/repo/smart-home/config/mosquitto/mosquitto.conf ]; then
+          cp /src/repo/smart-home/config/mosquitto/mosquitto.conf /mosquitto/config/mosquitto.conf
+        else
+          printf 'listener 1883\nallow_anonymous true\npersistence false\n' > /mosquitto/config/mosquitto.conf
+        fi
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+    networks: [homepulse]
+
+  home-registry:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-homepulse}
+      API_KEY_PEPPER: ${API_KEY_PEPPER}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN}
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/home-registry/requirements.txt
+        cp /src/repo/smart-home/services/home-registry/app.py /app/app.py
+        exec uvicorn app:app --host 0.0.0.0 --port 8000
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    networks: [homepulse]
+
+  ring-ingest:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      RING_WEBHOOK_SECRET: ${RING_WEBHOOK_SECRET:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/ring-ingest/requirements.txt
+        cp /src/repo/smart-home/services/ring-ingest/app.py /app/app.py
+        exec uvicorn app:app --host 0.0.0.0 --port 8000
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    networks: [homepulse]
+
+  mqtt-ingest:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/mqtt-ingest/requirements.txt
+        cp /src/repo/smart-home/services/mqtt-ingest/worker.py /app/worker.py
+        exec python worker.py
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    networks: [homepulse]
+
+  rules-engine:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
+      PORCH_LIGHT_MINUTES: ${PORCH_LIGHT_MINUTES:-5}
+      SIREN_SECONDS: ${SIREN_SECONDS:-30}
+      NOTIFY_ON_MOTION: ${NOTIFY_ON_MOTION:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: rules-1
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/rules-engine/requirements.txt
+        cp /src/repo/smart-home/services/rules-engine/worker.py /app/worker.py
+        exec python worker.py
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    networks: [homepulse]
+
+  notifier:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      FCM_MODE: ${FCM_MODE:-dry_run}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: notifier-1
+    volumes:
+      - homepulse-src:/src:ro
+      - homepulse-secrets:/secrets:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/notifier/requirements.txt
+        cp /src/repo/smart-home/services/notifier/worker.py /app/worker.py
+        exec python worker.py
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    networks: [homepulse]
+
+  mqtt-commander:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: mqtt-commander-1
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/mqtt-commander/requirements.txt
+        cp /src/repo/smart-home/services/mqtt-commander/worker.py /app/worker.py
+        exec python worker.py
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    networks: [homepulse]
+
+  scheduler:
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      LOCK_CHECK_INTERVAL_SECONDS: ${LOCK_CHECK_INTERVAL_SECONDS:-60}
+      SUNSET_HOUR_LOCAL: ${SUNSET_HOUR_LOCAL:-20}
+      SUNSET_MINUTE_LOCAL: ${SUNSET_MINUTE_LOCAL:-0}
+      AUTO_LOCK_AFTER_SUNSET: ${AUTO_LOCK_AFTER_SUNSET:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        pip install --no-cache-dir -q /src/repo/smart-home/shared
+        pip install --no-cache-dir -q -r /src/repo/smart-home/services/scheduler/requirements.txt
+        cp /src/repo/smart-home/services/scheduler/worker.py /app/worker.py
+        exec python worker.py
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    networks: [homepulse]
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-18091}:8080"
+    volumes:
+      - homepulse-src:/src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cp /src/repo/smart-home/config/nginx/nginx.conf /etc/nginx/nginx.conf
+        exec nginx -g 'daemon off;'
+    depends_on:
+      sync:
+        condition: service_completed_successfully
+      home-registry:
+        condition: service_healthy
+      ring-ingest:
+        condition: service_healthy
+    networks: [homepulse]
+
+networks:
+  homepulse:
+    driver: bridge
+
+volumes:
+  homepulse-src:
+  homepulse-postgres:
+  homepulse-redis:
+  homepulse-secrets:
