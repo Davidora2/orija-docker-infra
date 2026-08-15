@@ -1,43 +1,11 @@
 # HomePulse — Portainer standalone stack (ORIJA)
 # Gateway: http://HOST:18091
+# Cloudflare Tunnel (you configure): public hostname → http://localhost:18091
 # Rules: no host 80/443; image pull + git bootstrap (no Docker build:)
 
 name: homepulse
 
 services:
-  sync:
-    image: alpine/git:2.47.2
-    restart: "no"
-    environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
-    volumes:
-      - homepulse-src:/src
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        if [ -n "$${GIT_TOKEN:-}" ]; then
-          AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        else
-          AUTH_URL="$${HOMEPULSE_REPO_URL}"
-        fi
-        if [ ! -d /src/repo/.git ]; then
-          rm -rf /src/repo
-          git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" /src/repo
-        else
-          cd /src/repo
-          git remote set-url origin "$$AUTH_URL"
-          git fetch --depth 1 origin "$$BRANCH"
-          git checkout -f "$$BRANCH" || true
-          git reset --hard "origin/$$BRANCH"
-        fi
-        echo "HomePulse source ready at /src/repo ($$BRANCH)"
-        ls -la /src/repo/smart-home
-    networks: [homepulse]
-
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -70,81 +38,88 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped
-    volumes:
-      - homepulse-src:/src:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
         mkdir -p /mosquitto/config
-        if [ -f /src/repo/smart-home/config/mosquitto/mosquitto.conf ]; then
-          cp /src/repo/smart-home/config/mosquitto/mosquitto.conf /mosquitto/config/mosquitto.conf
-        else
-          printf 'listener 1883\nallow_anonymous true\npersistence false\n' > /mosquitto/config/mosquitto.conf
-        fi
+        printf 'listener 1883\nallow_anonymous true\npersistence false\n' > /mosquitto/config/mosquitto.conf
         exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
-    depends_on:
-      sync:
-        condition: service_completed_successfully
     networks: [homepulse]
 
   home-registry:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-homepulse}
       API_KEY_PEPPER: ${API_KEY_PEPPER}
       BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN}
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-registry-src:/opt/homepulse
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/home-registry/requirements.txt
-        cp /src/repo/smart-home/services/home-registry/app.py /app/app.py
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/home-registry/requirements.txt
+        cp ./services/home-registry/app.py "$$ROOT/app.py"
+        cd "$$ROOT"
         exec uvicorn app:app --host 0.0.0.0 --port 8000
     depends_on:
-      sync:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
-      retries: 18
-      start_period: 40s
+      retries: 30
+      start_period: 180s
     networks: [homepulse]
 
   ring-ingest:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       RING_WEBHOOK_SECRET: ${RING_WEBHOOK_SECRET:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-ingest-src:/opt/homepulse
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/ring-ingest/requirements.txt
-        cp /src/repo/smart-home/services/ring-ingest/app.py /app/app.py
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/ring-ingest/requirements.txt
+        cp ./services/ring-ingest/app.py "$$ROOT/app.py"
+        cd "$$ROOT"
         exec uvicorn app:app --host 0.0.0.0 --port 8000
     depends_on:
-      sync:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
@@ -153,15 +128,18 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
-      retries: 18
-      start_period: 40s
+      retries: 30
+      start_period: 180s
     networks: [homepulse]
 
   mqtt-ingest:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       MQTT_HOST: mosquitto
@@ -169,18 +147,25 @@ services:
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-mqtt-ingest-src:/opt/homepulse
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/mqtt-ingest/requirements.txt
-        cp /src/repo/smart-home/services/mqtt-ingest/worker.py /app/worker.py
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/mqtt-ingest/requirements.txt
+        cp ./services/mqtt-ingest/worker.py "$$ROOT/worker.py"
+        cd "$$ROOT"
         exec python worker.py
     depends_on:
-      sync:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
@@ -192,8 +177,11 @@ services:
   rules-engine:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
@@ -203,18 +191,25 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: rules-1
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-rules-src:/opt/homepulse
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/rules-engine/requirements.txt
-        cp /src/repo/smart-home/services/rules-engine/worker.py /app/worker.py
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/rules-engine/requirements.txt
+        cp ./services/rules-engine/worker.py "$$ROOT/worker.py"
+        cd "$$ROOT"
         exec python worker.py
     depends_on:
-      sync:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
@@ -224,8 +219,11 @@ services:
   notifier:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       FCM_MODE: ${FCM_MODE:-dry_run}
@@ -234,19 +232,26 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: notifier-1
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-notifier-src:/opt/homepulse
       - homepulse-secrets:/secrets:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/notifier/requirements.txt
-        cp /src/repo/smart-home/services/notifier/worker.py /app/worker.py
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/notifier/requirements.txt
+        cp ./services/notifier/worker.py "$$ROOT/worker.py"
+        cd "$$ROOT"
         exec python worker.py
     depends_on:
-      sync:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
@@ -256,8 +261,11 @@ services:
   mqtt-commander:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       MQTT_HOST: mosquitto
@@ -265,18 +273,25 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: mqtt-commander-1
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-commander-src:/opt/homepulse
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/mqtt-commander/requirements.txt
-        cp /src/repo/smart-home/services/mqtt-commander/worker.py /app/worker.py
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/mqtt-commander/requirements.txt
+        cp ./services/mqtt-commander/worker.py "$$ROOT/worker.py"
+        cd "$$ROOT"
         exec python worker.py
     depends_on:
-      sync:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
@@ -288,8 +303,11 @@ services:
   scheduler:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    working_dir: /opt/homepulse
     environment:
+      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
+      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
+      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       LOCK_CHECK_INTERVAL_SECONDS: ${LOCK_CHECK_INTERVAL_SECONDS:-60}
@@ -298,18 +316,25 @@ services:
       AUTO_LOCK_AFTER_SUNSET: ${AUTO_LOCK_AFTER_SUNSET:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - homepulse-src:/src:ro
+      - homepulse-scheduler-src:/opt/homepulse
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        pip install --no-cache-dir -q /src/repo/smart-home/shared
-        pip install --no-cache-dir -q -r /src/repo/smart-home/services/scheduler/requirements.txt
-        cp /src/repo/smart-home/services/scheduler/worker.py /app/worker.py
+        REPO_URL="$${HOMEPULSE_REPO_URL}"
+        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
+        ROOT=/opt/homepulse
+        mkdir -p "$$ROOT" && cd "$$ROOT"
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
+        cd "$$ROOT/repo/smart-home"
+        pip install --no-cache-dir -q ./shared -r ./services/scheduler/requirements.txt
+        cp ./services/scheduler/worker.py "$$ROOT/worker.py"
+        cd "$$ROOT"
         exec python worker.py
     depends_on:
-      sync:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
@@ -321,17 +346,64 @@ services:
     restart: unless-stopped
     ports:
       - "${GATEWAY_PORT:-18091}:8080"
-    volumes:
-      - homepulse-src:/src:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        cp /src/repo/smart-home/config/nginx/nginx.conf /etc/nginx/nginx.conf
+        cat >/etc/nginx/nginx.conf <<'EOF'
+        user nginx;
+        worker_processes auto;
+        error_log /var/log/nginx/error.log warn;
+        pid /var/run/nginx.pid;
+        events { worker_connections 1024; }
+        http {
+          include /etc/nginx/mime.types;
+          default_type application/json;
+          server_tokens off;
+          limit_req_zone $$binary_remote_addr zone=ingest_limit:10m rate=30r/m;
+          limit_req_zone $$binary_remote_addr zone=api_limit:10m rate=120r/m;
+          upstream home_registry { server home-registry:8000; }
+          upstream ring_ingest { server ring-ingest:8000; }
+          server {
+            listen 8080;
+            client_max_body_size 1m;
+            location /health {
+              default_type application/json;
+              return 200 '{"status":"ok","service":"gateway"}';
+            }
+            location /v1/homes {
+              limit_req zone=api_limit burst=40 nodelay;
+              proxy_pass http://home_registry;
+              proxy_set_header Authorization $$http_authorization;
+              proxy_set_header Host $$host;
+            }
+            location /v1/push-tokens {
+              limit_req zone=api_limit burst=40 nodelay;
+              proxy_pass http://home_registry;
+              proxy_set_header Authorization $$http_authorization;
+            }
+            location /v1/devices {
+              limit_req zone=api_limit burst=40 nodelay;
+              proxy_pass http://home_registry;
+              proxy_set_header Authorization $$http_authorization;
+            }
+            location /v1/webhooks/ring {
+              limit_req zone=ingest_limit burst=20 nodelay;
+              proxy_pass http://ring_ingest;
+              proxy_set_header X-API-Key $$http_x_api_key;
+              proxy_set_header X-Webhook-Secret $$http_x_webhook_secret;
+            }
+            location /v1/simulate/ring {
+              limit_req zone=ingest_limit burst=20 nodelay;
+              proxy_pass http://ring_ingest;
+              proxy_set_header X-API-Key $$http_x_api_key;
+            }
+            location /v1/internal/ { return 404; }
+          }
+        }
+        EOF
         exec nginx -g 'daemon off;'
     depends_on:
-      sync:
-        condition: service_completed_successfully
       home-registry:
         condition: service_healthy
       ring-ingest:
@@ -343,7 +415,13 @@ networks:
     driver: bridge
 
 volumes:
-  homepulse-src:
   homepulse-postgres:
   homepulse-redis:
   homepulse-secrets:
+  homepulse-registry-src:
+  homepulse-ingest-src:
+  homepulse-mqtt-ingest-src:
+  homepulse-rules-src:
+  homepulse-notifier-src:
+  homepulse-commander-src:
+  homepulse-scheduler-src:
