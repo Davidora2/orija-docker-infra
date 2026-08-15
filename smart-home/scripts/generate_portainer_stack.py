@@ -34,7 +34,7 @@ def build_bundle() -> str:
                     continue
                 if "__pycache__" in file.parts or file.suffix in {".pyc"}:
                     continue
-                if file.name.endswith(".egg-info") or "egg-info" in file.parts:
+                if "egg-info" in file.parts or file.name.endswith(".egg-info"):
                     continue
                 arcname = file.relative_to(ROOT).as_posix()
                 tar.add(file, arcname=arcname)
@@ -62,43 +62,50 @@ def service_block(
 
     if role == "registry":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/home-registry/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/home-registry/requirements.txt
         cp /app/services/home-registry/app.py /run/app.py
         cd /run
         exec uvicorn app:app --host 0.0.0.0 --port 8000"""
     elif role == "ring":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/ring-ingest/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/ring-ingest/requirements.txt
         cp /app/services/ring-ingest/app.py /run/app.py
         cd /run
         exec uvicorn app:app --host 0.0.0.0 --port 8000"""
     elif role == "mqtt-ingest":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/mqtt-ingest/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/mqtt-ingest/requirements.txt
         cp /app/services/mqtt-ingest/worker.py /run/worker.py
         cd /run
         exec python worker.py"""
     elif role == "rules":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/rules-engine/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/rules-engine/requirements.txt
         cp /app/services/rules-engine/worker.py /run/worker.py
         cd /run
         exec python worker.py"""
     elif role == "notifier":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/notifier/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/notifier/requirements.txt
         cp /app/services/notifier/worker.py /run/worker.py
         cd /run
         exec python worker.py"""
     elif role == "mqtt-commander":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/mqtt-commander/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/mqtt-commander/requirements.txt
         cp /app/services/mqtt-commander/worker.py /run/worker.py
         cd /run
         exec python worker.py"""
     elif role == "scheduler":
         run = """
-        pip install --no-cache-dir -q /app/shared -r /app/services/scheduler/requirements.txt
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/scheduler/requirements.txt
         cp /app/services/scheduler/worker.py /run/worker.py
         cd /run
         exec python worker.py"""
