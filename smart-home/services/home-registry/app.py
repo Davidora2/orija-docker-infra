@@ -758,6 +758,36 @@ def register_device(
     return result
 
 
+@app.delete("/v1/homes/{home_id}/devices/{device_id}")
+def delete_device(
+    home_id: str,
+    device_id: str,
+    db: Session = Depends(get_db),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    home = db.get(Home, home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+    device = db.get(Device, device_id)
+    if device is None or device.home_id != home_id:
+        raise HTTPException(404, "Device not found")
+    name = device.name
+    was_camera = (
+        device.device_type == "camera"
+        or device.role in {"frigate_camera", "camera"}
+        or device.vendor == "frigate"
+    )
+    db.delete(device)
+    db.commit()
+    result: dict[str, Any] = {"status": "ok", "deleted_device_id": device_id, "name": name}
+    if was_camera:
+        try:
+            result["frigate_sync"] = _sync_frigate_config(db)
+        except Exception as exc:  # noqa: BLE001
+            result["frigate_sync"] = {"ok": False, "error": str(exc)}
+    return result
+
+
 @app.patch("/v1/devices/{device_id}/state")
 def update_device_state(
     device_id: str,

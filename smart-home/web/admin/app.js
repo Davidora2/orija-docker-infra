@@ -177,7 +177,7 @@
     }
     wrap.innerHTML = `
       <table>
-        <thead><tr><th>Name</th><th>Role</th><th>Vendor</th><th>External ID</th><th>State</th></tr></thead>
+        <thead><tr><th>Name</th><th>Role</th><th>Vendor</th><th>External ID</th><th>State</th><th></th></tr></thead>
         <tbody>
           ${devices
             .map(
@@ -187,11 +187,29 @@
               <td>${escapeHtml(d.vendor)}</td>
               <td>${escapeHtml(d.external_id || "—")}</td>
               <td>${escapeHtml(d.state || "—")}</td>
+              <td><button type="button" class="btn small ghost btn-del-device" data-id="${escapeHtml(
+                d.device_id
+              )}" data-name="${escapeHtml(d.name)}">Remove</button></td>
             </tr>`
             )
             .join("")}
         </tbody>
       </table>`;
+    wrap.querySelectorAll(".btn-del-device").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!state.home) return;
+        const id = btn.getAttribute("data-id");
+        const name = btn.getAttribute("data-name") || "device";
+        if (!id || !confirm(`Remove “${name}” from this home?`)) return;
+        try {
+          await api(`/v1/homes/${state.home.home_id}/devices/${id}`, { method: "DELETE" });
+          await selectHome(state.home.home_id);
+          note($("workspace-note"), `Removed ${name}`, true);
+        } catch (err) {
+          note($("workspace-note"), err.message || "Could not remove device", true);
+        }
+      });
+    });
   }
 
   function renderInvites() {
@@ -870,7 +888,9 @@
         <p class="muted">Health: ${escapeHtml(JSON.stringify(st.health || {}))}</p>
         <p class="muted">1) Open HA → create account → add Blink<br>
         2) Create a Long-Lived Access Token<br>
-        3) Set Portainer env <code>HA_TOKEN</code> (or file <code>/secrets/ha-token.txt</code>) and restart home-registry</p>
+        3) Set Portainer env <code>HA_TOKEN</code> and restart home-registry<br>
+        4) HA automations → phone push: mint an API key, put it in HA <code>secrets.yaml</code> as <code>homepulse_api_key</code>, use service <code>rest_command.homepulse_notify</code><br>
+        Webhook: <code>POST /v1/webhooks/homepulse</code> with header <code>X-API-Key</code></p>
         <h4>Camera entities</h4>
         ${entitiesHtml}`;
     } catch (err) {

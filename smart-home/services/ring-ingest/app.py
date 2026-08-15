@@ -44,6 +44,19 @@ class SimulateRingRequest(BaseModel):
     vendor: str = "ring"
 
 
+class HomePulseNotifyRequest(BaseModel):
+    """Payload for Home Assistant automations / rest_command → HomePulse push."""
+
+    event: str = "ding"  # ding | motion | notify
+    title: str | None = None
+    body: str | None = None
+    message: str | None = None  # alias for body (HA convenience)
+    external_device_id: str | None = None
+    device_id: str | None = None  # alias
+    vendor: str = "blink"
+    snapshot_url: str | None = None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global redis_client
@@ -187,3 +200,101 @@ async def simulate_ring(
         ding_id=f"sim-{datetime.now(timezone.utc).timestamp()}",
     )
     return await ingest_ring_event(payload, auth["home_id"], vendor=body.vendor or "ring")
+
+
+@app.post("/v1/webhooks/homepulse")
+async def homepulse_ha_webhook(
+    body: HomePulseNotifyRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Home Assistant automation target — turn any HA trigger into a phone push.
+
+    Example rest_command / automation action:
+      POST /v1/webhooks/homepulse
+      Header X-API-Key: <home API key from Admin → Mint API key>
+      {"event":"ding","title":"Doorbell","body":"Blink button / motion","vendor":"blink"}
+    """
+    auth = await auth_home(x_api_key)
+    home_id = auth["home_id"]
+    external = (body.external_device_id or body.device_id or "").strip()
+    vendor = (body.vendor or "blink").strip().lower() or "blink"
+
+    # Resolve doorbell device for this home (prefer matching vendor)
+    device: dict[str, Any] | None = None
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        if external:
+            resp = await client.get(
+                f"{REGISTRY_URL}/v1/internal/devices/resolve",
+                params={"vendor": vendor, "external_id": external},
+            )
+            if resp.status_code == 200:
+                device = resp.json()
+        if device is None:
+            ctx = (
+                await client.get(f"{REGISTRY_URL}/v1/internal/homes/{home_id}/context")
+            ).json()
+            doorbells = [
+                d
+                for d in (ctx.get("devices") or [])
+                if d.get("role") == "doorbell" or d.get("device_type") == "doorbell"
+            ]
+            if vendor:
+                preferred = [d for d in doorbells if (d.get("vendor") or "").lower() == vendor]
+                device = (preferred or doorbells or [None])[0]
+            else:
+                device = (doorbells or [None])[0]
+
+    if device is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "No doorbell device registered for this home — add one in HomePulse Admin",
+        )
+    if device.get("home_id") != home_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Device does not belong to this home")
+
+    kind = (body.event or "ding").strip().lower()
+    if kind in {"motion", "doorbell.motion"}:
+        event_type = EventType.DOORBELL_MOTION
+        default_title = "Doorbell motion"
+        default_body = f"Motion at {device.get('name') or 'the door'}"
+    else:
+        event_type = EventType.DOORBELL_RING
+        default_title = "Doorbell"
+        default_body = f"Someone rang the {device.get('name') or 'door'} doorbell"
+
+    title = (body.title or default_title).strip()
+    body_text = (body.body or body.message or default_body).strip()
+
+    event = DeviceEvent(
+        home_id=home_id,
+        device_id=device["device_id"],
+        device_type=device.get("device_type", "doorbell"),
+        vendor=device.get("vendor") or vendor,
+        event_type=event_type,
+        occurred_at=datetime.now(timezone.utc),
+        title=title,
+        body=body_text,
+        payload={
+            "external_device_id": device.get("external_id"),
+            "snapshot_url": body.snapshot_url,
+            "source": "ha_automation",
+            "raw_event": kind,
+        },
+        source="ring-ingest.ha_webhook",
+    )
+    assert redis_client is not None
+    msg_id = await publish(redis_client, EVENTS_STREAM, event.to_stream_fields())
+    await publish(
+        redis_client,
+        AUDIT_STREAM,
+        {"json": event.model_dump_json(), "audit_type": "event.ingested"},
+    )
+    logger.info("HA webhook → %s event_id=%s stream=%s", event.event_type, event.event_id, msg_id)
+    return {
+        "accepted": True,
+        "event_id": event.event_id,
+        "stream_id": msg_id,
+        "device": device.get("name"),
+        "title": title,
+        "body": body_text,
+    }

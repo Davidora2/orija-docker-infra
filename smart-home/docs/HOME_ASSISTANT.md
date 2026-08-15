@@ -20,6 +20,43 @@ Home Assistant runs next to HomePulse so you can use **Blink** (and other HA dev
 - `/app/` shows a **Home Assistant** section: HA cameras (incl. Blink) + controllable entities
 - Camera stills come through HomePulse (`/v1/member/.../ha/cameras/...`) so phones never need the HA token
 
+## HA automations → HomePulse phone push
+
+Any Home Assistant automation can notify HomePulse phones via:
+
+`POST http://gateway:8080/v1/webhooks/homepulse`  
+Header: `X-API-Key: <home API key from Admin → Mint API key>`
+
+```json
+{"event":"ding","title":"Doorbell","body":"Someone is at the door","vendor":"blink"}
+```
+
+### Built-in package
+
+`config/homeassistant/packages/homepulse_notify.yaml` adds:
+
+- `rest_command.homepulse_notify`
+- Automation: Blink motion → HomePulse push
+- Automation: Blink ding helper → HomePulse push
+
+Setup:
+
+1. Admin → **Mint API key**
+2. On the HA host volume, set `/config/secrets.yaml`:
+   ```yaml
+   homepulse_api_key: <paste key>
+   ```
+3. Ensure `configuration.yaml` has `packages: !include_dir_named packages` under `homeassistant:`
+4. Restart Home Assistant
+5. Settings → Automations — enable **HomePulse — Blink motion → phone push**
+
+### Create your own in the HA UI
+
+1. Settings → Automations & scenes → Create automation
+2. Trigger: whatever you want (motion, helper, schedule, …)
+3. Action → Call service → `rest_command.homepulse_notify`
+4. Data: `event: ding`, `title: …`, `message: …`
+
 ## Blink doorbell → phone push
 
 **Blink limitation:** Amazon Blink does **not** tell Home Assistant when the physical button is pressed (cloud API gap). The `event.front_door_ding` entity in HA is from **Ring**, not Blink.

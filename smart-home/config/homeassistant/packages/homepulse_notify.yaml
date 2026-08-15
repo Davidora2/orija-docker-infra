@@ -1,0 +1,53 @@
+# HomePulse notify bridge — call from any HA automation
+#
+# 1) Admin → Mint API key → put the key in /config/secrets.yaml:
+#      homepulse_api_key: hp_...
+# 2) Restart HA (or reload rest_command)
+# 3) Automations → use action "Call a service" → rest_command.homepulse_notify
+#    or use the ready-made automations below.
+
+rest_command:
+  homepulse_notify:
+    url: "http://gateway:8080/v1/webhooks/homepulse"
+    method: POST
+    headers:
+      X-API-Key: !secret homepulse_api_key
+      Content-Type: application/json
+    payload: >
+      {"event":"{{ event | default('ding') }}","title":"{{ title | default('Doorbell') }}","body":"{{ message | default('Someone is at the door') }}","vendor":"{{ vendor | default('blink') }}","external_device_id":"{{ device_id | default('') }}"}
+
+automation:
+  - id: homepulse_blink_motion_notify
+    alias: HomePulse — Blink motion → phone push
+    description: When Blink front door motion turns on, notify HomePulse subscribers
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.front_door_motion
+        to: "on"
+    action:
+      - service: rest_command.homepulse_notify
+        data:
+          event: ding
+          title: Doorbell
+          message: Blink Front Door motion / activity
+          vendor: blink
+
+  - id: homepulse_blink_helper_notify
+    alias: HomePulse — Blink ding helper → phone push
+    description: When Alexa (or anything) turns on the Blink ding helper, notify phones
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: input_boolean.blink_front_door_ding
+        to: "on"
+    action:
+      - service: rest_command.homepulse_notify
+        data:
+          event: ding
+          title: Doorbell
+          message: Someone rang the Blink doorbell
+          vendor: blink
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.blink_front_door_ding
