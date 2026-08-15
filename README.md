@@ -1,3 +1,24 @@
+# Workspace
+
+This repository contains:
+
+1. **[smart-home/](./smart-home)** — **HomePulse**: Dockerized Ring doorbell → Google phone (FCM) notifications, designed to scale into a secure smart-home platform.
+2. **[apps/web](./apps/web)** — CreatorMatch (separate influencer MVP scaffold).
+
+## HomePulse (smart home)
+
+```bash
+cd smart-home
+cp .env.example .env
+docker compose up --build -d
+./scripts/bootstrap_demo.sh
+docker compose logs -f notifier
+```
+
+Full docs: [smart-home/README.md](./smart-home/README.md) · [smart-home/ARCHITECTURE.md](./smart-home/ARCHITECTURE.md)
+
+---
+
 # CreatoMatch
 
 Upfluence-style UGC / influencer campaign platform.

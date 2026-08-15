@@ -1,0 +1,140 @@
+# HomePulse — secure, scalable smart-home notification platform
+# Ring doorbell → event bus → rules → Google phone (FCM) notifications
+
+name: homepulse
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-homepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homepulse}
+      POSTGRES_DB: ${POSTGRES_DB:-homepulse}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-homepulse} -d ${POSTGRES_DB:-homepulse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  home-registry:
+    build:
+      context: .
+      dockerfile: services/home-registry/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD:-homepulse}@postgres:5432/${POSTGRES_DB:-homepulse}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:-change-me-in-production}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-bootstrap-dev-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+  ring-ingest:
+    build:
+      context: .
+      dockerfile: services/ring-ingest/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      RING_WEBHOOK_SECRET: ${RING_WEBHOOK_SECRET:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    networks:
+      - backend
+      - edge
+    restart: unless-stopped
+
+  rules-engine:
+    build:
+      context: .
+      dockerfile: services/rules-engine/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      NOTIFY_ON_MOTION: ${NOTIFY_ON_MOTION:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: rules-1
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+  notifier:
+    build:
+      context: .
+      dockerfile: services/notifier/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      FCM_MODE: ${FCM_MODE:-dry_run}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: notifier-1
+    volumes:
+      - ${FCM_CREDENTIALS_HOST_PATH:-./secrets}:/secrets:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+      rules-engine:
+        condition: service_started
+    networks:
+      - backend
+    restart: unless-stopped
+
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      home-registry:
+        condition: service_healthy
+      ring-ingest:
+        condition: service_healthy
+    networks:
+      - edge
+      - backend
+    restart: unless-stopped
+
+networks:
+  # Public-facing ingress only
+  edge:
+    driver: bridge
+  # Internal services — no host ports exposed
+  backend:
+    driver: bridge
+    internal: false
+
+volumes:
+  postgres_data:
+  redis_data:
