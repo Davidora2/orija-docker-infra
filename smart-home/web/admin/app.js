@@ -425,6 +425,11 @@
     e.preventDefault();
     const fd = new FormData(e.target);
     const body = Object.fromEntries(fd.entries());
+    if (body.new_password !== body.new_password2) {
+      showLoginError("New passwords do not match");
+      return;
+    }
+    delete body.new_password2;
     const btn = $("recover-btn");
     btn.disabled = true;
     btn.textContent = "Resetting…";
@@ -435,7 +440,12 @@
       showLoginError(data.message || "Password updated — sign in");
       $("login-username").value = body.username;
     } catch (err) {
-      showLoginError(err.message || "Recovery failed");
+      const msg = err.message || "Recovery failed";
+      showLoginError(
+        /invalid recovery|403/i.test(msg)
+          ? "Recovery token is wrong. Copy BOOTSTRAP_ADMIN_TOKEN exactly from Portainer → homepulse → Environment."
+          : msg
+      );
     } finally {
       btn.disabled = false;
       btn.textContent = "Reset password";
@@ -449,6 +459,48 @@
   $("btn-show-login").addEventListener("click", () => {
     showAuthPanel("login");
     showLoginError("");
+  });
+
+  $("btn-change-password").addEventListener("click", () => {
+    setVisible($("password-panel"), true);
+    note($("password-note"), "", false);
+  });
+  $("btn-cancel-password").addEventListener("click", () => {
+    setVisible($("password-panel"), false);
+    $("change-password-form").reset();
+  });
+  $("change-password-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    if (body.new_password !== body.new_password2) {
+      note($("password-note"), "New passwords do not match", true);
+      return;
+    }
+    if ((body.new_password || "").length < 8) {
+      note($("password-note"), "New password must be at least 8 characters", true);
+      return;
+    }
+    const btn = $("change-password-btn");
+    btn.disabled = true;
+    btn.textContent = "Updating…";
+    try {
+      await api("/v1/admin/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: body.current_password,
+          new_password: body.new_password,
+        }),
+      });
+      note($("password-note"), "Password updated.", true);
+      e.target.reset();
+      setTimeout(() => setVisible($("password-panel"), false), 1200);
+    } catch (err) {
+      note($("password-note"), err.message || "Could not change password", true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Update password";
+    }
   });
 
   $("btn-logout").addEventListener("click", async () => {

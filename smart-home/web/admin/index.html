@@ -41,11 +41,12 @@
 
       <div id="panel-recover" class="stack" hidden>
         <h2 class="gate-title">Reset password</h2>
-        <p class="muted">Use the Portainer <code>BOOTSTRAP_ADMIN_TOKEN</code> as the recovery token.</p>
+        <p class="muted">Forgot while signed out: use Portainer → stack <code>homepulse</code> → env <code>BOOTSTRAP_ADMIN_TOKEN</code> (exact value) as the recovery token. Username is <code>david</code> unless you created a different admin.</p>
         <form id="recover-form" class="stack" action="#" method="post">
           <label><span>Username</span><input name="username" required autocomplete="username" /></label>
-          <label><span>Recovery token</span><input name="recovery_token" required autocomplete="off" placeholder="BOOTSTRAP_ADMIN_TOKEN" /></label>
+          <label><span>Recovery token</span><input name="recovery_token" required autocomplete="off" placeholder="BOOTSTRAP_ADMIN_TOKEN from Portainer" /></label>
           <label><span>New password</span><input name="new_password" type="password" required minlength="8" autocomplete="new-password" /></label>
+          <label><span>Confirm new password</span><input name="new_password2" type="password" required minlength="8" autocomplete="new-password" /></label>
           <button type="submit" class="btn primary" id="recover-btn">Reset password</button>
         </form>
         <button type="button" id="btn-show-login" class="btn ghost">Back to sign in</button>
@@ -64,10 +65,26 @@
         <h1 class="brand-sm">HomePulse</h1>
       </div>
       <div class="top-actions">
+        <button type="button" id="btn-change-password" class="btn ghost">Change password</button>
         <button type="button" id="btn-refresh" class="btn ghost">Refresh</button>
         <button type="button" id="btn-logout" class="btn ghost">Sign out</button>
       </div>
     </header>
+
+    <div id="password-panel" class="panel stack password-panel" hidden>
+      <h3>Change admin password</h3>
+      <p class="muted">Signed-in password change. Minimum 8 characters.</p>
+      <form id="change-password-form" class="stack">
+        <label><span>Current password</span><input name="current_password" type="password" required autocomplete="current-password" /></label>
+        <label><span>New password</span><input name="new_password" type="password" required minlength="8" autocomplete="new-password" /></label>
+        <label><span>Confirm new password</span><input name="new_password2" type="password" required minlength="8" autocomplete="new-password" /></label>
+        <div class="row">
+          <button type="submit" class="btn primary" id="change-password-btn">Update password</button>
+          <button type="button" id="btn-cancel-password" class="btn ghost">Cancel</button>
+        </div>
+        <p id="password-note" class="note" hidden></p>
+      </form>
+    </div>
 
     <main class="layout">
       <aside class="rail">
