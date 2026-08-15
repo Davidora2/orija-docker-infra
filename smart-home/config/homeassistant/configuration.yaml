@@ -1,0 +1,34 @@
+# Home Assistant config seeded for HomePulse (ORIJA)
+# First boot: open https://homepulse.YOUR_DOMAIN/hass/ and create the owner account.
+# Then create a Long-Lived Access Token and set HA_TOKEN in the Portainer stack.
+
+default_config:
+
+homeassistant:
+  name: Orija Home
+  unit_system: metric
+  time_zone: Europe/London
+  currency: GBP
+  country: GB
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 10.0.0.0/8
+
+mqtt:
+  broker: mosquitto
+  port: 1883
+  discovery: true
+
+# Blink: Settings → Devices & services → Add integration → Blink
+# After linking, camera.*blink* entities appear in HomePulse /app/
+
+logger:
+  default: info
+  logs:
+    homeassistant.components.blink: info

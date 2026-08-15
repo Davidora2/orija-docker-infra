@@ -752,6 +752,48 @@
     }
   });
 
+  $("btn-ha-status").addEventListener("click", async () => {
+    const box = $("ha-admin-box");
+    setVisible(box, true);
+    box.innerHTML = `<p class="muted">Checking Home Assistant…</p>`;
+    try {
+      const st = await api("/v1/admin/homeassistant/status");
+      let entitiesHtml = "";
+      if (st.token_present) {
+        try {
+          const ents = await api("/v1/admin/homeassistant/entities?domain=camera");
+          const cams = (ents.entities || []).slice(0, 12);
+          entitiesHtml = cams.length
+            ? `<ul>${cams
+                .map(
+                  (e) =>
+                    `<li><code>${escapeHtml(e.entity_id)}</code> — ${escapeHtml(e.name)}${
+                      e.is_blink ? " (Blink)" : ""
+                    }</li>`
+                )
+                .join("")}</ul>`
+            : `<p class="muted">No camera entities yet. In HA add the Blink integration.</p>`;
+        } catch (e) {
+          entitiesHtml = `<p class="muted">${escapeHtml(e.message)}</p>`;
+        }
+      }
+      box.innerHTML = `
+        <h4>Home Assistant</h4>
+        <p>UI: <a href="/hass/" target="_blank" rel="noopener">/hass/</a> · LAN port <code>18123</code></p>
+        <p class="muted">Configured: <strong>${st.configured ? "yes" : "no"}</strong> · Token: <strong>${
+          st.token_present ? "present" : "missing"
+        }</strong></p>
+        <p class="muted">Health: ${escapeHtml(JSON.stringify(st.health || {}))}</p>
+        <p class="muted">1) Open HA → create account → add Blink<br>
+        2) Create a Long-Lived Access Token<br>
+        3) Set Portainer env <code>HA_TOKEN</code> (or file <code>/secrets/ha-token.txt</code>) and restart home-registry</p>
+        <h4>Camera entities</h4>
+        ${entitiesHtml}`;
+    } catch (err) {
+      box.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+    }
+  });
+
   boot().catch((err) => {
     showGate(err.message || String(err));
     showAuthPanel("login");

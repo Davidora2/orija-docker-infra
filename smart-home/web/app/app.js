@@ -28,7 +28,7 @@
   let token = params.get("token") || storageGet();
   if (params.get("token")) storageSet(token);
 
-  const state = { me: null, cameras: [], devices: [], events: [] };
+  const state = { me: null, cameras: [], devices: [], events: [], haCameras: [], haEntities: [], haConfigured: false };
 
   function note(msg, isErr = false) {
     const el = $("note");
@@ -75,6 +75,93 @@
   function showApp() {
     $("gate").hidden = true;
     $("workspace").hidden = false;
+  }
+
+  function renderHa() {
+    const status = $("ha-status");
+    const camsWrap = $("ha-camera-grid");
+    const entsWrap = $("ha-entity-list");
+    if (!status || !camsWrap || !entsWrap) return;
+    if (!state.haConfigured) {
+      status.textContent =
+        "Home Assistant is starting or not linked yet. Open HA, add Blink, create a long-lived token, set HA_TOKEN in Portainer.";
+      camsWrap.innerHTML = "";
+      entsWrap.innerHTML = "";
+      return;
+    }
+    status.textContent = state.haCameras.length
+      ? `${state.haCameras.length} HA camera(s) · ${state.haEntities.length} controllable entit${state.haEntities.length === 1 ? "y" : "ies"}`
+      : "HA connected — add Blink (or other cameras) in Home Assistant, then Refresh.";
+    if (!state.haCameras.length) {
+      camsWrap.innerHTML = `<p class="muted">No HA cameras yet. In HA: Settings → Devices & services → Add Blink.</p>`;
+    } else {
+      camsWrap.innerHTML = state.haCameras
+        .map((c) => {
+          const badge = c.is_blink ? "Blink" : "HA";
+          return `<article class="cam-card">
+            <img src="${escapeHtml(c.live_url)}" alt="${escapeHtml(c.name)}" loading="lazy"
+              onerror="this.style.opacity=.4" />
+            <div class="cam-meta">
+              <strong>${escapeHtml(c.name)}</strong>
+              <span class="muted small">${escapeHtml(badge)} · ${escapeHtml(c.entity_id)}</span>
+              <button type="button" class="btn small" data-ha-cam="${escapeHtml(c.entity_id)}">Refresh</button>
+            </div>
+          </article>`;
+        })
+        .join("");
+      camsWrap.querySelectorAll("button[data-ha-cam]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const img = btn.closest(".cam-card").querySelector("img");
+          const cam = state.haCameras.find((c) => c.entity_id === btn.dataset.haCam);
+          if (img && cam) img.src = `${cam.live_url}&_=${Date.now()}`;
+        });
+      });
+    }
+    if (!state.haEntities.length) {
+      entsWrap.innerHTML = `<p class="muted">No controllable HA entities yet.</p>`;
+      return;
+    }
+    entsWrap.innerHTML = state.haEntities
+      .slice(0, 40)
+      .map((e) => {
+        const actions = [];
+        if (["light", "switch", "input_boolean", "fan"].includes(e.domain)) {
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="on">On</button>`);
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="off">Off</button>`);
+        } else if (e.domain === "lock") {
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="lock">Lock</button>`);
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="unlock">Unlock</button>`);
+        } else if (e.domain === "cover") {
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="open">Open</button>`);
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="close">Close</button>`);
+        } else if (["script", "scene", "button"].includes(e.domain)) {
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="on">Run</button>`);
+        } else {
+          actions.push(`<button type="button" class="btn small" data-eid="${escapeHtml(e.entity_id)}" data-act="toggle">Toggle</button>`);
+        }
+        return `<div class="device-row">
+          <div>
+            <strong>${escapeHtml(e.name)}</strong>
+            <div class="muted small">${escapeHtml(e.domain)} · ${escapeHtml(e.state || "—")}</div>
+          </div>
+          <div class="device-actions">${actions.join("")}</div>
+        </div>`;
+      })
+      .join("");
+    entsWrap.querySelectorAll("button[data-eid]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await api(
+            `/v1/member/homes/${state.me.home.home_id}/ha/entities/${encodeURIComponent(btn.dataset.eid)}/command`,
+            { method: "POST", body: JSON.stringify({ action: btn.dataset.act }) }
+          );
+          note(`HA ${btn.dataset.act} → ${btn.dataset.eid}`);
+          await loadAll();
+        } catch (err) {
+          note(err.message, true);
+        }
+      });
+    });
   }
 
   function renderCameras() {
@@ -203,14 +290,21 @@
     $("mode-away").checked = me.home.mode === "away";
     $("armed").checked = Boolean(me.home.armed);
     const homeId = me.home.home_id;
-    const [cams, devices] = await Promise.all([
+    const [cams, devices, haStatus, haCams, haEnts] = await Promise.all([
       api(`/v1/member/homes/${homeId}/cameras`),
       api(`/v1/member/homes/${homeId}/devices`),
+      api(`/v1/member/homeassistant/status`).catch(() => ({ configured: false })),
+      api(`/v1/member/homes/${homeId}/ha/cameras`).catch(() => ({ cameras: [], configured: false })),
+      api(`/v1/member/homes/${homeId}/ha/entities`).catch(() => ({ entities: [], configured: false })),
     ]);
     state.cameras = cams.cameras || [];
     state.devices = devices.devices || [];
+    state.haConfigured = Boolean(haStatus.configured || haCams.configured);
+    state.haCameras = haCams.cameras || [];
+    state.haEntities = haEnts.entities || [];
     await loadEvents(homeId, state.cameras);
     renderCameras();
+    renderHa();
     renderDevices();
     renderEvents();
     showApp();

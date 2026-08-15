@@ -98,3 +98,15 @@ See [`docs/CAMERAS.md`](./docs/CAMERAS.md).
 - Member app: `/app/`
 - Admin: add device with **Preset: Camera**, set RTSP URL
 - Volumes: `homepulse-frigate-media` (recordings), `homepulse-frigate-config`
+
+## Home Assistant (Blink & more)
+
+Home Assistant is included in the stack:
+
+- UI: `https://homepulse.YOUR_DOMAIN/hass/` or host port **18123**
+- Set `HA_TOKEN` (long-lived access token) after first HA login
+- Optional: `HA_BASE_URL=http://homeassistant:8123`
+
+Member app `/app/` shows HA cameras (including Blink) and controllable entities.
+
+See [`docs/HOME_ASSISTANT.md`](./docs/HOME_ASSISTANT.md).

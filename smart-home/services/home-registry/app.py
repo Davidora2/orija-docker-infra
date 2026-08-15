@@ -50,6 +50,30 @@ FRIGATE_CONFIG_PATH = os.getenv("FRIGATE_CONFIG_PATH", "/frigate-config/config.y
 FRIGATE_MQTT_HOST = os.getenv("FRIGATE_MQTT_HOST", "mosquitto")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")  # e.g. https://homepulse.orija.store
+HA_BASE_URL = os.getenv("HA_BASE_URL", "http://homeassistant:8123")
+HA_TOKEN = os.getenv("HA_TOKEN", "")
+HA_TOKEN_FILE = os.getenv("HA_TOKEN_FILE", "/secrets/ha-token.txt")
+
+
+def _load_ha_token() -> str:
+    token = (HA_TOKEN or "").strip()
+    if token:
+        return token
+    try:
+        from pathlib import Path
+
+        p = Path(HA_TOKEN_FILE)
+        if p.exists():
+            return p.read_text().strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def get_ha_client():
+    from homeassistant_client import HomeAssistantClient
+
+    return HomeAssistantClient(HA_BASE_URL, _load_ha_token())
 
 
 class Base(DeclarativeBase):
@@ -1477,3 +1501,173 @@ async def admin_frigate_sync(
 
     reload = await reload_frigate(FRIGATE_BASE_URL)
     return {**result, "reload": reload}
+
+
+class HaEntityCommandRequest(BaseModel):
+    action: str = "toggle"
+
+
+@app.get("/v1/admin/homeassistant/status")
+async def admin_ha_status(_: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+    client = get_ha_client()
+    health = await client.health() if client.configured else {"ok": False, "error": "HA_TOKEN not set"}
+    return {
+        "configured": client.configured,
+        "base_url": HA_BASE_URL,
+        "token_present": bool(_load_ha_token()),
+        "health": health,
+        "ui_path": "/hass/",
+        "docs": "/docs not available; see docs/HOME_ASSISTANT.md",
+    }
+
+
+@app.get("/v1/admin/homeassistant/entities")
+async def admin_ha_entities(
+    domain: str | None = Query(default=None),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    from homeassistant_client import summarize_entity
+
+    client = get_ha_client()
+    if not client.configured:
+        raise HTTPException(503, "Home Assistant token not configured (set HA_TOKEN)")
+    try:
+        states = await client.states()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Home Assistant unreachable: {exc}") from exc
+    entities = [summarize_entity(s) for s in states]
+    if domain:
+        entities = [e for e in entities if e["domain"] == domain]
+    return {"count": len(entities), "entities": entities}
+
+
+@app.get("/v1/member/homeassistant/status")
+async def member_ha_status(member: dict[str, Any] = Depends(require_member)) -> dict[str, Any]:
+    _ = member
+    client = get_ha_client()
+    health = await client.health() if client.configured else {"ok": False, "error": "not_configured"}
+    return {
+        "configured": client.configured and bool(health.get("ok")),
+        "ui_path": "/hass/",
+        "message": health.get("message") or health.get("error"),
+    }
+
+
+@app.get("/v1/member/homes/{home_id}/ha/cameras")
+async def member_ha_cameras(
+    home_id: str,
+    member: dict[str, Any] = Depends(require_member),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    from homeassistant_client import summarize_entity
+
+    client = get_ha_client()
+    if not client.configured:
+        return {"cameras": [], "configured": False}
+    try:
+        states = await client.states()
+    except Exception as exc:  # noqa: BLE001
+        return {"cameras": [], "configured": True, "error": str(exc)}
+    tok = member["raw_token"]
+    cams = []
+    for s in states:
+        summary = summarize_entity(s)
+        if not summary["is_camera"]:
+            continue
+        eid = summary["entity_id"]
+        cams.append(
+            {
+                **summary,
+                "live_url": f"/v1/member/homes/{home_id}/ha/cameras/{eid}/live.jpg?token={tok}",
+                "source": "homeassistant",
+            }
+        )
+    # Prefer Blink cameras first
+    cams.sort(key=lambda c: (0 if c.get("is_blink") else 1, c.get("name") or ""))
+    return {"cameras": cams, "configured": True, "retain_note": "Blink clips are cloud-backed via HA; Frigate keeps 14-day local RTSP recordings"}
+
+
+@app.get("/v1/member/homes/{home_id}/ha/entities")
+async def member_ha_entities(
+    home_id: str,
+    member: dict[str, Any] = Depends(require_member),
+    controllable_only: bool = Query(default=True),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    from homeassistant_client import CONTROLLABLE_DOMAINS, summarize_entity
+
+    client = get_ha_client()
+    if not client.configured:
+        return {"entities": [], "configured": False}
+    try:
+        states = await client.states()
+    except Exception as exc:  # noqa: BLE001
+        return {"entities": [], "configured": True, "error": str(exc)}
+    entities = [summarize_entity(s) for s in states]
+    if controllable_only:
+        entities = [
+            e
+            for e in entities
+            if e["domain"] in CONTROLLABLE_DOMAINS and e["domain"] != "camera"
+        ]
+    # Keep UI light — skip unavailable/unknown noise unless blink-related
+    entities = [
+        e
+        for e in entities
+        if e.get("state") not in {"unavailable", "unknown"} or e.get("is_blink")
+    ]
+    entities.sort(key=lambda e: (e.get("domain") or "", e.get("name") or ""))
+    return {"entities": entities[:120], "configured": True}
+
+
+@app.get("/v1/member/homes/{home_id}/ha/cameras/{entity_id}/live.jpg")
+async def member_ha_camera_live(
+    home_id: str,
+    entity_id: str,
+    member: dict[str, Any] = Depends(require_member),
+):
+    _assert_member_home(member, home_id)
+    if not entity_id.startswith("camera."):
+        raise HTTPException(400, "entity_id must be a camera.* entity")
+    client = get_ha_client()
+    if not client.configured:
+        raise HTTPException(503, "Home Assistant not configured")
+    try:
+        content, ctype = await client.camera_proxy_bytes(entity_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Camera unavailable: {exc}") from exc
+    return Response(content=content, media_type=ctype)
+
+
+@app.post("/v1/member/homes/{home_id}/ha/entities/{entity_id}/command")
+async def member_ha_entity_command(
+    home_id: str,
+    entity_id: str,
+    body: HaEntityCommandRequest,
+    member: dict[str, Any] = Depends(require_member),
+) -> dict[str, Any]:
+    _assert_member_home(member, home_id)
+    from homeassistant_client import map_ha_action
+
+    if "." not in entity_id:
+        raise HTTPException(400, "Invalid entity_id")
+    domain = entity_id.split(".", 1)[0]
+    client = get_ha_client()
+    if not client.configured:
+        raise HTTPException(503, "Home Assistant not configured")
+    try:
+        svc_domain, service, extra = map_ha_action(domain, body.action)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    data = {"entity_id": entity_id, **extra}
+    try:
+        result = await client.call_service(svc_domain, service, data)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Home Assistant command failed: {exc}") from exc
+    return {
+        "status": "ok",
+        "entity_id": entity_id,
+        "domain": svc_domain,
+        "service": service,
+        "result": result,
+    }

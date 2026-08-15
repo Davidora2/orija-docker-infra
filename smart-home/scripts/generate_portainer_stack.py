@@ -166,6 +166,7 @@ services:
     volumes:
       - homepulse-app:/app
       - homepulse-frigate-config:/frigate-config
+      - homepulse-hass-config:/hass-config
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -184,6 +185,11 @@ services:
         if [ -f /app/config/frigate/config.yml ]; then
           cp /app/config/frigate/config.yml /frigate-config/config.yml
           echo "Seeded Frigate config (14-day retain)"
+        fi
+        mkdir -p /hass-config
+        if [ ! -f /hass-config/configuration.yaml ] && [ -f /app/config/homeassistant/configuration.yaml ]; then
+          cp /app/config/homeassistant/configuration.yaml /hass-config/configuration.yaml
+          echo "Seeded Home Assistant configuration.yaml"
         fi
     networks: [homepulse]
 
@@ -243,8 +249,12 @@ services:
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
       FRIGATE_CONFIG_PATH: /frigate-config/config.yml
       FRIGATE_MQTT_HOST: mosquitto
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}""",
-        extra_volumes="""      - homepulse-frigate-config:/frigate-config""",
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      HA_BASE_URL: ${HA_BASE_URL:-http://homeassistant:8123}
+      HA_TOKEN: ${HA_TOKEN:-}
+      HA_TOKEN_FILE: /secrets/ha-token.txt""",
+        extra_volumes="""      - homepulse-frigate-config:/frigate-config
+      - homepulse-secrets:/secrets:ro""",
     )}
 {service_block(
         "ring-ingest",
@@ -377,6 +387,22 @@ services:
         condition: service_started
     networks: [homepulse]
 
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    restart: unless-stopped
+    environment:
+      TZ: ${{TZ:-Europe/London}}
+    volumes:
+      - homepulse-hass-config:/config
+    ports:
+      - "${{HASS_PORT:-18123}}:8123"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
+    networks: [homepulse]
+
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -412,6 +438,7 @@ volumes:
   homepulse-secrets:
   homepulse-frigate-config:
   homepulse-frigate-media:
+  homepulse-hass-config:
 """
     # Convert doubled compose interpolations written as ${{VAR}} → ${VAR}
     import re
