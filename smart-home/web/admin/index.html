@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HomePulse Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+
+  <section id="gate" class="gate">
+    <div class="gate-inner">
+      <p class="eyebrow">ORIJA · Smart Home</p>
+      <h1 class="brand">HomePulse</h1>
+      <p class="lede">Admin console for homes, devices, and Google phone push targets.</p>
+      <form id="login-form" class="stack">
+        <label>
+          <span>Bootstrap admin token</span>
+          <input id="admin-token" type="password" autocomplete="current-password" required placeholder="Same as BOOTSTRAP_ADMIN_TOKEN" />
+        </label>
+        <button type="submit" class="btn primary">Enter console</button>
+      </form>
+      <p id="login-error" class="error" hidden></p>
+    </div>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <header class="top">
+      <div>
+        <p class="eyebrow">ORIJA</p>
+        <h1 class="brand-sm">HomePulse</h1>
+      </div>
+      <div class="top-actions">
+        <button type="button" id="btn-refresh" class="btn ghost">Refresh</button>
+        <button type="button" id="btn-logout" class="btn ghost">Sign out</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="rail">
+        <div class="rail-head">
+          <h2>Homes</h2>
+          <button type="button" id="btn-new-home" class="btn small">New</button>
+        </div>
+        <ul id="home-list" class="home-list"></ul>
+        <form id="create-home-form" class="panel stack" hidden>
+          <h3>Create home</h3>
+          <label><span>Name</span><input name="name" required value="My Home" /></label>
+          <label><span>Owner email</span><input name="owner_email" type="email" required placeholder="you@example.com" /></label>
+          <label><span>Owner name</span><input name="owner_name" value="Home Owner" /></label>
+          <label><span>Timezone</span><input name="timezone" value="Europe/London" /></label>
+          <label><span>Mode</span>
+            <select name="mode">
+              <option value="home">home</option>
+              <option value="away">away</option>
+            </select>
+          </label>
+          <div class="row">
+            <button type="submit" class="btn primary">Create</button>
+            <button type="button" id="btn-cancel-home" class="btn ghost">Cancel</button>
+          </div>
+          <p id="create-home-note" class="note" hidden></p>
+        </form>
+      </aside>
+
+      <section class="workspace">
+        <div id="empty-home" class="empty">
+          <h2>Select a home</h2>
+          <p>Create a home, then add doorbells, lights, sensors, and phone tokens.</p>
+        </div>
+
+        <div id="home-detail" hidden>
+          <div class="detail-head">
+            <div>
+              <h2 id="home-title">Home</h2>
+              <p id="home-meta" class="muted"></p>
+            </div>
+            <div class="security">
+              <label class="toggle">
+                <input type="checkbox" id="mode-away" />
+                <span>Away mode</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="armed" />
+                <span>Armed</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="api-key-bar">
+            <label>
+              <span>Home API key (for simulate / Ring webhook)</span>
+              <input id="home-api-key" type="password" placeholder="Paste or create below — shown once when minted" />
+            </label>
+            <button type="button" id="btn-mint-key" class="btn">Mint API key</button>
+            <button type="button" id="btn-simulate" class="btn primary">Simulate ding</button>
+          </div>
+          <p id="workspace-note" class="note" hidden></p>
+
+          <div class="split">
+            <section class="block">
+              <div class="block-head">
+                <h3>Devices</h3>
+                <button type="button" id="btn-add-device" class="btn small">Add device</button>
+              </div>
+              <div id="device-table" class="table-wrap"></div>
+              <form id="device-form" class="panel stack" hidden>
+                <h4>Register device</h4>
+                <label><span>Name</span><input name="name" required placeholder="Front Door Ring" /></label>
+                <div class="row-2">
+                  <label><span>Type</span>
+                    <select name="device_type">
+                      <option value="doorbell">doorbell</option>
+                      <option value="light">light</option>
+                      <option value="siren">siren</option>
+                      <option value="lock">lock</option>
+                      <option value="contact_sensor">contact_sensor</option>
+                      <option value="camera">camera</option>
+                    </select>
+                  </label>
+                  <label><span>Role</span>
+                    <select name="role">
+                      <option value="doorbell">doorbell</option>
+                      <option value="porch_light">porch_light</option>
+                      <option value="siren">siren</option>
+                      <option value="entry_lock">entry_lock</option>
+                      <option value="contact_sensor">contact_sensor</option>
+                      <option value="frigate_camera">frigate_camera</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="row-2">
+                  <label><span>Vendor</span>
+                    <select name="vendor">
+                      <option value="ring">ring</option>
+                      <option value="esphome">esphome</option>
+                      <option value="zigbee2mqtt">zigbee2mqtt</option>
+                      <option value="mqtt">mqtt</option>
+                      <option value="frigate">frigate</option>
+                    </select>
+                  </label>
+                  <label><span>External ID</span><input name="external_id" placeholder="ring-front-door-001" /></label>
+                </div>
+                <label><span>Location label</span><input name="location_label" placeholder="Front Door" /></label>
+                <label><span>MQTT command topic</span><input name="mqtt_command_topic" placeholder="optional" /></label>
+                <label><span>MQTT state topic</span><input name="mqtt_state_topic" placeholder="optional" /></label>
+                <label><span>Initial state</span><input name="state" placeholder="optional" /></label>
+                <div class="row">
+                  <button type="submit" class="btn primary">Save device</button>
+                  <button type="button" id="btn-cancel-device" class="btn ghost">Cancel</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="block">
+              <div class="block-head">
+                <h3>Phone push tokens</h3>
+                <button type="button" id="btn-add-token" class="btn small">Add token</button>
+              </div>
+              <div id="token-table" class="table-wrap"></div>
+              <form id="token-form" class="panel stack" hidden>
+                <h4>Register FCM token</h4>
+                <label><span>Owner email</span><input name="user_email" type="email" required placeholder="must match home owner" /></label>
+                <label><span>FCM token</span><textarea name="token" rows="3" required placeholder="Device FCM registration token"></textarea></label>
+                <div class="row-2">
+                  <label><span>Platform</span>
+                    <select name="platform">
+                      <option value="android">android</option>
+                      <option value="ios">ios</option>
+                      <option value="web">web</option>
+                    </select>
+                  </label>
+                  <label><span>Label</span><input name="label" placeholder="Pixel" /></label>
+                </div>
+                <div class="row">
+                  <button type="submit" class="btn primary">Save token</button>
+                  <button type="button" id="btn-cancel-token" class="btn ghost">Cancel</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

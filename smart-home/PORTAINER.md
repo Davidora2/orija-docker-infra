@@ -39,6 +39,12 @@ Same pattern as life-os → `localhost:18088`. Terminate TLS on Cloudflare; do n
 
 ## After deploy
 
+Admin UI: `https://homepulse.YOUR_DOMAIN/admin/`
+
+Sign in with `BOOTSTRAP_ADMIN_TOKEN`, then create homes and register devices from the console.
+
+Or via script:
+
 ```bash
 export GATEWAY=https://homepulse.YOUR_DOMAIN   # or http://HOST:18091
 export BOOTSTRAP_ADMIN_TOKEN=...               # same as stack env

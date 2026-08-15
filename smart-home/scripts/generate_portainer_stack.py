@@ -20,6 +20,7 @@ INCLUDE_DIRS = [
     ROOT / "services",
     ROOT / "config",
     ROOT / "scripts",
+    ROOT / "web",
 ]
 
 
@@ -146,6 +147,7 @@ def main() -> None:
     content = f"""# HomePulse — self-contained Portainer stack (ORIJA)
 # Gateway: http://HOST:18091
 # Cloudflare Tunnel (you configure): public hostname → http://localhost:18091
+# Admin UI: https://HOST/admin/  (bootstrap token = BOOTSTRAP_ADMIN_TOKEN)
 #
 # NO GIT CLONE at runtime. App source is embedded (base64 tarball) below.
 # Git is for version control only — regenerate this file with:
@@ -170,9 +172,11 @@ services:
         : > bundle.b64
 {bundle_printfs}
         base64 -d bundle.b64 | tar -xz -C /app
+        # Ensure previous extract cannot leave stale admin/UI files behind
         echo "HomePulse app bundle extracted:"
         ls -la /app
         ls -la /app/services
+        ls -la /app/web/admin || true
     networks: [homepulse]
 
   postgres:

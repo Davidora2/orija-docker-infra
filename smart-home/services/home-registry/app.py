@@ -242,6 +242,28 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "home-registry"}
 
 
+@app.get("/v1/homes")
+def list_homes(
+    db: Session = Depends(get_db),
+    _: None = Depends(require_bootstrap),
+) -> dict[str, Any]:
+    homes = db.scalars(select(Home).order_by(Home.created_at.desc())).all()
+    return {
+        "homes": [
+            {
+                "home_id": h.id,
+                "name": h.name,
+                "timezone": h.timezone,
+                "mode": h.mode,
+                "armed": h.armed,
+                "device_count": len(h.devices),
+                "member_count": len(h.members),
+            }
+            for h in homes
+        ]
+    }
+
+
 @app.post("/v1/homes", status_code=201)
 def create_home(
     body: CreateHomeRequest,
@@ -374,6 +396,45 @@ def register_push_token(
     db.commit()
     db.refresh(token)
     return {"push_token_id": token.id, "user_id": user.id, "platform": token.platform}
+
+
+@app.get("/v1/homes/{home_id}/push-tokens")
+def list_push_tokens(
+    home_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_bootstrap),
+) -> dict[str, Any]:
+    home = db.get(Home, home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+    members = db.scalars(select(HomeMember).where(HomeMember.home_id == home_id)).all()
+    user_ids = [m.user_id for m in members]
+    users = {
+        u.id: u
+        for u in db.scalars(select(User).where(User.id.in_(user_ids))).all()
+    } if user_ids else {}
+    tokens = (
+        db.scalars(
+            select(PushToken).where(PushToken.user_id.in_(user_ids), PushToken.active.is_(True))
+        ).all()
+        if user_ids
+        else []
+    )
+    return {
+        "home_id": home_id,
+        "tokens": [
+            {
+                "push_token_id": t.id,
+                "user_id": t.user_id,
+                "email": users[t.user_id].email if t.user_id in users else None,
+                "platform": t.platform,
+                "label": t.label,
+                "token_preview": f"{t.token[:8]}…{t.token[-4:]}" if len(t.token) > 12 else "••••",
+                "active": t.active,
+            }
+            for t in tokens
+        ],
+    }
 
 
 @app.post("/v1/homes/{home_id}/api-keys", status_code=201)
