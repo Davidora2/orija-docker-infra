@@ -26,8 +26,18 @@ mqtt:
   discovery: true
 
 # Blink: Settings → Devices & services → Add integration → Blink
-# After linking, camera.* and event.*_ding entities appear.
-# HomePulse ha-ingest listens for event.*_ding and sends phone push alerts.
+# IMPORTANT: Blink's cloud API does NOT expose doorbell button presses to HA.
+# HomePulse uses this helper + an Alexa routine as the reliable ding trigger:
+#
+# Alexa app → Routines → When Blink doorbell is pressed →
+#   Turn on "Blink Front Door Ding" (this input_boolean, exposed to Alexa)
+#
+# ha-ingest watches the helper, sends phone push, then turns it off.
+
+input_boolean:
+  blink_front_door_ding:
+    name: Blink Front Door Ding
+    icon: mdi:doorbell-video
 
 logger:
   default: info

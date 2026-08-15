@@ -22,16 +22,23 @@ Home Assistant runs next to HomePulse so you can use **Blink** (and other HA dev
 
 ## Blink doorbell → phone push
 
-HomePulse `ha-ingest` listens to Home Assistant over websocket.
+**Blink limitation:** Amazon Blink does **not** tell Home Assistant when the physical button is pressed (cloud API gap). The `event.front_door_ding` entity in HA is from **Ring**, not Blink.
 
-When you press the physical Blink button, HA updates `event.front_door_ding` (or similar).
-HomePulse turns that into a `doorbell.ring` and notifies every subscribed phone.
+### Reliable path (Alexa) — about 2 minutes to set up
 
-Requirements:
-1. Blink integration added in HA
-2. `HA_TOKEN` set on the stack (already done if cameras show in `/app/`)
-3. A Blink doorbell device registered in HomePulse Admin (you already have **Front Door Blink**)
-4. Phones finished Join → Enable alerts → Allow
+1. Restart Home Assistant once so helper `input_boolean.blink_front_door_ding` exists  
+   (seeded in HomePulse HA config as **Blink Front Door Ding**)
+2. Expose that helper to Alexa (Nabu Casa / Alexa HA skill)
+3. Alexa app → **Routines** → When **Blink doorbell is pressed** → **Turn on** “Blink Front Door Ding”
+4. HomePulse `ha-ingest` sees the helper turn on → pushes subscribed phones → turns helper off
+
+### Approximate path (no Alexa)
+
+Set stack env `BLINK_ACTIVITY_AS_DING=true` (default). HomePulse notifies when Blink reports **motion** / new thumbnail activity. This is delayed and is not a true button press.
+
+### Ring
+
+If you use a real Ring doorbell with HA/Ring webhook, `event.*_ding` works without Alexa.
 
 ## Blink notes
 

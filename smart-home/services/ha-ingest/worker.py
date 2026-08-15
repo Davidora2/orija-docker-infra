@@ -1,9 +1,14 @@
 """Home Assistant → HomePulse ingest.
 
-Listens to HA websocket state changes for doorbell dings
-(`event.*_ding`, Blink camera activity, last_activity sensors)
-and publishes normalized `doorbell.ring` events so subscribed phones
-get push notifications when the physical bell is pressed.
+Blink's cloud API does **not** expose doorbell button presses to Home Assistant.
+`event.*_ding` entities attributed to Ring.com are for Ring devices.
+
+Supported ding sources:
+1. HA `input_boolean.*` helpers flipped by an Alexa routine (Blink → Alexa → HA)
+2. Ring `event.*_ding` / last_activity (when Ring is actually linked)
+3. Optional: Blink motion / camera activity (approx — not a true button press)
+
+Publishes normalized `doorbell.ring` (or motion) onto Redis for the rules engine.
 """
 
 from __future__ import annotations
@@ -34,10 +39,11 @@ HA_TOKEN = os.getenv("HA_TOKEN", "").strip()
 HA_TOKEN_FILE = os.getenv("HA_TOKEN_FILE", "/secrets/ha-token.txt")
 REGISTRY_URL = os.getenv("REGISTRY_URL", "http://home-registry:8000")
 NOTIFY_ON_MOTION = os.getenv("NOTIFY_ON_MOTION", "false").lower() in {"1", "true", "yes"}
+# Treat Blink camera/motion activity as a ding (imperfect; Blink has no real ding entity)
+BLINK_ACTIVITY_AS_DING = os.getenv("BLINK_ACTIVITY_AS_DING", "true").lower() in {"1", "true", "yes"}
 DEBOUNCE_SECONDS = float(os.getenv("HA_INGEST_DEBOUNCE_SECONDS", "8"))
-POLL_SECONDS = float(os.getenv("HA_INGEST_POLL_SECONDS", "15"))
-DEBUG_LOG_PATH = os.getenv("HA_INGEST_DEBUG_LOG", "/tmp/agent-debug.ndjson")
-WATCH_RE = re.compile(r"(front_door|blink|ding|doorbell|lotus|ring)", re.I)
+POLL_SECONDS = float(os.getenv("HA_INGEST_POLL_SECONDS", "20"))
+HELPER_ENTITY = os.getenv("HA_DING_HELPER_ENTITY", "input_boolean.blink_front_door_ding")
 
 
 def load_token() -> str:
@@ -61,30 +67,10 @@ def ws_url(http_base: str) -> str:
 
 
 def stem_from_entity(entity_id: str) -> str:
-    # event.front_door_ding → front_door
     local = entity_id.split(".", 1)[-1]
-    local = re.sub(r"_(ding|motion|button|doorbell|last_activity|live_view)$", "", local)
-    local = re.sub(r"^blink_", "", local)
+    local = re.sub(r"^(blink_|ha_)", "", local)
+    local = re.sub(r"_(ding|motion|button|doorbell|last_activity|live_view|pressed)$", "", local)
     return local.replace("_", " ").strip().lower()
-
-
-def agent_log(hypothesis_id: str, location: str, message: str, data: dict[str, Any] | None = None) -> None:
-    # #region agent log
-    payload = {
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data or {},
-        "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-    }
-    line = json.dumps(payload, default=str)
-    logger.info("AGENT_DEBUG %s", line)
-    try:
-        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-    except Exception:  # noqa: BLE001
-        pass
-    # #endregion
 
 
 class HaIngest:
@@ -95,75 +81,81 @@ class HaIngest:
         self._device_cache: list[dict[str, Any]] = []
         self._cache_at = 0.0
         self._poll_snapshot: dict[str, str] = {}
-        self._msg_id = 1
+        self._http = httpx.AsyncClient(timeout=20.0)
 
-    def _next_id(self) -> int:
-        self._msg_id += 1
-        return self._msg_id
+    async def close(self) -> None:
+        await self._http.aclose()
+
+    def ha_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+
+    async def ha_get_state(self, entity_id: str) -> dict[str, Any] | None:
+        resp = await self._http.get(f"{HA_BASE_URL}/api/states/{entity_id}", headers=self.ha_headers())
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+
+    async def ha_turn_off_helper(self, entity_id: str) -> None:
+        try:
+            await self._http.post(
+                f"{HA_BASE_URL}/api/services/input_boolean/turn_off",
+                headers=self.ha_headers(),
+                json={"entity_id": entity_id},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to reset helper %s", entity_id)
 
     async def refresh_devices(self) -> list[dict[str, Any]]:
         now = asyncio.get_event_loop().time()
         if self._device_cache and now - self._cache_at < 60:
             return self._device_cache
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            homes = (await client.get(f"{REGISTRY_URL}/v1/internal/homes")).json().get("homes") or []
-            devices: list[dict[str, Any]] = []
-            for home in homes:
-                hid = home.get("home_id")
-                if not hid:
-                    continue
-                ctx = (await client.get(f"{REGISTRY_URL}/v1/internal/homes/{hid}/context")).json()
-                for d in ctx.get("devices") or []:
-                    d = dict(d)
-                    d["home_id"] = hid
-                    devices.append(d)
+        homes = (await self._http.get(f"{REGISTRY_URL}/v1/internal/homes")).json().get("homes") or []
+        devices: list[dict[str, Any]] = []
+        for home in homes:
+            hid = home.get("home_id")
+            if not hid:
+                continue
+            ctx = (await self._http.get(f"{REGISTRY_URL}/v1/internal/homes/{hid}/context")).json()
+            for d in ctx.get("devices") or []:
+                d = dict(d)
+                d["home_id"] = hid
+                devices.append(d)
         self._device_cache = devices
         self._cache_at = now
         return devices
 
     def pick_doorbell(
-        self,
-        devices: list[dict[str, Any]],
-        entity_id: str,
-        friendly: str,
-        *,
-        prefer_vendor: str | None = None,
+        self, devices: list[dict[str, Any]], entity_id: str, friendly: str, *, prefer_vendor: str | None = None
     ) -> dict[str, Any] | None:
         doorbells = [
             d
             for d in devices
             if (d.get("role") == "doorbell" or d.get("device_type") == "doorbell")
-            and (d.get("vendor") or "").lower() in {"blink", "ring", "esphome", "mqtt", ""}
         ]
         if not doorbells:
-            doorbells = [d for d in devices if (d.get("role") == "doorbell" or d.get("device_type") == "doorbell")]
-        if not doorbells:
             return None
-
         stem = stem_from_entity(entity_id)
         fname = (friendly or "").strip().lower()
-        prefer = (prefer_vendor or "").lower()
         scored: list[tuple[int, dict[str, Any]]] = []
         for d in doorbells:
             name = (d.get("name") or "").strip().lower()
             vendor = (d.get("vendor") or "").lower()
             score = 0
-            if prefer and vendor == prefer:
-                score += 20
-            elif vendor == "blink" and not prefer:
-                score += 5
+            if prefer_vendor and vendor == prefer_vendor.lower():
+                score += 12
             if stem and stem in name:
                 score += 10
-            if fname and (fname in name or name in fname):
-                score += 8
+            if fname and (fname in name or name in fname or "front door" in name):
+                score += 6
             if "front" in name and "front" in (stem + " " + fname):
-                score += 3
+                score += 2
             scored.append((score, d))
         scored.sort(key=lambda x: x[0], reverse=True)
         best_score, best = scored[0]
         if best_score <= 0 and len(doorbells) == 1:
             return doorbells[0]
-        return best if best_score > 0 else (doorbells[0] if len(doorbells) == 1 else best)
+        return best
 
     def debounced(self, key: str) -> bool:
         now = asyncio.get_event_loop().time()
@@ -181,7 +173,7 @@ class HaIngest:
         event_type: EventType,
         friendly: str,
         new_state: str,
-        source: str = "ha-ingest.websocket",
+        note: str = "",
     ) -> None:
         location = device.get("location_label") or device.get("name") or friendly or "Front door"
         if event_type == EventType.DOORBELL_RING:
@@ -190,6 +182,8 @@ class HaIngest:
         else:
             title = "Doorbell motion"
             body = f"Motion detected at {location}"
+        if note:
+            body = f"{body} ({note})"
 
         event = DeviceEvent(
             home_id=device["home_id"],
@@ -205,8 +199,9 @@ class HaIngest:
                 "ha_state": new_state,
                 "friendly_name": friendly,
                 "source": "homeassistant",
+                "note": note,
             },
-            source=source,
+            source="ha-ingest.websocket",
         )
         assert self.redis is not None
         msg_id = await publish(self.redis, EVENTS_STREAM, event.to_stream_fields())
@@ -216,30 +211,40 @@ class HaIngest:
             {"json": event.model_dump_json(), "audit_type": "event.ingested"},
         )
         logger.info(
-            "HA %s → %s device=%s stream=%s",
+            "HA %s → %s device=%s stream=%s note=%s",
             entity_id,
             event.event_type,
             device.get("name"),
             msg_id,
+            note or "-",
         )
-        # #region agent log
-        agent_log(
-            "E",
-            "worker.py:publish_ding",
-            "published_doorbell_event",
-            {
-                "entity_id": entity_id,
-                "event_type": event.event_type,
-                "device": device.get("name"),
-                "vendor": device.get("vendor"),
-                "msg_id": msg_id,
-                "source": source,
-            },
-        )
-        # #endregion
 
-    def _interesting_entity(self, entity_id: str) -> bool:
-        return bool(WATCH_RE.search(entity_id or ""))
+    async def emit(
+        self,
+        *,
+        entity_id: str,
+        friendly: str,
+        new_state: str,
+        event_type: EventType,
+        prefer_vendor: str | None,
+        note: str = "",
+    ) -> None:
+        key = f"{entity_id}:{event_type.value}"
+        if self.debounced(key):
+            return
+        devices = await self.refresh_devices()
+        device = self.pick_doorbell(devices, entity_id, friendly, prefer_vendor=prefer_vendor)
+        if not device:
+            logger.warning("HA event %s but no doorbell device registered", entity_id)
+            return
+        await self.publish_ding(
+            device=device,
+            entity_id=entity_id,
+            event_type=event_type,
+            friendly=friendly,
+            new_state=new_state,
+            note=note,
+        )
 
     async def handle_state_changed(self, event: dict[str, Any]) -> None:
         data = event.get("data") or {}
@@ -250,218 +255,171 @@ class HaIngest:
             return
 
         attrs = new_state.get("attributes") or {}
+        old_attrs = old_state.get("attributes") or {} if isinstance(old_state, dict) else {}
         friendly = str(attrs.get("friendly_name") or "")
-        new_val = str(new_state.get("state") or "")
-        old_val = str((old_state or {}).get("state") or "") if isinstance(old_state, dict) else ""
-        old_attrs = (old_state or {}).get("attributes") or {} if isinstance(old_state, dict) else {}
         attribution = str(attrs.get("attribution") or "")
         brand = str(attrs.get("brand") or "")
-
-        if self._interesting_entity(entity_id) or self._interesting_entity(friendly) or "blink" in attribution.lower() or "ring.com" in attribution.lower():
-            # #region agent log
-            agent_log(
-                "A",
-                "worker.py:handle_state_changed",
-                "watched_state_changed",
-                {
-                    "entity_id": entity_id,
-                    "old_val": old_val,
-                    "new_val": new_val,
-                    "attribution": attribution,
-                    "brand": brand,
-                    "event_type_attr": attrs.get("event_type"),
-                    "motion_detected": attrs.get("motion_detected"),
-                    "last_record": attrs.get("last_record"),
-                    "thumbnail_ts": (str(attrs.get("thumbnail") or "")[-40:] if attrs.get("thumbnail") else None),
-                    "old_motion_detected": old_attrs.get("motion_detected") if isinstance(old_attrs, dict) else None,
-                    "old_last_record": old_attrs.get("last_record") if isinstance(old_attrs, dict) else None,
-                    "last_changed": new_state.get("last_changed"),
-                    "last_updated": new_state.get("last_updated"),
-                },
-            )
-            # #endregion
-
-        event_type: EventType | None = None
-        prefer_vendor: str | None = None
+        new_val = str(new_state.get("state") or "")
+        old_val = str((old_state or {}).get("state") or "") if isinstance(old_state, dict) else ""
         eid_l = entity_id.lower()
 
+        # 1) Alexa/helper bridge — the reliable Blink button path
+        if eid_l.startswith("input_boolean.") and any(
+            x in eid_l for x in ("ding", "doorbell", "blink", "bell", "pressed")
+        ):
+            if new_val == "on" and old_val != "on":
+                await self.emit(
+                    entity_id=entity_id,
+                    friendly=friendly or "Blink doorbell",
+                    new_state=new_val,
+                    event_type=EventType.DOORBELL_RING,
+                    prefer_vendor="blink",
+                    note="via Alexa/helper",
+                )
+                await self.ha_turn_off_helper(entity_id)
+            return
+
+        # 2) Ring ding event entity (only if Ring attribution / not unknown forever)
         if eid_l.startswith("event.") and eid_l.endswith("_ding"):
-            # Ring (and synthetic) ding: timestamp state changes when pressed
             if new_val and new_val != old_val and new_val not in {"unknown", "unavailable"}:
-                event_type = EventType.DOORBELL_RING
-                if "ring.com" in attribution.lower():
-                    prefer_vendor = "ring"
-                # #region agent log
-                agent_log("A", "worker.py:match", "matched_event_ding", {"entity_id": entity_id, "new_val": new_val, "old_val": old_val})
-                # #endregion
-        elif eid_l.startswith("event.") and eid_l.endswith("_motion") and NOTIFY_ON_MOTION:
+                prefer = "ring" if "ring.com" in attribution.lower() else "blink"
+                await self.emit(
+                    entity_id=entity_id,
+                    friendly=friendly,
+                    new_state=new_val,
+                    event_type=EventType.DOORBELL_RING,
+                    prefer_vendor=prefer,
+                    note="ha event ding",
+                )
+            return
+
+        # 3) Motion / activity (optional)
+        if eid_l.startswith("event.") and eid_l.endswith("_motion") and NOTIFY_ON_MOTION:
             if new_val and new_val != old_val and new_val not in {"unknown", "unavailable"}:
-                event_type = EventType.DOORBELL_MOTION
-        elif eid_l.startswith("binary_sensor.") and "motion" in eid_l and ("front_door" in eid_l or "doorbell" in eid_l or "blink" in eid_l):
-            # Blink doorbell button often only surfaces as motion ON (no dedicated ding entity)
+                await self.emit(
+                    entity_id=entity_id,
+                    friendly=friendly,
+                    new_state=new_val,
+                    event_type=EventType.DOORBELL_MOTION,
+                    prefer_vendor="ring" if "ring.com" in attribution.lower() else None,
+                )
+            return
+
+        if eid_l.startswith("binary_sensor.") and "motion" in eid_l:
             if new_val == "on" and old_val != "on":
-                event_type = EventType.DOORBELL_RING if not NOTIFY_ON_MOTION else EventType.DOORBELL_MOTION
-                prefer_vendor = "blink"
-                # #region agent log
-                agent_log("C", "worker.py:match", "matched_blink_binary_motion", {"entity_id": entity_id, "as": str(event_type)})
-                # #endregion
-        elif eid_l.startswith("binary_sensor.") and "motion" in eid_l and NOTIFY_ON_MOTION:
-            if new_val == "on" and old_val != "on":
-                event_type = EventType.DOORBELL_MOTION
-        elif eid_l.startswith("binary_sensor.") and any(x in eid_l for x in ("ding", "doorbell", "button")):
-            if new_val == "on" and old_val != "on":
-                event_type = EventType.DOORBELL_RING
-        elif eid_l.startswith("sensor.") and eid_l.endswith("_last_activity"):
-            if new_val and new_val != old_val and new_val not in {"unknown", "unavailable"}:
-                event_type = EventType.DOORBELL_RING
-                if "ring.com" in attribution.lower():
-                    prefer_vendor = "ring"
-                # #region agent log
-                agent_log("C", "worker.py:match", "matched_last_activity", {"entity_id": entity_id, "new_val": new_val})
-                # #endregion
-        elif eid_l.startswith("camera.") and ("front_door" in eid_l or "blink" in eid_l or brand.lower() == "blink"):
-            # Blink lotus: attribute churn (last_record / motion_detected / thumbnail) after press
+                if BLINK_ACTIVITY_AS_DING or NOTIFY_ON_MOTION:
+                    et = EventType.DOORBELL_RING if BLINK_ACTIVITY_AS_DING else EventType.DOORBELL_MOTION
+                    await self.emit(
+                        entity_id=entity_id,
+                        friendly=friendly,
+                        new_state=new_val,
+                        event_type=et,
+                        prefer_vendor="blink",
+                        note="blink motion sensor",
+                    )
+            return
+
+        # 4) Blink camera attribute changes (poll-based activity after a press/motion)
+        if eid_l.startswith("camera.") and (
+            brand.lower() == "blink" or "blink" in friendly.lower() or attrs.get("type") == "lotus"
+        ):
+            if not BLINK_ACTIVITY_AS_DING:
+                return
             old_md = old_attrs.get("motion_detected") if isinstance(old_attrs, dict) else None
             new_md = attrs.get("motion_detected")
             old_lr = old_attrs.get("last_record") if isinstance(old_attrs, dict) else None
             new_lr = attrs.get("last_record")
-            old_thumb = (old_attrs.get("thumbnail") if isinstance(old_attrs, dict) else None) or ""
-            new_thumb = attrs.get("thumbnail") or ""
-            activity = False
+            old_thumb = str((old_attrs or {}).get("thumbnail") or "")
+            new_thumb = str(attrs.get("thumbnail") or "")
+            triggered = False
+            note = ""
             if new_md is True and old_md is not True:
-                activity = True
-            if new_lr and new_lr != old_lr:
-                activity = True
-            if new_thumb and new_thumb != old_thumb and ("lotus" in str(attrs.get("type") or "").lower() or brand.lower() == "blink"):
-                # thumbnail URL ts= query often bumps after clip/press
-                activity = True
-            if activity:
-                event_type = EventType.DOORBELL_RING
-                prefer_vendor = "blink"
-                # #region agent log
-                agent_log(
-                    "C",
-                    "worker.py:match",
-                    "matched_blink_camera_activity",
-                    {"entity_id": entity_id, "motion_detected": new_md, "last_record": new_lr, "thumb_changed": new_thumb != old_thumb},
+                triggered = True
+                note = "blink motion_detected"
+            elif new_lr and new_lr != old_lr:
+                triggered = True
+                note = "blink new recording"
+            elif new_thumb and new_thumb != old_thumb and "ts=" in new_thumb:
+                # thumbnail timestamp query param changed
+                old_ts = re.search(r"ts=(\d+)", old_thumb)
+                new_ts = re.search(r"ts=(\d+)", new_thumb)
+                if new_ts and (not old_ts or new_ts.group(1) != old_ts.group(1)):
+                    triggered = True
+                    note = "blink thumbnail update"
+            if triggered:
+                await self.emit(
+                    entity_id=entity_id,
+                    friendly=friendly,
+                    new_state=new_val,
+                    event_type=EventType.DOORBELL_RING,
+                    prefer_vendor="blink",
+                    note=note,
                 )
-                # #endregion
 
-        if event_type is None:
-            return
-
-        debounce_key = f"{entity_id}:{event_type.value}"
-        if self.debounced(debounce_key):
-            # #region agent log
-            agent_log("D", "worker.py:debounce", "debounced", {"key": debounce_key})
-            # #endregion
-            logger.debug("Debounced %s", debounce_key)
-            return
-
-        devices = await self.refresh_devices()
-        device = self.pick_doorbell(devices, entity_id, friendly, prefer_vendor=prefer_vendor)
-        if not device:
-            # #region agent log
-            agent_log("E", "worker.py:pick_doorbell", "no_device", {"entity_id": entity_id, "friendly": friendly})
-            # #endregion
-            logger.warning("HA event %s but no doorbell device registered in HomePulse", entity_id)
-            return
-
-        await self.publish_ding(
-            device=device,
-            entity_id=entity_id,
-            event_type=event_type,
-            friendly=friendly,
-            new_state=new_val,
-            source="ha-ingest.websocket",
-        )
-
-    async def poll_blink_entities(self) -> None:
-        """Poll Blink-related HA entities — Blink is poll-based and may miss websocket-only paths."""
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
-        watch_ids = (
-            "camera.front_door",
+    async def poll_loop(self) -> None:
+        """Blink updates are often poll-delayed; compare snapshots periodically."""
+        watch = [
+            HELPER_ENTITY,
             "binary_sensor.front_door_motion",
-            "sensor.front_door_last_activity",
+            "camera.front_door",
             "event.front_door_ding",
-            "event.front_door_motion",
-            "sensor.blink_front_door_temperature",
-        )
+        ]
         while True:
             try:
-                async with httpx.AsyncClient(timeout=20.0) as client:
-                    for eid in watch_ids:
-                        try:
-                            r = await client.get(f"{HA_BASE_URL}/api/states/{eid}", headers=headers)
-                            if r.status_code != 200:
-                                continue
-                            st = r.json()
-                        except Exception as exc:  # noqa: BLE001
-                            agent_log("B", "worker.py:poll", "poll_entity_error", {"entity_id": eid, "error": str(exc)})
-                            continue
-                        attrs = st.get("attributes") or {}
-                        snap = json.dumps(
-                            {
-                                "state": st.get("state"),
-                                "last_changed": st.get("last_changed"),
-                                "last_updated": st.get("last_updated"),
-                                "motion_detected": attrs.get("motion_detected"),
-                                "last_record": attrs.get("last_record"),
-                                "thumbnail": attrs.get("thumbnail"),
-                                "event_type": attrs.get("event_type"),
-                                "attribution": attrs.get("attribution"),
-                                "brand": attrs.get("brand"),
+                for eid in watch:
+                    try:
+                        state = await self.ha_get_state(eid)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("poll %s: %s", eid, exc)
+                        continue
+                    if not state:
+                        continue
+                    attrs = state.get("attributes") or {}
+                    snap = json.dumps(
+                        {
+                            "state": state.get("state"),
+                            "motion_detected": attrs.get("motion_detected"),
+                            "last_record": attrs.get("last_record"),
+                            "thumbnail": attrs.get("thumbnail"),
+                            "event_type": attrs.get("event_type"),
+                        },
+                        sort_keys=True,
+                        default=str,
+                    )
+                    prev = self._poll_snapshot.get(eid)
+                    if prev is None:
+                        self._poll_snapshot[eid] = snap
+                        continue
+                    if snap == prev:
+                        continue
+                    logger.info("Poll change detected on %s", eid)
+                    fake_event = {
+                        "data": {
+                            "entity_id": eid,
+                            "old_state": {
+                                "state": json.loads(prev).get("state"),
+                                "attributes": {
+                                    "motion_detected": json.loads(prev).get("motion_detected"),
+                                    "last_record": json.loads(prev).get("last_record"),
+                                    "thumbnail": json.loads(prev).get("thumbnail"),
+                                    "friendly_name": attrs.get("friendly_name"),
+                                    "brand": attrs.get("brand"),
+                                    "type": attrs.get("type"),
+                                    "attribution": attrs.get("attribution"),
+                                },
                             },
-                            default=str,
-                            sort_keys=True,
-                        )
-                        prev = self._poll_snapshot.get(eid)
-                        if prev is None:
-                            self._poll_snapshot[eid] = snap
-                            agent_log("B", "worker.py:poll", "poll_baseline", {"entity_id": eid, "snap": json.loads(snap)})
-                            continue
-                        if snap != prev:
-                            agent_log(
-                                "B",
-                                "worker.py:poll",
-                                "poll_changed",
-                                {"entity_id": eid, "prev": json.loads(prev), "new": json.loads(snap)},
-                            )
-                            self._poll_snapshot[eid] = snap
-                            # Synthesize a state_changed-like payload so matching logic is shared
-                            try:
-                                prev_obj = json.loads(prev)
-                                fake_event = {
-                                    "data": {
-                                        "entity_id": eid,
-                                        "old_state": {
-                                            "state": prev_obj.get("state"),
-                                            "attributes": {
-                                                "motion_detected": prev_obj.get("motion_detected"),
-                                                "last_record": prev_obj.get("last_record"),
-                                                "thumbnail": prev_obj.get("thumbnail"),
-                                                "event_type": prev_obj.get("event_type"),
-                                                "attribution": prev_obj.get("attribution"),
-                                                "brand": prev_obj.get("brand"),
-                                                "friendly_name": attrs.get("friendly_name"),
-                                                "type": attrs.get("type"),
-                                            },
-                                        },
-                                        "new_state": st,
-                                    }
-                                }
-                                await self.handle_state_changed(fake_event)
-                            except Exception:  # noqa: BLE001
-                                logger.exception("poll handle failed for %s", eid)
+                            "new_state": state,
+                        }
+                    }
+                    self._poll_snapshot[eid] = snap
+                    await self.handle_state_changed(fake_event)
             except Exception:  # noqa: BLE001
                 logger.exception("poll loop error")
-                agent_log("B", "worker.py:poll", "poll_loop_error", {})
             await asyncio.sleep(POLL_SECONDS)
 
     async def run_forever(self) -> None:
         if not self.token:
-            logger.error("HA_TOKEN not set — ha-ingest idle (physical Blink dings will not notify)")
-            agent_log("B", "worker.py:run_forever", "no_token", {})
+            logger.error("HA_TOKEN not set — ha-ingest idle")
             while True:
                 await asyncio.sleep(60)
                 self.token = load_token()
@@ -470,17 +428,18 @@ class HaIngest:
 
         self.redis = await get_redis()
         url = ws_url(HA_BASE_URL)
-        logger.info("Connecting to Home Assistant websocket %s", url)
-        agent_log("B", "worker.py:run_forever", "connecting", {"url": url, "poll_seconds": POLL_SECONDS})
-
-        # Start Blink/entity poller alongside websocket
-        asyncio.create_task(self.poll_blink_entities())
+        logger.info(
+            "HA ingest starting (helper=%s blink_activity_as_ding=%s poll=%ss)",
+            HELPER_ENTITY,
+            BLINK_ACTIVITY_AS_DING,
+            POLL_SECONDS,
+        )
+        asyncio.create_task(self.poll_loop())
 
         backoff = 2.0
         while True:
             try:
                 async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    # auth_required
                     msg = json.loads(await ws.recv())
                     if msg.get("type") != "auth_required":
                         raise RuntimeError(f"Unexpected first message: {msg}")
@@ -489,35 +448,16 @@ class HaIngest:
                     if msg.get("type") != "auth_ok":
                         raise RuntimeError(f"HA auth failed: {msg}")
                     logger.info("Home Assistant websocket authenticated")
-                    agent_log("B", "worker.py:run_forever", "auth_ok", {})
                     backoff = 2.0
-
                     await ws.send(
-                        json.dumps(
-                            {
-                                "id": self._next_id(),
-                                "type": "subscribe_events",
-                                "event_type": "state_changed",
-                            }
-                        )
+                        json.dumps({"id": 1, "type": "subscribe_events", "event_type": "state_changed"})
                     )
-                    # Also subscribe to ALL events to catch Blink custom / non-state paths
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "id": self._next_id(),
-                                "type": "subscribe_events",
-                            }
-                        )
+                    _ = json.loads(await ws.recv())
+                    logger.info(
+                        "Subscribed to HA state_changed — "
+                        "Blink button needs Alexa→%s (Blink API has no ding entity)",
+                        HELPER_ENTITY,
                     )
-                    # drain two confirmations
-                    for _ in range(2):
-                        conf = json.loads(await ws.recv())
-                        agent_log("C", "worker.py:run_forever", "subscribe_result", {"conf": conf})
-                        if conf.get("type") == "result" and conf.get("success") is False:
-                            raise RuntimeError(f"subscribe_events failed: {conf}")
-                    logger.info("Subscribed to HA state_changed + all events (Blink/Ring ding → HomePulse push)")
-
                     async for raw in ws:
                         try:
                             payload = json.loads(raw)
@@ -526,17 +466,7 @@ class HaIngest:
                         if payload.get("type") != "event":
                             continue
                         event = payload.get("event") or {}
-                        et = str(event.get("event_type") or "")
-                        if et != "state_changed":
-                            # Log non-state events that look doorbell-related
-                            blob = json.dumps(event, default=str).lower()
-                            if WATCH_RE.search(blob) or et in {"blink", "ring", "doorbell", "call_service"}:
-                                agent_log(
-                                    "C",
-                                    "worker.py:ws_event",
-                                    "non_state_event",
-                                    {"event_type": et, "data_keys": list((event.get("data") or {}).keys())[:20], "snippet": blob[:500]},
-                                )
+                        if event.get("event_type") != "state_changed":
                             continue
                         try:
                             await self.handle_state_changed(event)
@@ -544,17 +474,18 @@ class HaIngest:
                             logger.exception("Failed handling HA state_changed")
             except ConnectionClosed as exc:
                 logger.warning("HA websocket closed (%s) — reconnecting in %.0fs", exc, backoff)
-                agent_log("B", "worker.py:run_forever", "ws_closed", {"error": str(exc), "backoff": backoff})
             except Exception as exc:  # noqa: BLE001
                 logger.warning("HA websocket error (%s) — reconnecting in %.0fs", exc, backoff)
-                agent_log("B", "worker.py:run_forever", "ws_error", {"error": str(exc), "backoff": backoff})
             await asyncio.sleep(backoff)
             backoff = min(backoff * 1.7, 60.0)
 
 
 async def main() -> None:
     worker = HaIngest()
-    await worker.run_forever()
+    try:
+        await worker.run_forever()
+    finally:
+        await worker.close()
 
 
 if __name__ == "__main__":
