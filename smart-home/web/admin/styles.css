@@ -124,7 +124,15 @@ input:focus, select:focus, textarea:focus {
 .btn.ghost { background: transparent; }
 .btn.small { padding: 0.4rem 0.8rem; font-size: 0.82rem; }
 
-.error { color: var(--danger); margin-top: 0.8rem; }
+.error {
+  color: var(--danger);
+  margin-top: 0.8rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(224, 122, 106, 0.45);
+  border-radius: 10px;
+  background: rgba(224, 122, 106, 0.12);
+  font-size: 0.92rem;
+}
 .note {
   margin: 0.6rem 0 0;
   padding: 0.7rem 0.85rem;

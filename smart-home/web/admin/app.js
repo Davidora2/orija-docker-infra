@@ -2,12 +2,57 @@
   const TOKEN_KEY = "homepulse_admin_token";
   const API_KEYS = "homepulse_home_api_keys";
 
-  const $ = (id) => document.getElementById(id);
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function storageGet(key) {
+    try {
+      return sessionStorage.getItem(key) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch {
+      /* private mode / blocked storage — ignore */
+    }
+  }
+
+  function storageDel(key) {
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function localGet(key, fallback) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || fallback);
+    } catch {
+      return JSON.parse(fallback);
+    }
+  }
+
+  function localSet(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      /* ignore */
+    }
+  }
+
   const gate = $("gate");
   const app = $("app");
+  const loginBtn = $("login-btn");
+  const loginError = $("login-error");
 
   let state = {
-    token: sessionStorage.getItem(TOKEN_KEY) || "",
+    token: storageGet(TOKEN_KEY),
     homes: [],
     selectedId: null,
     home: null,
@@ -15,22 +60,32 @@
   };
 
   function apiKeysMap() {
-    try {
-      return JSON.parse(localStorage.getItem(API_KEYS) || "{}");
-    } catch {
-      return {};
-    }
+    return localGet(API_KEYS, "{}");
   }
 
   function saveApiKey(homeId, key) {
     const map = apiKeysMap();
     map[homeId] = key;
-    localStorage.setItem(API_KEYS, JSON.stringify(map));
+    localSet(API_KEYS, map);
+  }
+
+  function setVisible(el, visible) {
+    if (!el) return;
+    el.hidden = !visible;
+    el.style.display = visible ? "" : "none";
   }
 
   function note(el, text, show = true) {
-    el.hidden = !show;
+    if (!el) return;
     el.textContent = text || "";
+    setVisible(el, show && Boolean(text));
+  }
+
+  function showLoginError(msg) {
+    note(loginError, msg, Boolean(msg));
+    if (msg) {
+      loginError.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
   }
 
   async function api(path, options = {}) {
@@ -43,11 +98,16 @@
       headers.Authorization = `Bearer ${state.token}`;
       headers["X-Bootstrap-Token"] = state.token;
     }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
     let res;
     try {
-      res = await fetch(path, { ...options, headers });
+      res = await fetch(path, { ...options, headers, signal: controller.signal });
     } catch (err) {
-      throw new Error(`Network error talking to API (${err.message}). Try http://192.168.2.200:18091/admin/ on your LAN.`);
+      const why = err.name === "AbortError" ? "timed out after 20s" : err.message;
+      throw new Error(`Network error (${why}). Use http://192.168.2.200:18091/admin/`);
+    } finally {
+      clearTimeout(timer);
     }
     const text = await res.text();
     let data = null;
@@ -63,7 +123,7 @@
       }
       if (!msg) msg = text || `${res.status} ${res.statusText}`;
       if (res.status === 401 || res.status === 403) {
-        msg = `Login rejected (${res.status}): ${msg}. Use the exact BOOTSTRAP_ADMIN_TOKEN from the Portainer stack env.`;
+        msg = `Login rejected (${res.status}): ${msg}`;
       }
       throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
     }
@@ -71,14 +131,24 @@
   }
 
   function showApp() {
-    gate.hidden = true;
-    app.hidden = false;
+    setVisible(gate, false);
+    setVisible(app, true);
+    document.body.classList.add("in-app");
   }
 
   function showGate(err) {
-    app.hidden = true;
-    gate.hidden = false;
-    note($("login-error"), err || "", Boolean(err));
+    setVisible(app, false);
+    setVisible(gate, true);
+    document.body.classList.remove("in-app");
+    showLoginError(err || "");
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
   }
 
   function renderHomes() {
@@ -98,14 +168,6 @@
       li.appendChild(btn);
       list.appendChild(li);
     }
-  }
-
-  function escapeHtml(s) {
-    return String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
   }
 
   function renderDevices() {
@@ -167,12 +229,12 @@
     const empty = $("empty-home");
     const detail = $("home-detail");
     if (!state.home) {
-      empty.hidden = false;
-      detail.hidden = true;
+      setVisible(empty, true);
+      setVisible(detail, false);
       return;
     }
-    empty.hidden = true;
-    detail.hidden = false;
+    setVisible(empty, false);
+    setVisible(detail, true);
     $("home-title").textContent = state.home.name;
     $("home-meta").textContent = `${state.home.timezone} · ${state.home.home_id}`;
     $("mode-away").checked = state.home.mode === "away";
@@ -209,49 +271,93 @@
     renderHomeDetail();
   }
 
+  async function doLogin(rawToken) {
+    const token = String(rawToken || "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .trim();
+    if (!token) {
+      showLoginError("Enter the bootstrap admin token first.");
+      return;
+    }
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.textContent = "Signing in…";
+    }
+    showLoginError("Checking token…");
+    state.token = token;
+    storageSet(TOKEN_KEY, token);
+    try {
+      await loadHomes();
+      showApp();
+      showLoginError("");
+      if (!state.selectedId && state.homes[0]) {
+        await selectHome(state.homes[0].home_id);
+      }
+    } catch (err) {
+      storageDel(TOKEN_KEY);
+      state.token = "";
+      showGate(err.message || "Login failed");
+    } finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.textContent = "Enter console";
+      }
+    }
+  }
+
   async function boot() {
+    showLoginError("");
     if (!state.token) {
       showGate();
       return;
     }
     try {
+      showLoginError("Restoring session…");
       await loadHomes();
       showApp();
+      showLoginError("");
+      if (!state.selectedId && state.homes[0]) {
+        await selectHome(state.homes[0].home_id);
+      }
     } catch (err) {
-      sessionStorage.removeItem(TOKEN_KEY);
+      storageDel(TOKEN_KEY);
       state.token = "";
       showGate(err.message || "Invalid token");
     }
   }
 
-  $("login-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    state.token = $("admin-token").value.trim();
-    sessionStorage.setItem(TOKEN_KEY, state.token);
-    try {
-      await loadHomes();
-      showApp();
-      note($("login-error"), "", false);
-    } catch (err) {
-      sessionStorage.removeItem(TOKEN_KEY);
-      state.token = "";
-      showGate(err.message || "Login failed");
-    }
-  });
+  const form = $("login-form");
+  if (form) {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      doLogin($("admin-token").value);
+    });
+  }
+  if (loginBtn) {
+    loginBtn.addEventListener("click", (e) => {
+      // Extra path for mobile browsers that swallow submit oddly
+      if (form && form.contains(loginBtn)) {
+        /* submit handler will also fire; only use click if type=button */
+      }
+    });
+  }
 
   $("btn-logout").addEventListener("click", () => {
-    sessionStorage.removeItem(TOKEN_KEY);
+    storageDel(TOKEN_KEY);
     state = { token: "", homes: [], selectedId: null, home: null, tokens: [] };
     showGate();
   });
 
-  $("btn-refresh").addEventListener("click", () => loadHomes().catch((e) => note($("workspace-note"), e.message)));
+  $("btn-refresh").addEventListener("click", () =>
+    loadHomes().catch((e) => note($("workspace-note"), e.message))
+  );
 
   $("btn-new-home").addEventListener("click", () => {
-    $("create-home-form").hidden = false;
+    setVisible($("create-home-form"), true);
   });
   $("btn-cancel-home").addEventListener("click", () => {
-    $("create-home-form").hidden = true;
+    setVisible($("create-home-form"), false);
     note($("create-home-note"), "", false);
   });
 
@@ -264,11 +370,7 @@
       const created = await api("/v1/homes", { method: "POST", body: JSON.stringify(body) });
       if (created.api_key) {
         saveApiKey(created.home_id, created.api_key);
-        note(
-          $("create-home-note"),
-          `Created. API key (save now): ${created.api_key}`,
-          true
-        );
+        note($("create-home-note"), `Created. API key (save now): ${created.api_key}`, true);
       }
       e.target.reset();
       e.target.owner_email.value = body.owner_email;
@@ -300,12 +402,8 @@
   $("mode-away").addEventListener("change", patchSecurity);
   $("armed").addEventListener("change", patchSecurity);
 
-  $("btn-add-device").addEventListener("click", () => {
-    $("device-form").hidden = false;
-  });
-  $("btn-cancel-device").addEventListener("click", () => {
-    $("device-form").hidden = true;
-  });
+  $("btn-add-device").addEventListener("click", () => setVisible($("device-form"), true));
+  $("btn-cancel-device").addEventListener("click", () => setVisible($("device-form"), false));
 
   $("device-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -321,7 +419,7 @@
         body: JSON.stringify(body),
       });
       e.target.reset();
-      $("device-form").hidden = true;
+      setVisible($("device-form"), false);
       await selectHome(state.home.home_id);
       note($("workspace-note"), `Device “${body.name}” added`, true);
     } catch (err) {
@@ -329,12 +427,8 @@
     }
   });
 
-  $("btn-add-token").addEventListener("click", () => {
-    $("token-form").hidden = false;
-  });
-  $("btn-cancel-token").addEventListener("click", () => {
-    $("token-form").hidden = true;
-  });
+  $("btn-add-token").addEventListener("click", () => setVisible($("token-form"), true));
+  $("btn-cancel-token").addEventListener("click", () => setVisible($("token-form"), false));
 
   $("token-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -344,7 +438,7 @@
     try {
       await api("/v1/push-tokens", { method: "POST", body: JSON.stringify(body) });
       e.target.reset();
-      $("token-form").hidden = true;
+      setVisible($("token-form"), false);
       if (state.home) await selectHome(state.home.home_id);
       note($("workspace-note"), "Push token registered", true);
     } catch (err) {
@@ -363,7 +457,10 @@
     try {
       const created = await api(`/v1/homes/${state.home.home_id}/api-keys`, {
         method: "POST",
-        body: JSON.stringify({ name: "admin-console", scopes: "ingest:write,notify:read,devices:read,security:write" }),
+        body: JSON.stringify({
+          name: "admin-console",
+          scopes: "ingest:write,notify:read,devices:read,security:write",
+        }),
       });
       $("home-api-key").value = created.api_key;
       $("home-api-key").type = "text";
@@ -403,5 +500,6 @@
     }
   });
 
-  boot();
+  window.homepulseLogin = doLogin;
+  boot().catch((err) => showGate(err.message || String(err)));
 })();
