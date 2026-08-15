@@ -1,19 +1,429 @@
-# HomePulse — Portainer standalone stack (ORIJA)
+# HomePulse — self-contained Portainer stack (ORIJA)
 # Gateway: http://HOST:18091
 # Cloudflare Tunnel (you configure): public hostname → http://localhost:18091
-# Rules: no host 80/443; image pull + git bootstrap (no Docker build:)
 #
-# Required stack env:
-#   POSTGRES_PASSWORD, API_KEY_PEPPER, BOOTSTRAP_ADMIN_TOKEN
-#   GIT_TOKEN  — GitHub PAT with contents:read (repo is private)
-# Optional:
-#   GATEWAY_PORT=18091
-#   HOMEPULSE_REPO_REF=refs/heads/cursor/ring-google-notify-272e
-#   FCM_MODE=dry_run
+# NO GIT CLONE at runtime. App source is embedded (base64 tarball) below.
+# Git is for version control only — regenerate this file with:
+#   python3 smart-home/scripts/generate_portainer_stack.py
+#
+# Required env: POSTGRES_PASSWORD, API_KEY_PEPPER, BOOTSTRAP_ADMIN_TOKEN
+# Optional: GATEWAY_PORT=18091, FCM_MODE=dry_run
 
 name: homepulse
 
 services:
+  seed:
+    image: busybox:1.37
+    restart: "no"
+    volumes:
+      - homepulse-app:/app
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cd /tmp
+        cat > bundle.b64 <<'BUNDLE'
+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
+BUNDLE
+        base64 -d bundle.b64 | tar -xz -C /app
+        echo "HomePulse app bundle extracted:"
+        ls -la /app
+        ls -la /app/services
+    networks: [homepulse]
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -58,98 +468,89 @@ services:
   home-registry:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-homepulse}
       API_KEY_PEPPER: ${API_KEY_PEPPER}
       BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN}
     volumes:
-      - homepulse-registry-src:/opt/homepulse
+      - homepulse-app:/app:ro
+
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/home-registry/requirements.txt
-        cp ./services/home-registry/app.py "$$ROOT/app.py"
-        cd "$$ROOT"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/home-registry/requirements.txt
+        cp /app/services/home-registry/app.py /run/app.py
+        cd /run
         exec uvicorn app:app --host 0.0.0.0 --port 8000
     depends_on:
+      seed:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
+
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 180s
+      start_period: 120s
     networks: [homepulse]
+
 
   ring-ingest:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       RING_WEBHOOK_SECRET: ${RING_WEBHOOK_SECRET:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - homepulse-ingest-src:/opt/homepulse
+      - homepulse-app:/app:ro
+
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/ring-ingest/requirements.txt
-        cp ./services/ring-ingest/app.py "$$ROOT/app.py"
-        cd "$$ROOT"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/ring-ingest/requirements.txt
+        cp /app/services/ring-ingest/app.py /run/app.py
+        cd /run
         exec uvicorn app:app --host 0.0.0.0 --port 8000
     depends_on:
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
         condition: service_healthy
+
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 180s
+      start_period: 120s
     networks: [homepulse]
+
 
   mqtt-ingest:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       MQTT_HOST: mosquitto
@@ -157,42 +558,37 @@ services:
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - homepulse-mqtt-ingest-src:/opt/homepulse
+      - homepulse-app:/app:ro
+
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/mqtt-ingest/requirements.txt
-        cp ./services/mqtt-ingest/worker.py "$$ROOT/worker.py"
-        cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/mqtt-ingest/requirements.txt
+        cp /app/services/mqtt-ingest/worker.py /run/worker.py
+        cd /run
         exec python worker.py
     depends_on:
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
         condition: service_healthy
       mosquitto:
         condition: service_started
+
     networks: [homepulse]
+
 
   rules-engine:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
@@ -202,40 +598,35 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: rules-1
     volumes:
-      - homepulse-rules-src:/opt/homepulse
+      - homepulse-app:/app:ro
+
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/rules-engine/requirements.txt
-        cp ./services/rules-engine/worker.py "$$ROOT/worker.py"
-        cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/rules-engine/requirements.txt
+        cp /app/services/rules-engine/worker.py /run/worker.py
+        cd /run
         exec python worker.py
     depends_on:
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
         condition: service_healthy
+
     networks: [homepulse]
+
 
   notifier:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       FCM_MODE: ${FCM_MODE:-dry_run}
@@ -244,41 +635,35 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: notifier-1
     volumes:
-      - homepulse-notifier-src:/opt/homepulse
+      - homepulse-app:/app:ro
       - homepulse-secrets:/secrets:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/notifier/requirements.txt
-        cp ./services/notifier/worker.py "$$ROOT/worker.py"
-        cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/notifier/requirements.txt
+        cp /app/services/notifier/worker.py /run/worker.py
+        cd /run
         exec python worker.py
     depends_on:
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
         condition: service_healthy
+
     networks: [homepulse]
+
 
   mqtt-commander:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       MQTT_HOST: mosquitto
@@ -286,42 +671,37 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: mqtt-commander-1
     volumes:
-      - homepulse-commander-src:/opt/homepulse
+      - homepulse-app:/app:ro
+
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/mqtt-commander/requirements.txt
-        cp ./services/mqtt-commander/worker.py "$$ROOT/worker.py"
-        cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/mqtt-commander/requirements.txt
+        cp /app/services/mqtt-commander/worker.py /run/worker.py
+        cd /run
         exec python worker.py
     depends_on:
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
         condition: service_healthy
       mosquitto:
         condition: service_started
+
     networks: [homepulse]
+
 
   scheduler:
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /opt/homepulse
+    working_dir: /run
     environment:
-      HOMEPULSE_REPO_URL: ${HOMEPULSE_REPO_URL:-https://github.com/Davidora2/orija-docker-infra.git}
-      HOMEPULSE_REPO_REF: ${HOMEPULSE_REPO_REF:-refs/heads/cursor/ring-google-notify-272e}
-      GIT_TOKEN: ${GIT_TOKEN:-}
       REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       LOCK_CHECK_INTERVAL_SECONDS: ${LOCK_CHECK_INTERVAL_SECONDS:-60}
@@ -330,30 +710,27 @@ services:
       AUTO_LOCK_AFTER_SUNSET: ${AUTO_LOCK_AFTER_SUNSET:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - homepulse-scheduler-src:/opt/homepulse
+      - homepulse-app:/app:ro
+
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        REPO_URL="$${HOMEPULSE_REPO_URL}"
-        BRANCH="$${HOMEPULSE_REPO_REF#refs/heads/}"
-        ROOT=/opt/homepulse
-        mkdir -p "$$ROOT" && cd "$$ROOT"
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
-        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
-        if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
-        cd "$$ROOT/repo/smart-home"
-        pip install --no-cache-dir -q ./shared -r ./services/scheduler/requirements.txt
-        cp ./services/scheduler/worker.py "$$ROOT/worker.py"
-        cd "$$ROOT"
+        test -f /app/shared/pyproject.toml || (echo "App bundle missing — redeploy stack" && exit 1)
+
+
+        pip install --no-cache-dir -q /app/shared -r /app/services/scheduler/requirements.txt
+        cp /app/services/scheduler/worker.py /run/worker.py
+        cd /run
         exec python worker.py
     depends_on:
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
         condition: service_healthy
+
     networks: [homepulse]
 
   gateway:
@@ -361,64 +738,17 @@ services:
     restart: unless-stopped
     ports:
       - "${GATEWAY_PORT:-18091}:8080"
+    volumes:
+      - homepulse-app:/app:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        cat >/etc/nginx/nginx.conf <<'EOF'
-        user nginx;
-        worker_processes auto;
-        error_log /var/log/nginx/error.log warn;
-        pid /var/run/nginx.pid;
-        events { worker_connections 1024; }
-        http {
-          include /etc/nginx/mime.types;
-          default_type application/json;
-          server_tokens off;
-          limit_req_zone $$binary_remote_addr zone=ingest_limit:10m rate=30r/m;
-          limit_req_zone $$binary_remote_addr zone=api_limit:10m rate=120r/m;
-          upstream home_registry { server home-registry:8000; }
-          upstream ring_ingest { server ring-ingest:8000; }
-          server {
-            listen 8080;
-            client_max_body_size 1m;
-            location /health {
-              default_type application/json;
-              return 200 '{"status":"ok","service":"gateway"}';
-            }
-            location /v1/homes {
-              limit_req zone=api_limit burst=40 nodelay;
-              proxy_pass http://home_registry;
-              proxy_set_header Authorization $$http_authorization;
-              proxy_set_header Host $$host;
-            }
-            location /v1/push-tokens {
-              limit_req zone=api_limit burst=40 nodelay;
-              proxy_pass http://home_registry;
-              proxy_set_header Authorization $$http_authorization;
-            }
-            location /v1/devices {
-              limit_req zone=api_limit burst=40 nodelay;
-              proxy_pass http://home_registry;
-              proxy_set_header Authorization $$http_authorization;
-            }
-            location /v1/webhooks/ring {
-              limit_req zone=ingest_limit burst=20 nodelay;
-              proxy_pass http://ring_ingest;
-              proxy_set_header X-API-Key $$http_x_api_key;
-              proxy_set_header X-Webhook-Secret $$http_x_webhook_secret;
-            }
-            location /v1/simulate/ring {
-              limit_req zone=ingest_limit burst=20 nodelay;
-              proxy_pass http://ring_ingest;
-              proxy_set_header X-API-Key $$http_x_api_key;
-            }
-            location /v1/internal/ { return 404; }
-          }
-        }
-        EOF
+        cp /app/config/nginx/nginx.conf /etc/nginx/nginx.conf
         exec nginx -g 'daemon off;'
     depends_on:
+      seed:
+        condition: service_completed_successfully
       home-registry:
         condition: service_healthy
       ring-ingest:
@@ -430,13 +760,7 @@ networks:
     driver: bridge
 
 volumes:
+  homepulse-app:
   homepulse-postgres:
   homepulse-redis:
   homepulse-secrets:
-  homepulse-registry-src:
-  homepulse-ingest-src:
-  homepulse-mqtt-ingest-src:
-  homepulse-rules-src:
-  homepulse-notifier-src:
-  homepulse-commander-src:
-  homepulse-scheduler-src:
