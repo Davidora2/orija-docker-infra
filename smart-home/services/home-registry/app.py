@@ -229,10 +229,17 @@ app = FastAPI(
 )
 
 
-def require_bootstrap(authorization: str | None = Header(default=None)) -> None:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token")
-    token = authorization.removeprefix("Bearer ").strip()
+def require_bootstrap(
+    authorization: str | None = Header(default=None),
+    x_bootstrap_token: str | None = Header(default=None, alias="X-Bootstrap-Token"),
+) -> None:
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    elif x_bootstrap_token:
+        token = x_bootstrap_token.strip()
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bootstrap token")
     if token != BOOTSTRAP_ADMIN_TOKEN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid bootstrap token")
 

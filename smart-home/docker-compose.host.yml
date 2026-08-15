@@ -193,6 +193,7 @@ services:
     network_mode: host
     volumes:
       - ./config/nginx/nginx.host.conf:/etc/nginx/nginx.conf:ro
+      - ./web/admin:/app/web/admin:ro
     depends_on:
       home-registry:
         condition: service_healthy

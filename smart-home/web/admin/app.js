@@ -34,14 +34,21 @@
   }
 
   async function api(path, options = {}) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    };
+    const method = (options.method || "GET").toUpperCase();
+    const headers = { ...(options.headers || {}) };
+    if (method !== "GET" && method !== "HEAD" && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
     if (state.token && !headers.Authorization && !headers["X-API-Key"]) {
       headers.Authorization = `Bearer ${state.token}`;
+      headers["X-Bootstrap-Token"] = state.token;
     }
-    const res = await fetch(path, { ...options, headers });
+    let res;
+    try {
+      res = await fetch(path, { ...options, headers });
+    } catch (err) {
+      throw new Error(`Network error talking to API (${err.message}). Try http://192.168.2.200:18091/admin/ on your LAN.`);
+    }
     const text = await res.text();
     let data = null;
     try {
@@ -50,10 +57,14 @@
       data = { raw: text };
     }
     if (!res.ok) {
-      const msg =
-        (data && (data.detail || data.message)) ||
-        text ||
-        `${res.status} ${res.statusText}`;
+      let msg = data && data.detail != null ? data.detail : data && data.message;
+      if (Array.isArray(msg)) {
+        msg = msg.map((m) => m.msg || JSON.stringify(m)).join("; ");
+      }
+      if (!msg) msg = text || `${res.status} ${res.statusText}`;
+      if (res.status === 401 || res.status === 403) {
+        msg = `Login rejected (${res.status}): ${msg}. Use the exact BOOTSTRAP_ADMIN_TOKEN from the Portainer stack env.`;
+      }
       throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
     }
     return data;
