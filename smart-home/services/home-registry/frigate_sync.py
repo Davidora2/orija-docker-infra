@@ -128,9 +128,20 @@ def write_frigate_config(path: Path, cameras: list[dict[str, Any]], *, mqtt_host
 
 
 async def reload_frigate(base_url: str) -> dict[str, Any]:
-    url = f"{base_url.rstrip('/')}/api/reload"
+    base = base_url.rstrip("/")
     async with httpx.AsyncClient(timeout=20.0) as client:
-        resp = await client.post(url)
-        if resp.status_code >= 400:
-            return {"ok": False, "status": resp.status_code, "body": resp.text[:300]}
-        return {"ok": True, "status": resp.status_code}
+        for method, path in (
+            ("POST", "/api/reload"),
+            ("POST", "/api/restart"),
+            ("GET", "/api/config/schema.json"),
+        ):
+            try:
+                resp = await client.request(method, f"{base}{path}")
+            except Exception as exc:  # noqa: BLE001
+                last = {"ok": False, "error": str(exc)}
+                continue
+            if resp.status_code < 400:
+                return {"ok": True, "status": resp.status_code, "path": path}
+            last = {"ok": False, "status": resp.status_code, "body": resp.text[:200], "path": path}
+        return last
+
