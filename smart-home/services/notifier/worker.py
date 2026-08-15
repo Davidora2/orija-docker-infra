@@ -37,6 +37,9 @@ GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 FCM_PROJECT_ID = os.getenv("FCM_PROJECT_ID", "")
 GOOGLE_HOME_MODE = os.getenv("GOOGLE_HOME_MODE", "cast")  # cast | dry_run
 GOOGLE_HOME_LANG = os.getenv("GOOGLE_HOME_LANG", "en")
+VAPID_PRIVATE_KEY_FILE = os.getenv("VAPID_PRIVATE_KEY_FILE", "/secrets/vapid-private.pem")
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@homepulse.local")
 
 RUNNING = True
 firebase_app = None
@@ -135,6 +138,10 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
     assert command.notification is not None
     notification = command.notification
 
+    # Web Push subscription JSON from the simple /join page (iPhone/Android browser)
+    if token.strip().startswith("{"):
+        return await asyncio.to_thread(send_web_push, token, command)
+
     channel = notification.channel_id or "smart_home_alerts"
     sound = notification.sound or "default"
     high = notification.priority in {"high", "max"}
@@ -185,6 +192,34 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
     )
     message_id = messaging.send(message)
     return {"mode": "firebase", "message_id": message_id}
+
+
+def send_web_push(subscription_json: str, command: ActionCommand) -> dict[str, Any]:
+    assert command.notification is not None
+    from pywebpush import webpush, WebPushException
+
+    if not Path(VAPID_PRIVATE_KEY_FILE).exists():
+        raise RuntimeError(f"Missing VAPID private key at {VAPID_PRIVATE_KEY_FILE}")
+    payload = json.dumps(
+        {
+            "title": command.notification.title,
+            "body": command.notification.body,
+            "data": command.notification.data,
+        }
+    )
+    if FCM_MODE == "dry_run" and os.getenv("WEB_PUSH_DRY_RUN", "false").lower() == "true":
+        logger.info("DRY-RUN web push → %s", payload)
+        return {"mode": "dry_run_web", "payload": payload}
+    try:
+        webpush(
+            subscription_info=json.loads(subscription_json),
+            data=payload,
+            vapid_private_key=VAPID_PRIVATE_KEY_FILE,
+            vapid_claims={"sub": VAPID_SUBJECT},
+        )
+        return {"mode": "web_push", "ok": True}
+    except WebPushException as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 async def handle_push(redis_client: Any, command: ActionCommand) -> None:

@@ -230,7 +230,8 @@ services:
         condition: service_healthy""",
         extra_env="""      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-homepulse}
       API_KEY_PEPPER: ${API_KEY_PEPPER}
-      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN}""",
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}""",
     )}
 {service_block(
         "ring-ingest",
@@ -299,6 +300,9 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       GOOGLE_HOME_MODE: ${GOOGLE_HOME_MODE:-cast}
       GOOGLE_HOME_LANG: ${GOOGLE_HOME_LANG:-en}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY_FILE: ${VAPID_PRIVATE_KEY_FILE:-/secrets/vapid-private.pem}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@homepulse.local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: notifier-1""",
         extra_volumes="      - homepulse-secrets:/secrets:ro",

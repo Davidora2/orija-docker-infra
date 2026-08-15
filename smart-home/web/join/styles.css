@@ -1,0 +1,97 @@
+:root {
+  --bg: #0f1412;
+  --ink: #e8f0ea;
+  --muted: #9bb0a4;
+  --amber: #d4a35c;
+  --line: rgba(232, 240, 234, 0.14);
+  --danger: #e07a6a;
+  --font: "Outfit", system-ui, sans-serif;
+  --display: "Source Serif 4", Georgia, serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(700px 420px at 20% -10%, rgba(212,163,92,.22), transparent 60%),
+    linear-gradient(165deg, #101714, #0c100e 50%, #141a17);
+}
+.shell {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+.eyebrow {
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--amber);
+  font-size: .72rem;
+  font-weight: 600;
+  margin: 0 0 .4rem;
+}
+h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 2.6rem;
+  font-weight: 600;
+}
+h2 { margin: 0 0 .7rem; font-size: 1.25rem; }
+.lede { color: var(--muted); line-height: 1.45; }
+.card {
+  margin-top: 1.4rem;
+  padding: 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(31, 43, 38, .55);
+  display: grid;
+  gap: .85rem;
+}
+label { display: grid; gap: .35rem; color: var(--muted); font-size: .86rem; }
+input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: .85rem 1rem;
+  font: inherit;
+  font-size: 1.05rem;
+}
+.btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 1rem 1.2rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 1.05rem;
+  cursor: pointer;
+}
+.btn.primary {
+  background: linear-gradient(135deg, var(--amber), #b9843f);
+  color: #1a1208;
+}
+.steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.note {
+  margin: 0;
+  padding: .7rem .8rem;
+  border-left: 3px solid var(--amber);
+  background: rgba(212,163,92,.1);
+  color: var(--ink);
+  font-size: .92rem;
+}
+.error {
+  margin-top: 1rem;
+  color: var(--danger);
+  background: rgba(224,122,106,.12);
+  border: 1px solid rgba(224,122,106,.35);
+  border-radius: 12px;
+  padding: .8rem;
+}
+[hidden] { display: none !important; }

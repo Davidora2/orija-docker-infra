@@ -26,8 +26,43 @@ python3 smart-home/scripts/generate_portainer_stack.py
 | `BOOTSTRAP_ADMIN_TOKEN` | yes | used by bootstrap script |
 | `GATEWAY_PORT` | no | default `18091` |
 | `FCM_MODE` | no | `dry_run` or `firebase` |
+| `VAPID_PUBLIC_KEY` | for iPhone join links | Web Push public key (see below) |
 
 4. Deploy. Gateway publishes **host port 18091**.
+
+## Family invites (no App Store — especially iPhone)
+
+1. Admin → **Invite family** → **Create invite link**
+2. Text/email the link (or open `https://homepulse.YOUR_DOMAIN/join/?code=…`)
+3. On **iPhone**: Safari → Share → **Add to Home Screen** → open the HomePulse icon → **Enable alerts**
+4. On **Android**: open the link in Chrome → **Enable alerts** → Allow
+
+Requires HTTPS (Cloudflare Tunnel) and Web Push VAPID keys:
+
+1. Generate keys once (keep private key off git):
+
+```bash
+python3 - <<'PY'
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+import base64, json
+priv = ec.generate_private_key(ec.SECP256R1())
+pub = priv.public_key().public_bytes(
+    serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
+)
+public_key = base64.urlsafe_b64encode(pub).decode().rstrip("=")
+pem = priv.private_bytes(
+    serialization.Encoding.PEM,
+    serialization.PrivateFormat.PKCS8,
+    serialization.NoEncryption(),
+).decode()
+print(json.dumps({"publicKey": public_key, "privateKeyPem": pem}, indent=2))
+PY
+```
+
+2. Copy `privateKeyPem` into volume `homepulse_homepulse-secrets` as `vapid-private.pem`
+3. Set stack env `VAPID_PUBLIC_KEY` to the `publicKey` value
+4. Redeploy `home-registry` + `notifier` (or the whole stack)
 
 ## Cloudflare Tunnel (you configure)
 

@@ -8,6 +8,7 @@ import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Annotated
+import secrets
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -39,6 +40,8 @@ DATABASE_URL = os.getenv(
 API_KEY_PEPPER = os.getenv("API_KEY_PEPPER", "change-me-in-production")
 BOOTSTRAP_ADMIN_TOKEN = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "bootstrap-dev-token")
 ADMIN_SESSION_DAYS = int(os.getenv("ADMIN_SESSION_DAYS", "14"))
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+INVITE_TTL_DAYS = int(os.getenv("INVITE_TTL_DAYS", "30"))
 
 
 class Base(DeclarativeBase):
@@ -173,6 +176,20 @@ class AdminSession(Base):
     )
 
     admin: Mapped[AdminAccount] = relationship(back_populates="sessions")
+
+
+class HomeInvite(Base):
+    __tablename__ = "home_invites"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    home_id: Mapped[str] = mapped_column(ForeignKey("homes.id"), index=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(120), default="Family invite")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -889,4 +906,157 @@ def add_member(
         "display_name": user.display_name,
         "role": member.role,
         "already_member": False,
+    }
+
+
+
+class CreateInviteRequest(BaseModel):
+    label: str = "Family invite"
+
+
+class PublicJoinRequest(BaseModel):
+    code: str
+    display_name: str = Field(min_length=1, max_length=120)
+    platform: str = "web"
+    # Web Push subscription JSON string, or raw FCM token for native apps
+    push_subscription: str = Field(min_length=20)
+    label: str | None = None
+
+
+def _invite_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+@app.get("/v1/public/vapid-key")
+def public_vapid_key() -> dict[str, str]:
+    if not VAPID_PUBLIC_KEY:
+        raise HTTPException(503, "Web push is not configured yet")
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+
+@app.get("/v1/public/invites/{code}")
+def public_invite_info(code: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    invite = db.scalar(select(HomeInvite).where(HomeInvite.code == code.upper(), HomeInvite.active.is_(True)))
+    if invite is None:
+        raise HTTPException(404, "Invite not found or expired")
+    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, "Invite expired")
+    home = db.get(Home, invite.home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+    return {
+        "code": invite.code,
+        "home_name": home.name,
+        "label": invite.label,
+        "vapid_public_key": VAPID_PUBLIC_KEY or None,
+    }
+
+
+@app.post("/v1/public/join", status_code=201)
+def public_join(body: PublicJoinRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Non-technical join: invite code + display name + web-push subscription."""
+    code = body.code.strip().upper()
+    invite = db.scalar(select(HomeInvite).where(HomeInvite.code == code, HomeInvite.active.is_(True)))
+    if invite is None:
+        raise HTTPException(404, "Invite not found")
+    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, "Invite expired")
+    home = db.get(Home, invite.home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+
+    # Stable-ish email from name+home so repeat joins update the same member when possible
+    slug = "".join(ch.lower() if ch.isalnum() else "." for ch in body.display_name).strip(".")
+    email = f"{slug}.{home.id[:8]}@join.homepulse.local"
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        user = User(email=email, display_name=body.display_name.strip())
+        db.add(user)
+        db.flush()
+    else:
+        user.display_name = body.display_name.strip()
+
+    member = db.scalar(select(HomeMember).where(HomeMember.home_id == home.id, HomeMember.user_id == user.id))
+    if member is None:
+        db.add(HomeMember(home_id=home.id, user_id=user.id, role="member"))
+
+    token_value = body.push_subscription.strip()
+    existing = db.scalar(select(PushToken).where(PushToken.user_id == user.id, PushToken.token == token_value))
+    if existing is None:
+        db.add(
+            PushToken(
+                user_id=user.id,
+                token=token_value,
+                platform=body.platform or "web",
+                label=body.label or body.display_name.strip(),
+            )
+        )
+    else:
+        existing.active = True
+        existing.platform = body.platform or existing.platform
+        existing.label = body.label or existing.label
+    db.commit()
+    return {
+        "status": "ok",
+        "home_name": home.name,
+        "display_name": user.display_name,
+        "message": f"You will get alerts for {home.name} on this phone.",
+    }
+
+
+@app.post("/v1/homes/{home_id}/invites", status_code=201)
+def create_invite(
+    home_id: str,
+    body: CreateInviteRequest,
+    db: Session = Depends(get_db),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    if db.get(Home, home_id) is None:
+        raise HTTPException(404, "Home not found")
+    code = _invite_code()
+    while db.scalar(select(HomeInvite).where(HomeInvite.code == code)) is not None:
+        code = _invite_code()
+    invite = HomeInvite(
+        home_id=home_id,
+        code=code,
+        label=body.label or "Family invite",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS),
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+    return {
+        "invite_id": invite.id,
+        "code": invite.code,
+        "label": invite.label,
+        "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
+        "join_path": f"/join/?code={invite.code}",
+    }
+
+
+@app.get("/v1/homes/{home_id}/invites")
+def list_invites(
+    home_id: str,
+    db: Session = Depends(get_db),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    if db.get(Home, home_id) is None:
+        raise HTTPException(404, "Home not found")
+    rows = db.scalars(
+        select(HomeInvite).where(HomeInvite.home_id == home_id).order_by(HomeInvite.created_at.desc())
+    ).all()
+    return {
+        "invites": [
+            {
+                "invite_id": i.id,
+                "code": i.code,
+                "label": i.label,
+                "active": i.active,
+                "expires_at": i.expires_at.isoformat() if i.expires_at else None,
+                "join_path": f"/join/?code={i.code}",
+            }
+            for i in rows
+            if i.active
+        ]
     }

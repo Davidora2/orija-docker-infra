@@ -57,6 +57,7 @@
     selectedId: null,
     home: null,
     tokens: [],
+    invites: [],
     setupRequired: false,
   };
 
@@ -193,6 +194,34 @@
       </table>`;
   }
 
+  function renderInvites() {
+    const wrap = $("invite-list");
+    if (!wrap) return;
+    const invites = state.invites || [];
+    if (!invites.length) {
+      wrap.innerHTML = `<p class="muted">No active invites yet. Create a link and text it to family.</p>`;
+      return;
+    }
+    wrap.innerHTML = `
+      <table>
+        <thead><tr><th>Code</th><th>Label</th><th>Expires</th><th>Link</th></tr></thead>
+        <tbody>
+          ${invites
+            .map((i) => {
+              const path = i.join_path || `/join/?code=${encodeURIComponent(i.code)}`;
+              const url = `${location.origin}${path}`;
+              return `<tr>
+              <td><code>${escapeHtml(i.code)}</code></td>
+              <td>${escapeHtml(i.label || "—")}</td>
+              <td>${escapeHtml((i.expires_at || "").slice(0, 10) || "—")}</td>
+              <td><a href="${escapeHtml(url)}" target="_blank" rel="noopener">Open</a></td>
+            </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>`;
+  }
+
   function renderMembers() {
     const wrap = $("member-table");
     const members = state.home?.members || [];
@@ -203,7 +232,7 @@
         .join("");
     }
     if (!members.length) {
-      wrap.innerHTML = `<p class="muted">No members yet.</p>`;
+      wrap.innerHTML = `<p class="muted">No members yet — send an invite link.</p>`;
       return;
     }
     wrap.innerHTML = `
@@ -265,6 +294,7 @@
     $("armed").checked = Boolean(state.home.armed);
     $("home-api-key").value = apiKeysMap()[state.home.home_id] || "";
     renderDevices();
+    renderInvites();
     renderMembers();
     renderTokens();
   }
@@ -287,12 +317,14 @@
   async function selectHome(homeId) {
     state.selectedId = homeId;
     renderHomes();
-    const [home, tokens] = await Promise.all([
+    const [home, tokens, invites] = await Promise.all([
       api(`/v1/homes/${homeId}`),
       api(`/v1/homes/${homeId}/push-tokens`),
+      api(`/v1/homes/${homeId}/invites`).catch(() => ({ invites: [] })),
     ]);
     state.home = home;
     state.tokens = tokens.tokens || [];
+    state.invites = invites.invites || [];
     renderHomeDetail();
   }
 
@@ -426,7 +458,15 @@
       /* ignore */
     }
     storageDel(TOKEN_KEY);
-    state = { token: "", homes: [], selectedId: null, home: null, tokens: [], setupRequired: false };
+    state = {
+      token: "",
+      homes: [],
+      selectedId: null,
+      home: null,
+      tokens: [],
+      invites: [],
+      setupRequired: false,
+    };
     showGate();
     showAuthPanel("login");
   });
@@ -546,6 +586,42 @@
       setVisible($("device-form"), false);
       await selectHome(state.home.home_id);
       note($("workspace-note"), `Device “${body.name}” added`, true);
+    } catch (err) {
+      note($("workspace-note"), err.message, true);
+    }
+  });
+
+  $("btn-invite").addEventListener("click", async () => {
+    if (!state.home) return;
+    try {
+      const inv = await api(`/v1/homes/${state.home.home_id}/invites`, {
+        method: "POST",
+        body: JSON.stringify({ label: "Family invite" }),
+      });
+      const path = inv.join_path || `/join/?code=${encodeURIComponent(inv.code)}`;
+      const link = `${location.origin}${path}`;
+      const box = $("invite-box");
+      setVisible(box, true);
+      box.innerHTML = `
+        <h4>Share this link</h4>
+        <p class="muted" style="margin:0 0 0.5rem">Works on iPhone &amp; Android — no App Store.</p>
+        <p style="word-break:break-all;margin:0 0 0.75rem"><a href="${escapeHtml(link)}" target="_blank" rel="noopener">${escapeHtml(link)}</a></p>
+        <p class="muted" style="margin:0 0 0.75rem">Code: <code>${escapeHtml(inv.code)}</code>${
+          inv.expires_at ? ` · expires ${(inv.expires_at || "").slice(0, 10)}` : ""
+        }</p>
+        <div class="row">
+          <button type="button" class="btn primary" id="btn-copy-invite">Copy link</button>
+        </div>`;
+      $("btn-copy-invite").onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          note($("workspace-note"), "Invite link copied — send it to family.", true);
+        } catch {
+          prompt("Copy this invite link:", link);
+        }
+      };
+      await selectHome(state.home.home_id);
+      note($("workspace-note"), "Invite ready — copy and send the link.", true);
     } catch (err) {
       note($("workspace-note"), err.message, true);
     }

@@ -197,10 +197,20 @@
 
             <section class="block">
               <div class="block-head">
+                <h3>Invite family</h3>
+                <button type="button" id="btn-invite" class="btn small primary">Create invite link</button>
+              </div>
+              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">Best for iPhone: share a link. They open it in Safari → Add to Home Screen → Enable alerts. No App Store.</p>
+              <div id="invite-box" class="panel" hidden></div>
+              <div id="invite-list" class="table-wrap"></div>
+            </section>
+
+            <section class="block">
+              <div class="block-head">
                 <h3>Home members</h3>
                 <button type="button" id="btn-add-member" class="btn small">Add member</button>
               </div>
-              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">Everyone who should get phone alerts (Android or iPhone). Being in a Google Home household is separate — each phone still needs the HomePulse app token below.</p>
+              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">People already joined (via invite link or manual add). Google Home household membership is separate from phone alerts.</p>
               <div id="member-table" class="table-wrap"></div>
               <form id="member-form" class="panel stack" hidden>
                 <h4>Add member</h4>
@@ -224,7 +234,7 @@
                 <h3>Phone push tokens</h3>
                 <button type="button" id="btn-add-token" class="btn small">Add token</button>
               </div>
-              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">One token per phone. Install <code>home.pulse</code>, copy that device’s FCM token, pick the member’s email + android/ios.</p>
+              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">Optional advanced path: native <code>home.pulse</code> FCM tokens. Prefer <strong>Invite family</strong> for iPhone / non-technical users.</p>
               <div id="token-table" class="table-wrap"></div>
               <form id="token-form" class="panel stack" hidden>
                 <h4>Register phone for alerts</h4>

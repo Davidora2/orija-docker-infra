@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#d4a35c" />
+  <link rel="manifest" href="/join/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/join/icons/icon-192.png" />
+  <title>HomePulse Alerts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/join/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <p class="eyebrow">ORIJA</p>
+    <h1>HomePulse</h1>
+    <p id="home-line" class="lede">Get doorbell alerts on this phone — no App Store.</p>
+
+    <section id="step-name" class="card">
+      <label>
+        <span>Your first name</span>
+        <input id="display-name" autocomplete="given-name" placeholder="Sam" />
+      </label>
+      <label>
+        <span>Invite code</span>
+        <input id="invite-code" autocomplete="off" spellcheck="false" placeholder="ABCD1234" />
+      </label>
+      <button id="btn-continue" class="btn primary" type="button">Continue</button>
+    </section>
+
+    <section id="step-ios" class="card" hidden>
+      <h2>iPhone setup (once)</h2>
+      <ol class="steps">
+        <li>Tap the <strong>Share</strong> button in Safari</li>
+        <li>Tap <strong>Add to Home Screen</strong></li>
+        <li>Open the new <strong>HomePulse</strong> icon</li>
+        <li>Come back here and tap Enable alerts</li>
+      </ol>
+      <p id="ios-status" class="note">Safari browser tab detected — add to Home Screen first.</p>
+      <button id="btn-enable-ios" class="btn primary" type="button">Enable alerts</button>
+    </section>
+
+    <section id="step-android" class="card" hidden>
+      <h2>Almost done</h2>
+      <p class="lede">Tap the button and choose <strong>Allow</strong> when your phone asks.</p>
+      <button id="btn-enable-android" class="btn primary" type="button">Enable alerts</button>
+    </section>
+
+    <section id="step-done" class="card" hidden>
+      <h2>You’re in</h2>
+      <p id="done-msg" class="lede">This phone will get doorbell alerts.</p>
+    </section>
+
+    <p id="err" class="error" hidden></p>
+  </main>
+  <script src="/join/app.js"></script>
+</body>
+</html>
