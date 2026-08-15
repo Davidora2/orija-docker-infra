@@ -4,14 +4,69 @@
   const codeFromUrl = (params.get("code") || "").toUpperCase();
   const $ = (id) => document.getElementById(id);
 
+  const ua = navigator.userAgent || "";
   const isIos =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    /iPad|iPhone|iPod/.test(ua) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
   const isStandalone =
     window.matchMedia("(display-mode: standalone)").matches ||
     window.navigator.standalone === true;
+  // Instagram/FB/Messenger/Gmail in-app browsers often lack PushManager
+  const isInAppBrowser =
+    /\bwv\b/i.test(ua) ||
+    /FBAN|FBAV|Instagram|Line\/|Twitter|LinkedInApp|GSA\//i.test(ua) ||
+    (/\bAndroid\b/i.test(ua) && /\bVersion\/\d+\.\d+\b/.test(ua) && /; wv\)/.test(ua));
 
   let inviteMeta = null;
+
+  function publicHttpsOrigin() {
+    const fromMeta = (inviteMeta && inviteMeta.public_base_url) || "";
+    if (fromMeta) return fromMeta.replace(/\/$/, "");
+    if (location.protocol === "https:") return location.origin;
+    return "https://homepulse.orija.store";
+  }
+
+  function pushCapability() {
+    const secure = window.isSecureContext === true;
+    const sw = "serviceWorker" in navigator;
+    const push =
+      "PushManager" in window ||
+      (typeof ServiceWorkerRegistration !== "undefined" &&
+        "pushManager" in ServiceWorkerRegistration.prototype);
+    const notif = "Notification" in window;
+    return { secure, sw, push, notif, ok: secure && sw && push && notif };
+  }
+
+  function pushBlockedMessage(cap) {
+    const httpsBase = publicHttpsOrigin();
+    const code = ($("invite-code").value || codeFromUrl || "").trim().toUpperCase();
+    const httpsJoin = `${httpsBase}/join/${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+
+    if (!cap.secure) {
+      return (
+        `Alerts need a secure link (https). On Android open Chrome and go to:\n${httpsJoin}\n` +
+        `Do not use the local IP (http://192.168...).`
+      );
+    }
+    if (isInAppBrowser || (!cap.sw || !cap.push)) {
+      if (isAndroid) {
+        return (
+          "This app browser cannot receive alerts. On Android: open the invite in Chrome " +
+          "(⋯ menu → Open in Chrome), then tap Enable alerts. " +
+          `Direct link: ${httpsJoin}`
+        );
+      }
+      if (isIos) {
+        return "On iPhone use Safari, then Add to Home Screen, open the HomePulse icon, and Enable alerts.";
+      }
+      return `This browser cannot receive alerts. Open ${httpsJoin} in Chrome or Edge.`;
+    }
+    if (!cap.notif) {
+      return "Notifications are blocked or unavailable in this browser. Check Android Settings → Apps → Chrome → Notifications.";
+    }
+    return "This browser cannot receive alerts.";
+  }
 
   function loadStore() {
     try {
@@ -41,6 +96,25 @@
     ["step-name", "step-ios", "step-android", "step-done"].forEach((s) => {
       $(s).hidden = s !== id;
     });
+    if (id === "step-android") updateAndroidHints();
+  }
+
+  function updateAndroidHints() {
+    const hint = $("android-hint");
+    if (!hint) return;
+    const cap = pushCapability();
+    const httpsBase = publicHttpsOrigin();
+    if (!cap.secure) {
+      hint.textContent =
+        `Open this page in Chrome using ${httpsBase} (not a local http:// address), then tap Enable alerts.`;
+      return;
+    }
+    if (isInAppBrowser || !cap.ok) {
+      hint.textContent =
+        "If Enable alerts fails: tap ⋯ → Open in Chrome (not Instagram, Messages, or Facebook).";
+      return;
+    }
+    hint.textContent = "Chrome on Android works here — tap Enable alerts and choose Allow.";
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -69,10 +143,9 @@
     if (!code) throw new Error("Enter the invite code");
     saveStore({ name, code });
 
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      throw new Error(
-        "This browser cannot receive alerts. On iPhone use Safari, then Add to Home Screen."
-      );
+    const cap = pushCapability();
+    if (!cap.ok) {
+      throw new Error(pushBlockedMessage(cap));
     }
 
     if (isIos && !isStandalone) {
@@ -84,7 +157,11 @@
 
     const perm = await Notification.requestPermission();
     if (perm !== "granted") {
-      throw new Error("Please tap Allow so this phone can get doorbell alerts.");
+      throw new Error(
+        isAndroid
+          ? "Please tap Allow. If you don’t see a prompt: Android Settings → Apps → Chrome → Notifications → On."
+          : "Please tap Allow so this phone can get doorbell alerts."
+      );
     }
 
     const reg = await navigator.serviceWorker.register("/join/sw.js", { scope: "/join/" });
@@ -97,10 +174,20 @@
     }
     if (!vapid) throw new Error("Alerts are not configured on the server yet.");
 
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapid),
-    });
+    let sub;
+    try {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapid),
+      });
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      throw new Error(
+        isAndroid
+          ? `Could not enable Chrome push (${msg}). Use Chrome on https://homepulse.orija.store — not a local IP or in-app browser.`
+          : `Could not enable alerts: ${msg}`
+      );
+    }
 
     const res = await fetch("/v1/public/join", {
       method: "POST",

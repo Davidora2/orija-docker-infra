@@ -1115,6 +1115,7 @@ def public_invite_info(code: str, db: Session = Depends(get_db)) -> dict[str, An
         "home_name": home.name,
         "label": invite.label,
         "vapid_public_key": VAPID_PUBLIC_KEY or None,
+        "public_base_url": (PUBLIC_BASE_URL or "").rstrip("/") or None,
     }
 
 
