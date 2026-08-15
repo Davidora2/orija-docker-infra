@@ -183,7 +183,7 @@ services:
       POSTGRES_USER: ${{POSTGRES_USER:-homepulse}}
       POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD}}
     volumes:
-      - homepulse-postgres:/var/lib/postgresql/data
+      - homepulse-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${{POSTGRES_USER:-homepulse}} -d ${{POSTGRES_DB:-homepulse}}"]
       interval: 5s
@@ -359,7 +359,7 @@ networks:
 
 volumes:
   homepulse-app:
-  homepulse-postgres:
+  homepulse-pgdata:
   homepulse-redis:
   homepulse-secrets:
 """

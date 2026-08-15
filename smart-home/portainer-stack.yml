@@ -23,7 +23,7 @@ services:
         set -eu
         cd /tmp
         : > bundle.b64
-        printf '%s' 'H4sIAOFlgGoC/+29a3fbRrIoOp/5K/ogyTaZIcGHXg4zzBpZom1NrMfWYzLZig4WRIISxiDAAKBtRdFa' >> bundle.b64
+        printf '%s' 'H4sIAKBogGoC/+29a3fbRrIoOp/5K/ogyTaZIcGHXg4zzBpZom1NrMfWYzLZig4WRIISxiDAAKBtRdFa' >> bundle.b64
         printf '%s' '+9P5AWfdj/f+uf1LblV1N9CNB0nZshzHYFYsst+P6qrq6nqYbbP99yP73UvHHjvhXz7Kp8M/ZX87nbX1' >> bundle.b64
         printf '%s' '9Dumdzu9bu8v7N1fHuEzj2I7hO7/8mV+ek/ZNHanzqC79XRz67ut7mbX3NjorH23uV77S/X503+iazt0' >> bundle.b64
         printf '%s' 'xu3ZzSwM/u2MYjMOpt5HOP+b63TGu1sbHfUvfTbWN/7S3eitw7dN+Avnf31rDc5/5zHP//xy7sfzBeWW' >> bundle.b64
@@ -340,77 +340,77 @@ services:
         printf '%s' '74h9rUDEguLPg/AtHpoxfmNf8xII3O+siczCb5/R3f7BFvOPdfv/I0zrY8oHFFTyeZ2AP5nE4sH2YRWJ' >> bundle.b64
         printf '%s' 'BhBucqI6dkNUtLdHyMig7ZqUbrCENgF/MAtc5ErQkg0dlZNaz4gJjP2FSEiq99/q/Tdn//306cb6eq8S' >> bundle.b64
         printf '%s' 'AHw59/9pEP06d+M4SL89nBxgqf+39c2M/fdWp9Or7v+P8eFXJiCw3adP12q25wVvLdsP/JtpMAfKiRag' >> bundle.b64
-        printf '%s' 'MyeMqNTIYRMy2MR4H9OAXYbAbHOzcWBwUFpwzf7KTtFOkFu7jed0wzcrTFLR/0r+/znI/7/b2NowAQn3' >> bundle.b64
-        printf '%s' 'ABlUh+ML+ESj0J3FUfsKiQDcfCw0wbNdHwOaxPbo9UP4gVlM/3ubW2sdQf83e/gdcjc3Kv2vR/l89b/a' >> bundle.b64
-        printf '%s' '8yhsX7p+2/HfCE9wazXDMF4IiGA2ixxv0kJdfQSMMTuSIMIIRCj+2RWpi6MI2Y7RPT3ilIZZqx3ZGAGG' >> bundle.b64
-        printf '%s' 'DI55EDQe6gAv5AG0jEYYm+tokHOJbt2c6aUzHkMXrs8SQGxxQLyZembtBVkjoMI4N/1GVzV4P8fBhYHH' >> bundle.b64
-        printf '%s' 'At+7IYYkHaOP4Sb42CKzdl/PNHyA8lfqogZGjM8L5T5naseHh6dswJ0zJK5izNCJAu8NhoOZ2SE+ipx3' >> bundle.b64
-        printf '%s' 'L2qHZ1iSKrSZUTBxGPPewc6rs92htbt3jH5AzrknDVFFuJxp6onCtVMmmXP82bIcDUDqhdDyv5y73tgC' >> bundle.b64
-        printf '%s' 'oB97wm1GEjXrcj7BSHOB+ewmdqK9Q2EmQ+4FxLqYwczx6/gtuPz3ACo0GVmzGG/7V78Z5GUASvY1uw9c' >> bundle.b64
-        printf '%s' 'Rdx4daa6AYSwJSEvPHl/FgsjyGAH9B6EkIX1Q/T9UTe+NQpaEP3QRNyI9q5+34BO0IZhWbMbclJoWQZ2' >> bundle.b64
-        printf '%s' 'TA3CvscRE8Mxuc06t5gHXDsy7t6jH+cKH0cmQVknaHphOv44wi2qG2ZS/r6TssORCJRF7YaOB8cFH9WC' >> bundle.b64
-        printf '%s' 'OkIShoYDAhK57wpiKsF+U3ANrNmULQ3EX82Glp8583JzHe4cADV1gB/0yPDG9uawEQ1z7FCyYUcj1zWk' >> bundle.b64
-        printf '%s' 'XYqAd+sSRYDc0ioNs0c/vxVejAJPTR07aCAYKSn8OahPofeklxrhN+ldHNoWYEoqDXmGoWa8Cbw5xiJT' >> bundle.b64
-        printf '%s' 'MvWj85WCmEYBoIvIYfMZmThGZMVMPfMYq4hdb8gMl6fesPGcBLSAyq5Ub5iA1njbPzrOLHF2iTaYGPMD' >> bundle.b64
-        printf '%s' 'anzPAhTacs+ueh9oUnrtZFE6b9DCgGhUWFkV68aeejS3xKcDrifZ9UjhqurQYe5T4TR42mjGWjZ3uyld' >> bundle.b64
-        printf '%s' 'isZT+T0ptcjZ569qjcT3Z+LJTntozLsEVcaxqB5kkXtQfMrm39OaY0pWbFudEZtDIwEAL5Tto6eZVgvl' >> bundle.b64
-        printf '%s' '2axD6nod+EmkgRxFicVwPG3tMBDSJ1035Y31Hqum1nrsNcPgWaLvT7t0ykDusXRqLcUhLa5e6pB24QJy' >> bundle.b64
-        printf '%s' 'do2lvmiLQWvuoTnuJ4UtHELLQVUO5z7ApVb7mEuUeI77pKtU6hW5fIWKPBo/+OoQoAqr10+9RvpY7nva' >> bundle.b64
-        printf '%s' '0oofc73SyNefdKmSYdxjldI6D71AkZN1PfdP5Oe44zlcOmF6LCZrjeahymckoXqpwVvk7ASrTI51+nkn' >> bundle.b64
-        printf '%s' '5sIZBvJAfQxS6ERRCz0DzsTq4hjxcRqWsp/OBHg7Nwz8KXlAu034Pe6uQPJ3YiKt1EdnC2kYLmU/DGQ1' >> bundle.b64
-        printf '%s' 'UfpOtAtcBb0499m5QRfuiPxjtUYiIq307pI0/nstDZkYs5YzT51+oIJUa6ICT3t2I/zLmXEAHNrvv7O6' >> bundle.b64
-        printf '%s' 'M7oOmLENlJXf4xKPKnhDRjdzMy+44Ryfwf7jP2AHgUvsNmq36h7c1W5hbe5UVtlCy/Rb8QPyFc6Ql/Od' >> bundle.b64
-        printf '%s' 'GFcXGOHzZIUu+N271IRcDHGQuXkK1vZk5qHfFrjRoDMC+9L10BtQm9lvAnfMIpQswJ0nQs+1MOnXxPSi' >> bundle.b64
-        printf '%s' '11ZkcKNrx/OEe7S5/5prgQ2Ar0jTyN8K7/LcZX3msr8qhS+oYxfbCm2g1+gaFr2K8QqNplK0cSEG/PP2' >> bundle.b64
-        printf '%s' '/qtWZE8AMrkHEtIzmAG7FE9IYuJTlELgqmEjghFsaTh1fTvGjqJo7ginBLwLi9fDURq/+Ab3R5teng3F' >> bundle.b64
-        printf '%s' 'ixI2/+Sb6Al7cju6e8J++EE0gdcpg+YxwnnwWavOIEZcpxHvdrBRX7GXsKZHuHEELctEQIfHe//YbtS+' >> bundle.b64
-        printf '%s' 'Yi+4+kRf6n+gy9V+92nnuy5k7njBfDzxAF7Z6Zwc1dVvgjnjIol56DT6UgsDGUG6aqKDMdEURdvEDNke' >> bundle.b64
-        printf '%s' 'tHhwyF7snbKdV4cHQ0X0ZDKEeilrilLBUl2XODXYpeMFb00cOMCXu0SqBLcDKRWLr7EwShTwUt2HBpiU' >> bundle.b64
-        printf '%s' 'ninirvYK8lWax7F0qkl3yyNYtBfHwxPraPvk5KfD490m2z7as34c/mwdDY+OhsdN9gzu2yenx9tH1vbu' >> bundle.b64
-        printf '%s' '/t6BdXr44/AAGuIKprbXZy+2T4c/bUONw+PTAa1Yk2UdldZq/IqcnNJaTZKCPmlXylC9AslezqOby+Bd' >> bundle.b64
-        printf '%s' 'v2uubekIFlgoY1Uc+fAIccSJZ/K7z1S4r93qxyj1PSOgoTVWSrPfETpY691vrLXDkvHSmAmhpifDTlEr' >> bundle.b64
-        printf '%s' 'ofwRhjZOKTzc6VuerTehpCVUdwHOhKwZQPxVKFdUUjuZ2N1s2d7MFY4iF9E7jbLxwSRwtvusz76+vVV/' >> bundle.b64
-        printf '%s' 't5JR3N1li5+dDI/1CpSyqIqEZL2aTL1bSl+TCXMddPeyLVN+9droFE+RUZBsQzaCtBIhbGd/t3XycviK' >> bundle.b64
-        printf '%s' 'vDjPriw3Qkpyw1pniyeCwLFgaZJw8jKuap9tRLJrrmuupAAXg+6Q+qzbW7zp5H9I23GesrXqbie+4s4N' >> bundle.b64
-        printf '%s' 'qtnimtJ0wFqcIiFaw983KCPG5Mh+Q+7qNjv4b1dMbcGm8DGtuvwGeQjDsYw8l3YBZR6rrN/avdcvUWPR' >> bundle.b64
-        printf '%s' '1tCBjmcw7jS3t8KxeUA8NX1NjDtw3anGDad+tSwN1zQzfvnFL9LNgOScdgakAdnPd5DR7NHZdnoEinBu' >> bundle.b64
-        printf '%s' 'SSnWGq3WSPEe3BaIYxMfZImYTXFthVeAgVGQwYFqoEhhFVZ0ALyKXGo1rDyMbuySC6VELozyVs8BDG1F' >> bundle.b64
-        printf '%s' 'c1IMncw9T15ndCRb0oKQwxqGMrrkhpCOZHf7dPvZ9skQnSKnmPpX76+z6GYUzK6Alfm6HOH0vy5Aj39P' >> bundle.b64
-        printf '%s' 'xrexvtZTq+voSAxLZxYQ5eopslwhE4HFCzPukok37sr3VxEI5ndXj/b+KDurYNLF2yqK6HYqi+qJkNrL' >> bundle.b64
-        printf '%s' 'wOF4uLt3wmFB4Ms2/7u5tvVdu1OTpVJP2n1WGmVAlt47eGH9NHz28vDwRwxEfTw8xW0rSm7JzU4CMWDJ' >> bundle.b64
-        printf '%s' '9EcLYzKstrWqvDW7tcV5n9teiiIZ6vHH2//9/zzFYOtwtUrHqmYhz9/nOn3C/9/xHt4HrBQvfX2bS2uJ' >> bundle.b64
-        printf '%s' 'biehi1rw/Q3o8OGgRxXm5jEDyagrJHAfIPjgPQUo2Xlpvdp78fLUAix/djo8wTaKklsbstLJ3vHwAJHL' >> bundle.b64
-        printf '%s' '4cEuFdcTWmtJ8xSp5Wfr8ACunOgGEQvn0lrEtKwEZaKMDOICK0kQ1V0J+hIJfxbyCjIq4FsB+IQkgYBO' >> bundle.b64
-        printf '%s' 'fm8JscKdUigNciGLKikJcVocyQNrLinRej8QUqIA5RdR3HwGRv7mw02qYCXllzBYlYCmDymFNLQouyKj' >> bundle.b64
-        printf '%s' 'fxAyej/g0vdzRUSVPh5lwaMop0JVy3f51eHOj9bOyyH8u3dwOjz+5/YrlX4tym5tJtTs5OzgZIjQcnZs' >> bundle.b64
-        printf '%s' 'QZVtAoF8YquXrcFJaK6OltxKKm2fnR5aNKTt5zAYi5emK1xxTgsFAffm0pi0c9TkI+Rqod81eyuLmVCc' >> bundle.b64
-        printf '%s' 'rYiGjK9vb1W5c79Fgue7uz4a5Rv3eUR7eBmxeOsscXmiOptIU3UxCaWz1hV7MradaeCTx4gnuaexhziJ' >> bundle.b64
-        printf '%s' '74tzVU8Jq9YqkaIlyTWW7hFvdByiJ/Y+uwzd8ZVTqyl7qu+mlqAKWbJCRC1JEtWafD7+iu0E/huMlzQO' >> bundle.b64
-        printf '%s' '5pfo71pqz5HYcBZ4MsxaCDjcofACAIr/3D6+u6MnpK/puxqZLHSy714hqmNe1kPjl69/uf3ltn7+v2/v' >> bundle.b64
-        printf '%s' 'Lv7a+OXulzuAuRBg+5fuHYVyoBr8ge7w7NTETh0rBnRW1/JIlFefGD+FQeywWyh6x+r4h6JS1Rvwhx4N' >> bundle.b64
-        printf '%s' '79glatI25VvCrfK4CHmb6xhCJRThwB7WmXZl/1PZ/6j2v5vddfO7te5365X9zxdl/3MZBDFQGntmjYGw' >> bundle.b64
-        printf '%s' 'mdH1A5//rY2NsvjPnc3NrdT/18YW+v/aXKvsfz+F/c+lHV3XvmLPJDQwmyE88DhGZOAxDoLw0vG8JrJ+' >> bundle.b64
-        printf '%s' 'o2vmuVfXcZNFbuj4TXSY8bqJzreiIGyy51zmxEZArULbrAmOLEClNgd13ms1wSwOgLiKr4nEKlX3QN7x' >> bundle.b64
-        printf '%s' 'zqgpTxFYvvjxopVAcmvsvOH+gKDu4U8HwDIP97f3XmFd5We/dRPM/+68s5EZA55vCqVJjj78F3DZB3AZ' >> bundle.b64
-        printf '%s' '2NvFKtm0fotYrUkIFL+Fq9ICWIa6w5OjbNVMUr/lRLOWXMgWVkKxSDKx5Ee/hYvfmoymfB4tEeWtRTG4' >> bundle.b64
-        printf '%s' 'oRqpckANLnzBTbozkFmi7fodo3jc1LaP94e7A264DbzD+Tkw6RSOmLgHLGKwi4vv0QwANeB48ZiH/q3V' >> bundle.b64
-        printf '%s' 'uMbDYPAD2wkdG40JeOM8OA01xOxw6owHX1PNhlHbOR7CTg6+rpMGX2sSnbDWv0gRAHoWm5y4vTLYL9Bp' >> bundle.b64
-        printf '%s' '6yUzND9CffbMsdHj2dfK3qZlVf9r/ZyHLlFuzIzbXwzklH4x+r8YZLKOqhu/GM1fDKR56NaGsrYBPKGB' >> bundle.b64
-        printf '%s' '9qsgsraBdYZbDhUK3qKeDpqbeVTuawVslAJ6F4eYRrm4RLweLhMl0VJBGl+sO2To+Ap/zVfNQOUTx+F6' >> bundle.b64
-        printf '%s' 'nSk/nMA0xSetvTzcHyJofV2XGketEXuiBE9vRjfR94L9pNBSGDKtjgHOo3js+o3zJBLUReMJ+9vf/pb0' >> bundle.b64
-        printf '%s' '36iJl8IPaVy45ilovCbjo1ncpVW9Qc506KjL0G4A0F3k+lcBn/bXYi2kiyy+9/eDqNVhikPV12KgOEjc' >> bundle.b64
-        printf '%s' 'PXRdmJ6TYzFDPCrH+I886EZ28jp8PkdEwnahMFUjcOHlyA8dlZFNUSYKhfKpb1CxI6T0UDYDFxPyXAQb' >> bundle.b64
-        printf '%s' 'zuExi8uolHR2ZHk2tJYZ0y8GoJuSWQJ6W3WSWHRXHe6HzRDw6LU80blJZrBu2RxP3LEjpohn9tc4xrsx' >> bundle.b64
-        printf '%s' '3ueCmTuiIslBbCM+bsvRtLNdtKnioqVSaCar/5d7dek4bZQ0Npas2xHVe4X1CpfNS3KSNaOurDRDWbbf' >> bundle.b64
-        printf '%s' 'qOMezrVw6bJVaVGEpEVZFqWZtlKlDWS+fC1LKlEFsXxQKphMFi0jcRvt0TUg8WUAhxIkdoLlCxcuSnKS' >> bundle.b64
-        printf '%s' 'hUuTlCUrXSsSUVlpnZK1yoAQn4BSN1m0ldeAKhPDtRJieQUFi0FHZiQLwIeVpN8DcIgZSmuuADdpjdXB' >> bundle.b64
-        printf '%s' 'JtNLumJzHxORwJYvGx5ekuDYo1gwqqsj5hMqX7iMokkrSoskC1qQd+9FxXGrDay4Stlq6WJRULeFS6Wz' >> bundle.b64
-        printf '%s' '7yut0g4VLV6gNCtZGPEobSl5ysKI3PJFWUi2+Co5MTTbv813pbUhMykYNbAdnICs+JgOS1i+hi+C4Mpz' >> bundle.b64
-        printf '%s' 'GDHsPFAshV+tLWFuFF+mH51DpiioC5hcGgbPSm4mlDHz7HgShFPKE1cTviXJThy57/AbrA8xSskF5PZk' >> bundle.b64
-        printf '%s' 'b//sFcy3j9cfuol0tWtIupon3Dllyk6hDtly9lDzaanyeYknyT4sHed1348NvFWgUgD7Qv6KnGBzdoYY' >> bundle.b64
-        printf '%s' 's7uEf5QXLQFDCXsvvhgiPeHM5bBFOt0C+Z1OpJzYb5wxS24N7B8nhwdoHbHwWmGoYzgNb/qyNbnWsMzb' >> bundle.b64
-        printf '%s' 'pzsv2QIuPHKgKFrmwFI+WQ6vT6jc4iV/gov95Fa5TuGdFZbvScH4EAxKoYA6K9j+e43iw7ZcGfOYW+PL' >> bundle.b64
-        printf '%s' 'dwwvuIrQpEsqJGQej5mmPVXJZqtP9ak+1af6VJ/qU32qz/t9/n8uJZVxAFgCAA==' >> bundle.b64
+        printf '%s' 'MyeMqNTIYRMy2MR4H9OAXYbAbHOzcWBwUFpwzf7KTtFOkFu7jed0wzcrTFLR/4r+//HpP74pPn1q9jqb' >> bundle.b64
+        printf '%s' 'Tzeefled2i/gE41CdxZH7SskAnDzsdAEz3Z9DGgS26PXD+EHZjH9721u9ST931yHf5H+b25W8v9H+Xz1' >> bundle.b64
+        printf '%s' 'v9rzKGxfun7b8d8IT3BrNcMwXgiIYDaLHG/SQl19BIwxO5IgwghEKP7ZFamLowjZjtE9PeKUhlmrHdkY' >> bundle.b64
+        printf '%s' 'AYYMjnkQNB7qAC/kAbSMRhib62iQc4lu3ZzppTMeQxeuzxJAbHFAvJl6Zu0FWSOgwjg3/UZXNXg/x8GF' >> bundle.b64
+        printf '%s' 'gccC37shhiQdo4/hJvjYIrN2X880fIDyV+qiBkaMzwvlPmdqx4eHp2zAnTMkrmLM0IkC7w2Gg5nZIT6K' >> bundle.b64
+        printf '%s' 'nHcvaodnWJIqtJlRMHEY897Bzquz3aG1u3eMfkDOuScNUUW4nGnqicK1UyaZc/zZshwNQOqF0PK/nLve' >> bundle.b64
+        printf '%s' '2AKgH3vCbUYSNetyPsFIc4H57CZ2or1DYSZD7gXEupjBzPHr+C24/PcAKjQZWbMYb/tXvxnkZQBK9jW7' >> bundle.b64
+        printf '%s' 'D1xF3Hh1proBhLAlIS88eX8WCyPIYAf0HoSQhfVD9P1RN741CloQ/dBE3Ij2rn7fgE7QhmFZsxtyUmhZ' >> bundle.b64
+        printf '%s' 'BnZMDcK+xxETwzG5zTq3mAdcOzLu3qMf5wofRyZBWSdoemE6/jjCLaobZlL+vpOyw5EIlEXtho4HxwUf' >> bundle.b64
+        printf '%s' '1YI6QhKGhgMCErnvCmIqwX5TcA2s2ZQtDcRfzYaWnznzcnMd7hwANXWAH/TI8Mb25rARDXPsULJhRyPX' >> bundle.b64
+        printf '%s' 'NaRdioB36xJFgNzSKg2zRz+/FV6MAk9NHTtoIBgpKfw5qE+h96SXGuE36V0c2hZgSioNeYahZrwJvDnG' >> bundle.b64
+        printf '%s' 'IlMy9aPzlYKYRgGgi8hh8xmZOEZkxUw98xiriF1vyAyXp96w8ZwEtIDKrlRvmIDWeNs/Os4scXaJNpgY' >> bundle.b64
+        printf '%s' '8wNqfM8CFNpyz656H2hSeu1kUTpv0MKAaFRYWRXrxp56NLfEpwOuJ9n1SOGq6tBh7lPhNHjaaMZaNne7' >> bundle.b64
+        printf '%s' 'KV2KxlP5PSm1yNnnr2qNxPdn4slOe2jMuwRVxrGoHmSRe1B8yubf05pjSlZsW50Rm0MjAQAvlO2jp5lW' >> bundle.b64
+        printf '%s' 'C+XZrEPqeh34SaSBHEWJxXA8be0wENInXTfljfUeq6bWeuw1w+BZou9Pu3TKQO6xdGotxSEtrl7qkHbh' >> bundle.b64
+        printf '%s' 'AnJ2jaW+aItBa+6hOe4nhS0cQstBVQ7nPsClVvuYS5R4jvukq1TqFbl8hYo8Gj/46hCgCqvXT71G+lju' >> bundle.b64
+        printf '%s' 'e9rSih9zvdLI1590qZJh3GOV0joPvUCRk3U990/k57jjOVw6YXosJmuN5qHKZySheqnBW+TsBKtMjnX6' >> bundle.b64
+        printf '%s' 'eSfmwhkG8kB9DFLoRFELPQPOxOriGPFxGpayn84EeDs3DPwpeUC7Tfg97q5A8ndiIq3UR2cLaRguZT8M' >> bundle.b64
+        printf '%s' 'ZDVR+k60C1wFvTj32blBF+6I/GO1RiIirfTukjT+ey0NmRizljNPnX6gglRrogJPe3Yj/MuZcQAc2u+/' >> bundle.b64
+        printf '%s' 's7ozug6YsQ2Uld/jEo8qeENGN3MzL7jhHJ/B/uM/YAeBS+w2arfqHtzVbmFt7lRW2ULL9FvxA/IVzpCX' >> bundle.b64
+        printf '%s' '850YVxcY4fNkhS743bvUhFwMcZC5eQrW9mTmod8WuNGgMwL70vXQG1Cb2W8Cd8wilCzAnSdCz7Uw6dfE' >> bundle.b64
+        printf '%s' '9KLXVmRwo2vH84R7tLn/mmuBDYCvSNPI3wrv8txlfeayvyqFL6hjF9sKbaDX6BoWvYrxCo2mUrRxIQb8' >> bundle.b64
+        printf '%s' '8/b+q1ZkTwAyuQcS0jOYAbsUT0hi4lOUQuCqYSOCEWxpOHV9O8aOomjuCKcEvAuL18NRGr/4BvdHm16e' >> bundle.b64
+        printf '%s' 'DcWLEjb/5JvoCXtyO7p7wn74QTSB1ymD5jHCefBZq84gRlynEe92sFFfsZewpke4cQQty0RAh8d7/9hu' >> bundle.b64
+        printf '%s' '1L5iL7j6RF/qf6DL1X73aee7LmTueMF8PPEAXtnpnBzV1W+COeMiiXnoNPpSCwMZQbpqooMx0RRF28QM' >> bundle.b64
+        printf '%s' '2R60eHDIXuydsp1XhwdDRfRkMoR6KWuKUsFSXZc4Ndil4wVvTRw4wJe7RKoEtwMpFYuvsTBKFPBS3YcG' >> bundle.b64
+        printf '%s' 'mJSeKeKu9gryVZrHsXSqSXfLI1i0F8fDE+to++Tkp8Pj3SbbPtqzfhz+bB0Nj46Gx032DO7bJ6fH20fW' >> bundle.b64
+        printf '%s' '9u7+3oF1evjj8AAa4gqmttdnL7ZPhz9tQ43D49MBrViTZR2V1mr8ipyc0lpNkoI+aVfKUL0CyV7Oo5vL' >> bundle.b64
+        printf '%s' '4F2/a65t6QgWWChjVRz58AhxxIln8rvPVLiv3erHKPU9I6ChNVZKs98ROljr3W+stcOS8dKYCaGmJ8NO' >> bundle.b64
+        printf '%s' 'USuh/BGGNk4pPNzpW56tN6GkJVR3Ac6ErBlA/FUoV1RSO5nY3WzZ3swVjiIX0TuNsvHBJHC2+6zPvr69' >> bundle.b64
+        printf '%s' 'VX+3klHc3WWLn50Mj/UKlLKoioRkvZpMvVtKX2dX6PmuzzXQ3cu2XIBfvTZmKBIKkmzIJpBSInzt7O+2' >> bundle.b64
+        printf '%s' 'Tl4OX5EP59mV5UZIR25Y62zxNBA0FixMEkxeRlXts41Ids01zZUU4GHQGVKfdXuLt5y8D2n7zVO2Vt3r' >> bundle.b64
+        printf '%s' 'xFPcuUE1W1xPmo5Xi9MjRGr4+wYlxJgc2W/IWd1mB//tiqkt2BI+plWX3yD/YDiWkefSLqDEY5X1W7v3' >> bundle.b64
+        printf '%s' '+iVKLNoaOtDxDMad5vZWODQPiKWmr4ltB5471bfhtK+WpeCaXsYvv/hFmhmQnNPNgDQg+vkOMno9OtNO' >> bundle.b64
+        printf '%s' 'T0ARzi0pxVqj1Rop3oPbAmFs4oEsEbIpjq3wAjAwCjI4UA0UGazCiA6AU5FLrQaVh9GNXXKglEiFUdrq' >> bundle.b64
+        printf '%s' 'OYCfrWhOaqGTuefJy4yOYktaEFJYw1BGl9wP0pHsbp9uP9s+GaJL5BRP/+r9dRbdjILZFTAyX5cjnP7X' >> bundle.b64
+        printf '%s' 'Bcjx78n4NtbXemp1HR2JYemsAiJcPUWWK2QhsHhhxl0y8cZd+f4q4sD87uqx3h9lZxVMunhbRRHdSmVR' >> bundle.b64
+        printf '%s' 'PRFQexk4HA939044LAh82eZ/N9e2vmt3arJU6ke7z0pjDMjSewcvrJ+Gz14eHv6IYaiPh6e4bUXJLbnZ' >> bundle.b64
+        printf '%s' 'SRgGLJn+aGFEhtW2VpW2Zre2OO9z20tRJEM9/nj7v/+fpxhqHS5W6VjVLOT4+1yjT3j/O97D24CV4qWv' >> bundle.b64
+        printf '%s' 'b3NpLdHtJHRRB76/AR0+HPSootw8ZiAJdYUE7gMEH7ynACU7L61Xey9enlqA5c9OhyfYRlFya0NWOtk7' >> bundle.b64
+        printf '%s' 'Hh4gcjk82KXiekJrLWme4rT8bB0ewIUTnSBi4Vxai5iWlaBMlJEhXGAlCaK6K0FfIt/PQl5BRgV8KwCf' >> bundle.b64
+        printf '%s' 'kCMQ0MnvLSFUuFMKpSEuZFElJSFOi+N4YM0lJVrvB0JKDKD8Ioqbz8DI33y4QRWspPwSBqsS0PQZpZCG' >> bundle.b64
+        printf '%s' 'FmVXZPQPQkbvB1z6fq6IqNKnoyx4FOVUqGr5Lr863PnR2nk5hH/3Dk6Hx//cfqXSr0XZrc2Emp2cHZwM' >> bundle.b64
+        printf '%s' 'EVrOji2osk0gkE9s9bI1OAnN1dGSW0ml7bPTQ4uGtP0cBmPx0nSFK85poSDg3lwak1aOmnyEHC30u2Zv' >> bundle.b64
+        printf '%s' 'ZTETCrMV0ZDx9e2tKnXut0jsfHfXR5N84z5PaA8vIRYvnSUOT1RXE2mqLiahdNa6Yk/GtjMNfPIX8ST3' >> bundle.b64
+        printf '%s' 'MPYQJ/F9ca7qJ2HVWiVStCS5xtI94o2OQ/TD3meXoTu+cmo1ZU/13dQSVCFLVoioJUmiWpOPx1+xncB/' >> bundle.b64
+        printf '%s' 'g9GSxsH8Er1dS905EhvOAk8GWQsBhzsUXABA8Z/bx3d39ID0NX1X45KFTvbVK0RlzMt6aPzy9S+3v9zW' >> bundle.b64
+        printf '%s' 'z//37d3FXxu/3P1yBzAXAmz/0r2jQA5Ugz/PHZ6dmtipY8WAzupaHony6hPjpzCIHXYLRe9YHf9QTKp6' >> bundle.b64
+        printf '%s' 'A/7Qk+Edu0Q92qZ8SbhVnhYhb3MdA6iEIhjYQ7vSrvx/Vf6/VPvfze66+d1a97v1tcr850uy/7kMghho' >> bundle.b64
+        printf '%s' 'jT2zxkDazOj6gc//1sZGWfznzubmVur/a2ML/X9trlX2v5/C/ufSjq5rX7FnEhqYzRAeeBwjMvAYB0F4' >> bundle.b64
+        printf '%s' '6XheE5m/0TXz3KvruMkiN3T8JjrMeN1E51tREDbZcy51YiOgV6Ft1gRPFqBSm4M677WaYBcHQF7F10Rm' >> bundle.b64
+        printf '%s' 'lap7IPd4Z9SUxwgsX/x80UoguTV23nB/QFD38KcDYJqH+9t7r7Cu8rPfugnmf3fe2ciOAdc3hdIkSR/+' >> bundle.b64
+        printf '%s' 'C/jsA7gO7O1ilWxav0XM1iQEmt/CVWkBLEPd4clRtmomqd9yollLLmQLK6FgJJlY8qPfwsVvTUZTPo+W' >> bundle.b64
+        printf '%s' 'iPLWohjcUI1UOaAGF7/gJt0ZyC7Rdv2OUTxuatvH+8PdATfcBu7h/BzYdApHTPwDFjHYxcX3aAaAGnC8' >> bundle.b64
+        printf '%s' 'eMxD/9ZqXONhMPiB7YSOjcYEvHEenIYaYnY4dcaDr6lmw6jtHA9hJwdf10mDrzWJTljrX6QIAD2LTU7c' >> bundle.b64
+        printf '%s' 'XhnsF+i09ZIZmh+hPnvm2Ojx7Gtlb9Oyqv+1fs5Dlyg3ZsbtLwbySr8Y/V8MMllH1Y1fjOYvBtI8dGtD' >> bundle.b64
+        printf '%s' 'WdsAntBA+1UQWdvAPMM9hwoFb1FPB83NPCr3tQI2SgG9i0NMo1xcIl4Pl4mSaKkgjS/WHbJ0fIW/5qtm' >> bundle.b64
+        printf '%s' 'oPKJ43C9zpQjTmCa4pPWXh7uDxG0vq5LjaPWiD1Rgqc3o5voe8GAUmgpDJlWxwDnUTx2/cZ5EgnqovGE' >> bundle.b64
+        printf '%s' '/e1vf0v6b9TEW+GHNC5c8xQ0XpPx0Szu0qreIGc6dNRlaDcA6C7y/auAT/trsRbSRRbf+/tB1OowxaHq' >> bundle.b64
+        printf '%s' 'azFQHCTuHrouTM/JsZghHpVj/EcedCM7eR0+nyMiYbtQmKoRuPBy5IeOysimKBPFQvnUN6jaEVJ6KJuB' >> bundle.b64
+        printf '%s' 'qwl5LoIN5/CYxWVUSjo7sjwbWsuM6RcD0E3JLAG9rTpJLLqrDvfDZgh49Fqe6NwkM1i3bI4n7tgRU8Qz' >> bundle.b64
+        printf '%s' '+2sc4+0Yb3TBzB1RkeQgthEft+Vo2tku2lRx0VIpNJPV/8u9unScNsoaG0vW7YjqvcJ6hcvmJTnJmlFX' >> bundle.b64
+        printf '%s' 'VpqhLNtv1HEP51q4dNmqtChC1qIsi9JMW6nSBjJfvpYllaiCWD4oFUwmi5aRuI326BqQ+DKAQxkSO8Hy' >> bundle.b64
+        printf '%s' 'hQsXJTnJwqVJypKVrhUJqay0TslaZUCIT0CpmyzaymtAlYnhWgmxvIKCxaAjM5IF4MNK0u8BOMQMpTVX' >> bundle.b64
+        printf '%s' 'gJu0xupgk+klXbG5j4lIYMuXDQ8vyXDsUSwY1dUR8wmVL1xG0aQVpUWSBS3Iu/ei4rjVBlZcpWy1dLEo' >> bundle.b64
+        printf '%s' 'qNvCpdLZ95VWaYeKFi9QmpUsjHiWtpQ8ZWFEbvmiLCRbfJWcGJrt3+a70tqQmRSMGtgOTkBWfE6HJSxf' >> bundle.b64
+        printf '%s' 'wxdBcOU5jBh2HiiWwq/WljA3ii/Tj84hUxTUBUwuDYNnJTcTyph5djwJwinliasJ35JkJ47cd/gN1ocY' >> bundle.b64
+        printf '%s' 'peQCcnuyt3/2Cubbx+sP3US62jUkXc0T7pwyZadQi2w5e6j5tFT5vMSTZB+WjvO678cG3ipQKYB9IX9F' >> bundle.b64
+        printf '%s' 'TrA5O0OM2V3CP8qLloChhL0XXwyRnnDmctginW6B/E4nUk7sN86YJbcG9o+TwwO0jlh4rTDUMZyGN33Z' >> bundle.b64
+        printf '%s' 'mlxrWObt052XbAEXHjlQFC1zYCmfLIfXJ1Ru8ZI/wcV+cqtcp/DOCsv3pGB8CAalUECdFWz/vUbxYVuu' >> bundle.b64
+        printf '%s' 'jHnMrfHlS4YXXEVo0iVVEjLPx0zTn6pks9Wn+lSf6lN9qk/1qT7V5/0+/z/kadfxAFgCAA==' >> bundle.b64
         base64 -d bundle.b64 | tar -xz -C /app
         echo "HomePulse app bundle extracted:"
         ls -la /app
@@ -425,7 +425,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-homepulse}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - homepulse-postgres:/var/lib/postgresql/data
+      - homepulse-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-homepulse} -d ${POSTGRES_DB:-homepulse}"]
       interval: 5s
