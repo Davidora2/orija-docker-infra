@@ -16,8 +16,12 @@ Use [`portainer-stack.yml`](./portainer-stack.yml) (image pull + git bootstrap, 
 | `POSTGRES_PASSWORD` | strong random |
 | `API_KEY_PEPPER` | strong random |
 | `BOOTSTRAP_ADMIN_TOKEN` | strong random |
+| `GIT_TOKEN` | **required** — GitHub PAT / fine-grained token with `contents:read` on this private repo |
 | `FCM_MODE` | `dry_run` (or `firebase`) |
 | `HOMEPULSE_REPO_REF` | `refs/heads/cursor/ring-google-notify-272e` |
+
+Without `GIT_TOKEN`, containers cannot clone the private repo and `home-registry` will stay unhealthy.
+
 
 4. Deploy. Gateway publishes **host port 18091**.
 
