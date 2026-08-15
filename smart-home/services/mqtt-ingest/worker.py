@@ -32,7 +32,7 @@ SUBSCRIBE_TOPICS = [
     t.strip()
     for t in os.getenv(
         "MQTT_SUBSCRIBE_TOPICS",
-        "homepulse/+/doorbell/+/state,zigbee2mqtt/+/+,frigate/+/events",
+        "homepulse/+/doorbell/+/state,zigbee2mqtt/+,frigate/+/events",
     ).split(",")
     if t.strip()
 ]

@@ -1,0 +1,205 @@
+# Standalone host-network stack for VMs where Docker bridge forwarding is broken.
+# Normal deploys should use docker-compose.yml (bridge networks).
+# Usage: docker compose -f docker-compose.host.yml up --build -d
+
+name: homepulse
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    network_mode: host
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-homepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homepulse}
+      POSTGRES_DB: ${POSTGRES_DB:-homepulse}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-homepulse} -d ${POSTGRES_DB:-homepulse} -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    network_mode: host
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1", "--bind", "127.0.0.1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    network_mode: host
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  home-registry:
+    build:
+      context: .
+      dockerfile: services/home-registry/Dockerfile
+    network_mode: host
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-homepulse}:${POSTGRES_PASSWORD:-homepulse}@127.0.0.1:5432/${POSTGRES_DB:-homepulse}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:-change-me-in-production}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-bootstrap-dev-token}
+    command: ["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8001"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 15s
+    restart: unless-stopped
+
+  ring-ingest:
+    build:
+      context: .
+      dockerfile: services/ring-ingest/Dockerfile
+    network_mode: host
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REGISTRY_URL: http://127.0.0.1:8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: ["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8002"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  mqtt-ingest:
+    build:
+      context: .
+      dockerfile: services/mqtt-ingest/Dockerfile
+    network_mode: host
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REGISTRY_URL: http://127.0.0.1:8001
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: 1883
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://127.0.0.1:5000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+
+  rules-engine:
+    build:
+      context: .
+      dockerfile: services/rules-engine/Dockerfile
+    network_mode: host
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REGISTRY_URL: http://127.0.0.1:8001
+      FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://127.0.0.1:5000}
+      PORCH_LIGHT_MINUTES: ${PORCH_LIGHT_MINUTES:-5}
+      SIREN_SECONDS: ${SIREN_SECONDS:-30}
+      NOTIFY_ON_MOTION: ${NOTIFY_ON_MOTION:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: rules-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notifier:
+    build:
+      context: .
+      dockerfile: services/notifier/Dockerfile
+    network_mode: host
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REGISTRY_URL: http://127.0.0.1:8001
+      FCM_MODE: ${FCM_MODE:-dry_run}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: notifier-1
+    volumes:
+      - ${FCM_CREDENTIALS_HOST_PATH:-./secrets}:/secrets:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mqtt-commander:
+    build:
+      context: .
+      dockerfile: services/mqtt-commander/Dockerfile
+    network_mode: host
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REGISTRY_URL: http://127.0.0.1:8001
+      MQTT_HOST: 127.0.0.1
+      MQTT_PORT: 1883
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HOSTNAME: mqtt-commander-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    network_mode: host
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379/0
+      REGISTRY_URL: http://127.0.0.1:8001
+      LOCK_CHECK_INTERVAL_SECONDS: 30
+      SUNSET_HOUR_LOCAL: 0
+      SUNSET_MINUTE_LOCAL: 0
+      AUTO_LOCK_AFTER_SUNSET: "true"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_healthy
+    restart: unless-stopped
+
+  gateway:
+    image: nginx:1.27-alpine
+    network_mode: host
+    volumes:
+      - ./config/nginx/nginx.host.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      home-registry:
+        condition: service_healthy
+      ring-ingest:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
