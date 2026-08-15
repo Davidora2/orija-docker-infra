@@ -748,6 +748,27 @@
     }
   });
 
+  async function ensureHomeApiKey() {
+    if (!state.home) return "";
+    let key = $("home-api-key").value.trim() || apiKeysMap()[state.home.home_id] || "";
+    if (key) {
+      $("home-api-key").value = key;
+      return key;
+    }
+    const created = await api(`/v1/homes/${state.home.home_id}/api-keys`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: "admin-console",
+        scopes: "ingest:write,notify:read,devices:read,security:write",
+      }),
+    });
+    key = created.api_key;
+    $("home-api-key").value = key;
+    $("home-api-key").type = "text";
+    saveApiKey(state.home.home_id, key);
+    return key;
+  }
+
   $("home-api-key").addEventListener("change", () => {
     if (state.home && $("home-api-key").value.trim()) {
       saveApiKey(state.home.home_id, $("home-api-key").value.trim());
@@ -775,20 +796,23 @@
 
   $("btn-simulate").addEventListener("click", async () => {
     if (!state.home) return;
-    const key = $("home-api-key").value.trim() || apiKeysMap()[state.home.home_id];
-    if (!key) {
-      note($("workspace-note"), "Paste or mint an API key first", true);
-      return;
-    }
-    const doorbell = (state.home.devices || []).find(
-      (d) => d.role === "doorbell" || d.device_type === "doorbell"
-    );
-    if (!doorbell?.external_id) {
-      note($("workspace-note"), "Add a doorbell device with an external ID first", true);
-      return;
-    }
+    const btn = $("btn-simulate");
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = "Sending…";
     try {
-      // ring-ingest simulate currently expects ring vendor resolution; for blink use vendor-aware simulate via same API with external id
+      const key = await ensureHomeApiKey();
+      const doorbells = (state.home.devices || []).filter(
+        (d) => d.role === "doorbell" || d.device_type === "doorbell"
+      );
+      const doorbell =
+        doorbells.find((d) => (d.vendor || "").toLowerCase() === "ring") ||
+        doorbells.find((d) => d.external_id) ||
+        null;
+      if (!doorbell?.external_id) {
+        note($("workspace-note"), "Add a doorbell device with an external ID first", true);
+        return;
+      }
       const result = await api("/v1/simulate/ring", {
         method: "POST",
         headers: { "X-API-Key": key },
@@ -798,9 +822,17 @@
           vendor: doorbell.vendor || "ring",
         }),
       });
-      note($("workspace-note"), `Simulated ding for ${doorbell.name}: ${JSON.stringify(result)}`, true);
+      note(
+        $("workspace-note"),
+        `Simulated ding for ${doorbell.name}. Phones with alerts enabled should notify now.`,
+        true
+      );
+      console.info("simulate ding", result);
     } catch (err) {
       note($("workspace-note"), err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
     }
   });
 
