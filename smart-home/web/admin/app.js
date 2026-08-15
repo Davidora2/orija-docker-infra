@@ -193,11 +193,42 @@
       </table>`;
   }
 
+  function renderMembers() {
+    const wrap = $("member-table");
+    const members = state.home?.members || [];
+    const datalist = $("member-emails");
+    if (datalist) {
+      datalist.innerHTML = members
+        .map((m) => `<option value="${escapeHtml(m.email || "")}"></option>`)
+        .join("");
+    }
+    if (!members.length) {
+      wrap.innerHTML = `<p class="muted">No members yet.</p>`;
+      return;
+    }
+    wrap.innerHTML = `
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Phones</th></tr></thead>
+        <tbody>
+          ${members
+            .map(
+              (m) => `<tr>
+              <td>${escapeHtml(m.display_name || "—")}</td>
+              <td>${escapeHtml(m.email || "—")}</td>
+              <td><span class="pill">${escapeHtml(m.role || "member")}</span></td>
+              <td>${escapeHtml(String(m.push_token_count ?? 0))}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+  }
+
   function renderTokens() {
     const wrap = $("token-table");
     const tokens = state.tokens || [];
     if (!tokens.length) {
-      wrap.innerHTML = `<p class="muted">No FCM tokens registered for this home.</p>`;
+      wrap.innerHTML = `<p class="muted">No phones registered yet. Add each Android/iPhone FCM token for members above.</p>`;
       return;
     }
     wrap.innerHTML = `
@@ -234,6 +265,7 @@
     $("armed").checked = Boolean(state.home.armed);
     $("home-api-key").value = apiKeysMap()[state.home.home_id] || "";
     renderDevices();
+    renderMembers();
     renderTokens();
   }
 
@@ -514,6 +546,34 @@
       setVisible($("device-form"), false);
       await selectHome(state.home.home_id);
       note($("workspace-note"), `Device “${body.name}” added`, true);
+    } catch (err) {
+      note($("workspace-note"), err.message, true);
+    }
+  });
+
+  $("btn-add-member").addEventListener("click", () => setVisible($("member-form"), true));
+  $("btn-cancel-member").addEventListener("click", () => setVisible($("member-form"), false));
+
+  $("member-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!state.home) return;
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    try {
+      const created = await api(`/v1/homes/${state.home.home_id}/members`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      e.target.reset();
+      setVisible($("member-form"), false);
+      await selectHome(state.home.home_id);
+      note(
+        $("workspace-note"),
+        created.already_member
+          ? `${created.email} was already a member`
+          : `Member ${created.email} added — register their phone token next`,
+        true
+      );
     } catch (err) {
       note($("workspace-note"), err.message, true);
     }

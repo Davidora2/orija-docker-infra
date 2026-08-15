@@ -172,6 +172,16 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
                 sound=sound,
             ),
         ),
+        apns=messaging.APNSConfig(
+            headers={"apns-priority": "10" if high else "5"},
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(
+                    alert=messaging.ApsAlert(title=notification.title, body=notification.body),
+                    sound=sound or "default",
+                    content_available=True,
+                )
+            ),
+        ),
     )
     message_id = messaging.send(message)
     return {"mode": "firebase", "message_id": message_id}

@@ -254,6 +254,12 @@ class UpdateDeviceStateRequest(BaseModel):
     state: str
 
 
+class AddMemberRequest(BaseModel):
+    email: EmailStr
+    display_name: str = "Home Member"
+    role: str = "member"
+
+
 class AdminSetupRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: EmailStr
@@ -783,6 +789,22 @@ def get_home(
     home = db.get(Home, home_id)
     if home is None:
         raise HTTPException(404, "Home not found")
+    members_out = []
+    for m in home.members:
+        user = db.get(User, m.user_id)
+        token_count = 0
+        if user is not None:
+            token_count = len([t for t in user.push_tokens if t.active])
+        members_out.append(
+            {
+                "member_id": m.id,
+                "user_id": m.user_id,
+                "role": m.role,
+                "email": user.email if user else None,
+                "display_name": user.display_name if user else None,
+                "push_token_count": token_count,
+            }
+        )
     return {
         "home_id": home.id,
         "name": home.name,
@@ -790,5 +812,81 @@ def get_home(
         "mode": home.mode,
         "armed": home.armed,
         "devices": [device_dict(d) for d in home.devices],
-        "member_count": len(home.members),
+        "members": members_out,
+        "member_count": len(members_out),
+    }
+
+
+@app.get("/v1/homes/{home_id}/members")
+def list_members(
+    home_id: str,
+    db: Session = Depends(get_db),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    home = db.get(Home, home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+    rows = []
+    for m in home.members:
+        user = db.get(User, m.user_id)
+        tokens = [t for t in (user.push_tokens if user else []) if t.active]
+        rows.append(
+            {
+                "member_id": m.id,
+                "user_id": m.user_id,
+                "role": m.role,
+                "email": user.email if user else None,
+                "display_name": user.display_name if user else None,
+                "push_tokens": [
+                    {
+                        "push_token_id": t.id,
+                        "platform": t.platform,
+                        "label": t.label,
+                        "token_preview": f"{t.token[:8]}…{t.token[-4:]}" if len(t.token) > 12 else "••••",
+                    }
+                    for t in tokens
+                ],
+            }
+        )
+    return {"home_id": home_id, "members": rows}
+
+
+@app.post("/v1/homes/{home_id}/members", status_code=201)
+def add_member(
+    home_id: str,
+    body: AddMemberRequest,
+    db: Session = Depends(get_db),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    home = db.get(Home, home_id)
+    if home is None:
+        raise HTTPException(404, "Home not found")
+    email = str(body.email).lower()
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        user = User(email=email, display_name=body.display_name)
+        db.add(user)
+        db.flush()
+    existing = db.scalar(
+        select(HomeMember).where(HomeMember.home_id == home_id, HomeMember.user_id == user.id)
+    )
+    if existing is not None:
+        return {
+            "member_id": existing.id,
+            "user_id": user.id,
+            "email": user.email,
+            "role": existing.role,
+            "already_member": True,
+        }
+    member = HomeMember(home_id=home_id, user_id=user.id, role=body.role or "member")
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return {
+        "member_id": member.id,
+        "user_id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "role": member.role,
+        "already_member": False,
     }

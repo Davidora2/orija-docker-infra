@@ -197,23 +197,49 @@
 
             <section class="block">
               <div class="block-head">
+                <h3>Home members</h3>
+                <button type="button" id="btn-add-member" class="btn small">Add member</button>
+              </div>
+              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">Everyone who should get phone alerts (Android or iPhone). Being in a Google Home household is separate — each phone still needs the HomePulse app token below.</p>
+              <div id="member-table" class="table-wrap"></div>
+              <form id="member-form" class="panel stack" hidden>
+                <h4>Add member</h4>
+                <label><span>Email</span><input name="email" type="email" required placeholder="family@example.com" /></label>
+                <label><span>Display name</span><input name="display_name" value="Home Member" /></label>
+                <label><span>Role</span>
+                  <select name="role">
+                    <option value="member">member</option>
+                    <option value="owner">owner</option>
+                  </select>
+                </label>
+                <div class="row">
+                  <button type="submit" class="btn primary">Save member</button>
+                  <button type="button" id="btn-cancel-member" class="btn ghost">Cancel</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="block">
+              <div class="block-head">
                 <h3>Phone push tokens</h3>
                 <button type="button" id="btn-add-token" class="btn small">Add token</button>
               </div>
+              <p class="muted" style="font-size:0.85rem;margin:0 0 0.6rem">One token per phone. Install <code>home.pulse</code>, copy that device’s FCM token, pick the member’s email + android/ios.</p>
               <div id="token-table" class="table-wrap"></div>
               <form id="token-form" class="panel stack" hidden>
-                <h4>Register FCM token</h4>
-                <label><span>Owner email</span><input name="user_email" type="email" required placeholder="must match home owner" /></label>
-                <label><span>FCM token</span><textarea name="token" rows="3" required placeholder="Device FCM registration token"></textarea></label>
+                <h4>Register phone for alerts</h4>
+                <label><span>Member email</span><input name="user_email" type="email" required list="member-emails" placeholder="must be a home member" /></label>
+                <datalist id="member-emails"></datalist>
+                <label><span>FCM token from phone</span><textarea name="token" rows="3" required placeholder="Paste FCM token from home.pulse app"></textarea></label>
                 <div class="row-2">
                   <label><span>Platform</span>
                     <select name="platform">
                       <option value="android">android</option>
-                      <option value="ios">ios</option>
+                      <option value="ios">ios (iPhone)</option>
                       <option value="web">web</option>
                     </select>
                   </label>
-                  <label><span>Label</span><input name="label" placeholder="Pixel" /></label>
+                  <label><span>Label</span><input name="label" placeholder="Sarah’s iPhone" /></label>
                 </div>
                 <div class="row">
                   <button type="submit" class="btn primary">Save token</button>
