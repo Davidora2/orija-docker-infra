@@ -2,6 +2,14 @@
 # Gateway: http://HOST:18091
 # Cloudflare Tunnel (you configure): public hostname → http://localhost:18091
 # Rules: no host 80/443; image pull + git bootstrap (no Docker build:)
+#
+# Required stack env:
+#   POSTGRES_PASSWORD, API_KEY_PEPPER, BOOTSTRAP_ADMIN_TOKEN
+#   GIT_TOKEN  — GitHub PAT with contents:read (repo is private)
+# Optional:
+#   GATEWAY_PORT=18091
+#   HOMEPULSE_REPO_REF=refs/heads/cursor/ring-google-notify-272e
+#   FCM_MODE=dry_run
 
 name: homepulse
 
@@ -70,7 +78,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/home-registry/requirements.txt
@@ -112,7 +121,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/ring-ingest/requirements.txt
@@ -158,7 +168,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/mqtt-ingest/requirements.txt
@@ -202,7 +213,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/rules-engine/requirements.txt
@@ -244,7 +256,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/notifier/requirements.txt
@@ -284,7 +297,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/mqtt-commander/requirements.txt
@@ -327,7 +341,8 @@ services:
         mkdir -p "$$ROOT" && cd "$$ROOT"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-        if [ -n "$${GIT_TOKEN:-}" ]; then AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"; else AUTH_URL="$$REPO_URL"; fi
+        if [ -z "$${GIT_TOKEN:-}" ]; then echo "ERROR: GIT_TOKEN is required to clone the private repo"; exit 1; fi
+        AUTH_URL="https://x-access-token:$${GIT_TOKEN}@github.com/Davidora2/orija-docker-infra.git"
         if [ ! -d "$$ROOT/repo/.git" ]; then rm -rf "$$ROOT/repo"; git clone --depth 1 --branch "$$BRANCH" "$$AUTH_URL" "$$ROOT/repo"; else cd "$$ROOT/repo"; git remote set-url origin "$$AUTH_URL"; git fetch --depth 1 origin "$$BRANCH" && git checkout -f "$$BRANCH" && git reset --hard "origin/$$BRANCH" || true; fi
         cd "$$ROOT/repo/smart-home"
         pip install --no-cache-dir -q ./shared -r ./services/scheduler/requirements.txt
