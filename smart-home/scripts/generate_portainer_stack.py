@@ -106,6 +106,13 @@ def service_block(
         cp /app/services/scheduler/worker.py /run/worker.py
         cd /run
         exec python worker.py"""
+    elif role == "ha-ingest":
+        run = """
+        cp -a /app/shared /tmp/shared
+        pip install --no-cache-dir -q /tmp/shared -r /app/services/ha-ingest/requirements.txt
+        cp /app/services/ha-ingest/worker.py /run/worker.py
+        cd /run
+        exec python worker.py"""
     else:
         raise ValueError(role)
 
@@ -364,6 +371,27 @@ services:
       SUNSET_MINUTE_LOCAL: ${SUNSET_MINUTE_LOCAL:-0}
       AUTO_LOCK_AFTER_SUNSET: ${AUTO_LOCK_AFTER_SUNSET:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}""",
+    )}
+{service_block(
+        "ha-ingest",
+        role="ha-ingest",
+        depends="""      seed:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      home-registry:
+        condition: service_started
+      homeassistant:
+        condition: service_started""",
+        extra_env="""      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: http://home-registry:8000
+      HA_BASE_URL: ${HA_BASE_URL:-http://homeassistant:8123}
+      HA_TOKEN: ${HA_TOKEN:-}
+      HA_TOKEN_FILE: /secrets/ha-token.txt
+      NOTIFY_ON_MOTION: ${NOTIFY_ON_MOTION:-false}
+      HA_INGEST_DEBOUNCE_SECONDS: ${HA_INGEST_DEBOUNCE_SECONDS:-8}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}""",
+        extra_volumes="      - homepulse-secrets:/secrets:ro",
     )}
   frigate:
     image: ghcr.io/blakeblackshear/frigate:stable

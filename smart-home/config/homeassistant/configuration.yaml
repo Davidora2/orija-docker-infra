@@ -26,7 +26,8 @@ mqtt:
   discovery: true
 
 # Blink: Settings → Devices & services → Add integration → Blink
-# After linking, camera.*blink* entities appear in HomePulse /app/
+# After linking, camera.* and event.*_ding entities appear.
+# HomePulse ha-ingest listens for event.*_ding and sends phone push alerts.
 
 logger:
   default: info

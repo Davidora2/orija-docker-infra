@@ -24,11 +24,13 @@ Device commands are executed by `mqtt-commander` over Mosquitto.
 | Armed contact open | `sensor.open` while `armed=true` | Critical push + siren |
 | Lock left unlocked after sunset | Scheduler finds `entry_lock` state `unlocked` after local sunset hour | Reminder push + optional `device.lock` |
 | Frigate person detection | MQTT `frigate/<camera>/events` with label `person` | Push with thumbnail + `clip_url` |
+| **Blink ding (physical)** | Home Assistant `event.*_ding` via `ha-ingest` | Push (`notify.push`) to subscribed phones |
 
 **Sources**
 - Zigbee2MQTT contact: `zigbee2mqtt/<friendly_name>` with `contact` field
 - Frigate MQTT events
 - Scheduler (`services/scheduler`) using home timezone + `SUNSET_HOUR_LOCAL`
+- **Home Assistant Blink** — `ha-ingest` websocket watches `event.front_door_ding` (and similar)
 
 ## Home security controls
 

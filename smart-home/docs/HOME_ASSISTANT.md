@@ -20,6 +20,19 @@ Home Assistant runs next to HomePulse so you can use **Blink** (and other HA dev
 - `/app/` shows a **Home Assistant** section: HA cameras (incl. Blink) + controllable entities
 - Camera stills come through HomePulse (`/v1/member/.../ha/cameras/...`) so phones never need the HA token
 
+## Blink doorbell → phone push
+
+HomePulse `ha-ingest` listens to Home Assistant over websocket.
+
+When you press the physical Blink button, HA updates `event.front_door_ding` (or similar).
+HomePulse turns that into a `doorbell.ring` and notifies every subscribed phone.
+
+Requirements:
+1. Blink integration added in HA
+2. `HA_TOKEN` set on the stack (already done if cameras show in `/app/`)
+3. A Blink doorbell device registered in HomePulse Admin (you already have **Front Door Blink**)
+4. Phones finished Join → Enable alerts → Allow
+
 ## Blink notes
 
 - Live continuous RTSP is still limited by Blink’s cloud design

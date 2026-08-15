@@ -217,6 +217,7 @@ def send_web_push(subscription_json: str, command: ActionCommand) -> dict[str, A
             vapid_private_key=VAPID_PRIVATE_KEY_FILE,
             vapid_claims={"sub": VAPID_SUBJECT},
         )
+        logger.info("Web push delivered (%s bytes payload)", len(payload))
         return {"mode": "web_push", "ok": True}
     except WebPushException as exc:
         raise RuntimeError(str(exc)) from exc
