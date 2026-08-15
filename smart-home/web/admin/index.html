@@ -142,12 +142,14 @@
                 <div class="row">
                   <button type="button" id="preset-blink" class="btn small">Preset: Blink doorbell</button>
                   <button type="button" id="preset-ring" class="btn small">Preset: Ring doorbell</button>
+                  <button type="button" id="preset-google-home" class="btn small">Preset: Google Home</button>
                 </div>
                 <label><span>Name</span><input name="name" required placeholder="Front Door Blink" /></label>
                 <div class="row-2">
                   <label><span>Type</span>
                     <select name="device_type">
                       <option value="doorbell">doorbell</option>
+                      <option value="speaker">speaker</option>
                       <option value="light">light</option>
                       <option value="siren">siren</option>
                       <option value="lock">lock</option>
@@ -158,6 +160,7 @@
                   <label><span>Role</span>
                     <select name="role">
                       <option value="doorbell">doorbell</option>
+                      <option value="google_home">google_home</option>
                       <option value="porch_light">porch_light</option>
                       <option value="siren">siren</option>
                       <option value="entry_lock">entry_lock</option>
@@ -171,19 +174,20 @@
                     <select name="vendor">
                       <option value="blink">blink</option>
                       <option value="ring">ring</option>
+                      <option value="google_cast">google_cast</option>
                       <option value="esphome">esphome</option>
                       <option value="zigbee2mqtt">zigbee2mqtt</option>
                       <option value="mqtt">mqtt</option>
                       <option value="frigate">frigate</option>
                     </select>
                   </label>
-                  <label><span>External ID (DSN)</span><input name="external_id" placeholder="G8T1-TW02-3422-0BEA" /></label>
+                  <label><span>External ID / Cast IP</span><input name="external_id" placeholder="192.168.2.50 or DSN" /></label>
                 </div>
                 <label><span>Location label</span><input name="location_label" placeholder="Front Door" /></label>
                 <label><span>MQTT command topic</span><input name="mqtt_command_topic" placeholder="optional" /></label>
                 <label><span>MQTT state topic</span><input name="mqtt_state_topic" placeholder="optional" /></label>
                 <label><span>Initial state</span><input name="state" placeholder="optional" /></label>
-                <p class="muted" style="font-size:0.82rem">Blink/Ring need an event bridge for live dings. After saving, use <strong>Simulate ding</strong> to test notifications.</p>
+                <p class="muted" style="font-size:0.82rem">Google Home: set <strong>External ID / Cast IP</strong> to the speaker’s LAN IP (e.g. 192.168.2.50). On ding, all google_home devices announce.</p>
                 <div class="row">
                   <button type="submit" class="btn primary">Save device</button>
                   <button type="button" id="btn-cancel-device" class="btn ghost">Cancel</button>

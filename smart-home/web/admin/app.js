@@ -469,11 +469,19 @@
       form.vendor.value = "ring";
       form.external_id.value = "";
       form.location_label.value = "Front Door";
+    } else if (preset === "google-home") {
+      form.name.value = "Google Home";
+      form.device_type.value = "speaker";
+      form.role.value = "google_home";
+      form.vendor.value = "google_cast";
+      form.external_id.value = "192.168.2.";
+      form.location_label.value = "Living Room";
     }
     setVisible(form, true);
   }
   $("preset-blink").addEventListener("click", () => fillDevicePreset("blink"));
   $("preset-ring").addEventListener("click", () => fillDevicePreset("ring"));
+  $("preset-google-home").addEventListener("click", () => fillDevicePreset("google-home"));
 
   $("device-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -488,6 +496,13 @@
         dsn: body.external_id,
         model: "BDM00200U",
         note: "Blink Video Doorbell — live ding events need a bridge (HA/MQTT/Alexa).",
+      };
+    }
+    if (body.vendor === "google_cast" || body.role === "google_home") {
+      body.meta = {
+        ...(body.meta || {}),
+        cast_ip: body.external_id,
+        note: "Cast announcements on doorbell ring",
       };
     }
     try {

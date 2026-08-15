@@ -70,7 +70,7 @@ class ActionCommand(BaseModel):
     action_id: str = Field(default_factory=lambda: str(uuid4()))
     home_id: str
     action_type: str
-    # notify.push | device.light_on | device.light_off | device.siren_on
+    # notify.push | notify.google_home | device.light_on | device.light_off | device.siren_on
     # device.lock | device.unlock | audit.log
     target: str | None = None  # device_id or mqtt topic hint
     event_id: str | None = None

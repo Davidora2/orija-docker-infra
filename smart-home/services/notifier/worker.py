@@ -1,4 +1,4 @@
-"""Notifier — delivers ActionCommands to Google phones via FCM (or console dry-run)."""
+"""Notifier — FCM phone push + Google Home / Nest Cast announcements."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,8 @@ REGISTRY_URL = os.getenv("REGISTRY_URL", "http://home-registry:8000")
 FCM_MODE = os.getenv("FCM_MODE", "dry_run")  # dry_run | firebase
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 FCM_PROJECT_ID = os.getenv("FCM_PROJECT_ID", "")
+GOOGLE_HOME_MODE = os.getenv("GOOGLE_HOME_MODE", "cast")  # cast | dry_run
+GOOGLE_HOME_LANG = os.getenv("GOOGLE_HOME_LANG", "en")
 
 RUNNING = True
 firebase_app = None
@@ -51,7 +54,7 @@ signal.signal(signal.SIGINT, handle_stop)
 def init_firebase() -> None:
     global firebase_app
     if FCM_MODE != "firebase":
-        logger.info("FCM_MODE=dry_run — notifications will be logged, not sent")
+        logger.info("FCM_MODE=dry_run — phone notifications will be logged, not sent")
         return
     if not GOOGLE_APPLICATION_CREDENTIALS or not Path(GOOGLE_APPLICATION_CREDENTIALS).exists():
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS file required when FCM_MODE=firebase")
@@ -70,6 +73,62 @@ async def fetch_targets(home_id: str) -> list[dict[str, Any]]:
         logger.warning("No push targets for home %s (%s)", home_id, resp.status_code)
         return []
     return resp.json().get("targets", [])
+
+
+async def fetch_google_homes(home_id: str) -> list[dict[str, Any]]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{REGISTRY_URL}/v1/internal/homes/{home_id}/context")
+    if resp.status_code != 200:
+        logger.warning("No home context for Google Home fan-out (%s)", resp.status_code)
+        return []
+    by_role = resp.json().get("devices_by_role") or {}
+    devices = []
+    for role in ("google_home", "announcer"):
+        devices.extend(by_role.get(role) or [])
+    # Also include any google_cast vendor devices
+    for d in resp.json().get("devices") or []:
+        if d.get("vendor") in {"google_cast", "google_home", "nest"} and d not in devices:
+            if d.get("role") in {None, "google_home", "announcer", "speaker"}:
+                devices.append(d)
+    # de-dupe by device_id
+    seen: set[str] = set()
+    unique = []
+    for d in devices:
+        did = d.get("device_id")
+        if did and did not in seen:
+            seen.add(did)
+            unique.append(d)
+    return unique
+
+
+def tts_url(text: str, lang: str = "en") -> str:
+    q = urllib.parse.quote(text[:180])
+    return (
+        "https://translate.google.com/translate_tts"
+        f"?ie=UTF-8&client=tw-ob&tl={urllib.parse.quote(lang)}&q={q}"
+    )
+
+
+def cast_ip_for_device(device: dict[str, Any]) -> str | None:
+    meta = device.get("meta") or {}
+    return (
+        meta.get("cast_ip")
+        or meta.get("ip")
+        or device.get("external_id")
+        or meta.get("host")
+    )
+
+
+def announce_on_cast(host: str, text: str) -> dict[str, Any]:
+    import pychromecast
+
+    url = tts_url(text, GOOGLE_HOME_LANG)
+    cast = pychromecast.Chromecast(host)
+    cast.wait(timeout=8)
+    mc = cast.media_controller
+    mc.play_media(url, "audio/mp3")
+    mc.block_until_active(timeout=8)
+    return {"mode": "cast", "host": host, "url": url, "cast_name": getattr(cast, "name", None)}
 
 
 async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
@@ -118,10 +177,7 @@ async def send_fcm(token: str, command: ActionCommand) -> dict[str, Any]:
     return {"mode": "firebase", "message_id": message_id}
 
 
-async def handle_command(redis_client: Any, command: ActionCommand) -> None:
-    if command.action_type != "notify.push":
-        logger.debug("Ignoring non-push action %s", command.action_type)
-        return
+async def handle_push(redis_client: Any, command: ActionCommand) -> None:
     if command.notification is None:
         logger.warning("notify.push missing notification payload: %s", command.action_id)
         return
@@ -157,16 +213,82 @@ async def handle_command(redis_client: Any, command: ActionCommand) -> None:
     )
 
 
+async def handle_google_home(redis_client: Any, command: ActionCommand) -> None:
+    text = ""
+    if command.notification:
+        text = command.notification.body or command.notification.title or ""
+    text = text or command.params.get("message") or "Someone is at the door"
+    devices = await fetch_google_homes(command.home_id)
+    if not devices:
+        logger.warning(
+            "No Google Home devices registered for home %s — add speakers with role google_home and cast IP",
+            command.home_id,
+        )
+        return
+
+    deliveries = []
+    for device in devices:
+        host = cast_ip_for_device(device)
+        name = device.get("name") or host or device.get("device_id")
+        if not host:
+            deliveries.append(
+                {"device_id": device.get("device_id"), "name": name, "ok": False, "error": "missing cast_ip"}
+            )
+            continue
+        if GOOGLE_HOME_MODE == "dry_run":
+            result = {"mode": "dry_run", "host": host, "text": text, "name": name}
+            logger.info("DRY-RUN Google Home → %s", json.dumps(result))
+            deliveries.append({"device_id": device.get("device_id"), "name": name, "ok": True, "result": result})
+            continue
+        try:
+            result = await asyncio.to_thread(announce_on_cast, host, text)
+            logger.info("Google Home announced on %s (%s)", name, host)
+            deliveries.append({"device_id": device.get("device_id"), "name": name, "ok": True, "result": result})
+        except Exception as exc:
+            logger.exception("Google Home announce failed for %s (%s)", name, host)
+            deliveries.append(
+                {"device_id": device.get("device_id"), "name": name, "ok": False, "error": str(exc)}
+            )
+
+    await publish(
+        redis_client,
+        AUDIT_STREAM,
+        {
+            "json": json.dumps(
+                {
+                    "action_id": command.action_id,
+                    "home_id": command.home_id,
+                    "event_id": command.event_id,
+                    "text": text,
+                    "deliveries": deliveries,
+                }
+            ),
+            "audit_type": "notify.google_home",
+        },
+    )
+
+
+async def handle_command(redis_client: Any, command: ActionCommand) -> None:
+    if command.action_type == "notify.push":
+        await handle_push(redis_client, command)
+        return
+    if command.action_type == "notify.google_home":
+        await handle_google_home(redis_client, command)
+        return
+    logger.debug("Ignoring action %s", command.action_type)
+
+
 async def process_loop() -> None:
     init_firebase()
     client = await get_redis()
     await ensure_consumer_group(client, ACTIONS_STREAM, GROUP)
     logger.info(
-        "Notifier listening on %s as %s/%s (mode=%s)",
+        "Notifier listening on %s as %s/%s (fcm=%s google_home=%s)",
         ACTIONS_STREAM,
         GROUP,
         CONSUMER,
         FCM_MODE,
+        GOOGLE_HOME_MODE,
     )
 
     while RUNNING:

@@ -8,6 +8,7 @@ Device commands are executed by `mqtt-commander` over Mosquitto.
 | Automation | Trigger | Actions |
 |------------|---------|---------|
 | Ring / ESP → Google phone | `doorbell.ring` | FCM push (`notify.push`) |
+| Ring / ESP → Google Home speakers | `doorbell.ring` | Cast TTS announce on all `google_home` devices (`notify.google_home`) |
 | Porch light for N minutes | `doorbell.ring` | `device.light_on` → MQTT → auto `device.light_off` after `PORCH_LIGHT_MINUTES` |
 | Frigate snapshot on ding | `doorbell.ring` | Attach `FRIGATE_BASE_URL/api/<camera>/latest.jpg` (or event snapshot) to the push |
 | Away louder alert + siren | `doorbell.ring` while `mode=away` | Critical FCM channel + `device.siren_on` for `SIREN_SECONDS` |
@@ -51,6 +52,7 @@ Register devices with a `role` so rules can find them:
 
 | Role | Used for |
 |------|----------|
+| `google_home` | Ding → speak on Nest / Google Home (Cast IP in external id) |
 | `doorbell` | Identity only (events come from ingest) |
 | `porch_light` | Ding → light on |
 | `siren` | Away ding / armed sensor |

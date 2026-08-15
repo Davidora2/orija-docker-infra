@@ -297,6 +297,8 @@ services:
       FCM_MODE: ${FCM_MODE:-dry_run}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_HOME_MODE: ${GOOGLE_HOME_MODE:-cast}
+      GOOGLE_HOME_LANG: ${GOOGLE_HOME_LANG:-en}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HOSTNAME: notifier-1""",
         extra_volumes="      - homepulse-secrets:/secrets:ro",

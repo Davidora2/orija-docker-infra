@@ -190,6 +190,21 @@ async def evaluate(event: DeviceEvent, ctx: dict[str, Any] | None = None) -> lis
                 rule_id="doorbell-ring-push",
             )
         )
+        # Announce on all Google Home / Nest speakers registered for this home
+        commands.append(
+            ActionCommand(
+                home_id=event.home_id,
+                action_type="notify.google_home",
+                event_id=event.event_id,
+                correlation_id=event.correlation_id,
+                notification=NotificationPayload(
+                    title=title,
+                    body=body,
+                    priority="max" if away else "high",
+                ),
+                params={"rule_id": "doorbell-ring-google-home", "home_mode": mode},
+            )
+        )
         if porch:
             commands.append(
                 device_cmd(

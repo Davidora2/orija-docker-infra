@@ -96,8 +96,12 @@ def test_doorbell_home_mode_push_light_and_snapshot():
     commands = rules.evaluate_with_context(event, BASE_CTX)
     types = [c.action_type for c in commands]
     assert "notify.push" in types
+    assert "notify.google_home" in types
     assert "device.light_on" in types
     assert "device.siren_on" not in types
+    gh = next(c for c in commands if c.action_type == "notify.google_home")
+    assert gh.notification is not None
+    assert "doorbell" in gh.notification.body.lower() or "rang" in gh.notification.body.lower()
     notify = next(c for c in commands if c.action_type == "notify.push")
     assert notify.notification is not None
     assert notify.notification.image_url == "http://frigate:5000/api/front/latest.jpg"
