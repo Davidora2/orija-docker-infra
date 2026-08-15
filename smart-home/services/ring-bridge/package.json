@@ -1,0 +1,15 @@
+{
+  "name": "@smart-home/ring-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@smart-home/shared": "file:../../packages/shared",
+    "mqtt": "^5.10.1",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "optionalDependencies": {
+    "ring-client-api": "^13.0.1"
+  }
+}

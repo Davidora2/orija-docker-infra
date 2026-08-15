@@ -1,0 +1,186 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-smarthome}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-smarthome}
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - mosquitto_data:/mosquitto/data
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -u $$MQTT_USERNAME -P $$MQTT_PASSWORD -W 3 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-smarthome}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smarthome}
+      POSTGRES_DB: ${POSTGRES_DB:-smarthome}
+    volumes:
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - postgres_data:/var/lib/postgresql/data
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-smarthome}"]
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-smarthome}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ring-bridge:
+    build:
+      context: .
+      dockerfile: services/ring-bridge/Dockerfile
+    restart: unless-stopped
+    environment:
+      HOME_ID: ${HOME_ID:-11111111-1111-1111-1111-111111111111}
+      DEVICE_ID: ${DEVICE_ID:-ring-doorbell-1}
+      DEVICE_NAME: ${DEVICE_NAME:-Front Door Ring}
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-smarthome}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-smarthome}
+      DATABASE_URL: postgres://${POSTGRES_USER:-smarthome}:${POSTGRES_PASSWORD:-smarthome}@postgres:5432/${POSTGRES_DB:-smarthome}
+      MOCK_MODE: ${MOCK_MODE:-true}
+      RING_REFRESH_TOKEN: ${RING_REFRESH_TOKEN:-}
+      PORT: "3101"
+    depends_on:
+      mosquitto:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  event-processor:
+    build:
+      context: .
+      dockerfile: services/event-processor/Dockerfile
+    restart: unless-stopped
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-smarthome}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-smarthome}
+      DATABASE_URL: postgres://${POSTGRES_USER:-smarthome}:${POSTGRES_PASSWORD:-smarthome}@postgres:5432/${POSTGRES_DB:-smarthome}
+      PORT: "3102"
+    depends_on:
+      mosquitto:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3102/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  notification-gateway:
+    build:
+      context: .
+      dockerfile: services/notification-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-smarthome}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-smarthome}
+      DATABASE_URL: postgres://${POSTGRES_USER:-smarthome}:${POSTGRES_PASSWORD:-smarthome}@postgres:5432/${POSTGRES_DB:-smarthome}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_DEVICE_TOKEN: ${FCM_DEVICE_TOKEN:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_HOME_WEBHOOK_URL: ${GOOGLE_HOME_WEBHOOK_URL:-}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+      PORT: "3103"
+    volumes:
+      - ${FCM_CREDENTIALS_HOST_PATH:-./secrets}:/secrets:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3103/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-smarthome}:${POSTGRES_PASSWORD:-smarthome}@postgres:5432/${POSTGRES_DB:-smarthome}
+      DEMO_API_KEY: ${DEMO_API_KEY:-sh_demo_key_change_me}
+      HOME_ID: ${HOME_ID:-11111111-1111-1111-1111-111111111111}
+      RING_BRIDGE_URL: http://ring-bridge:3101
+      PORT: "3100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ring-bridge:
+        condition: service_started
+    ports:
+      - "${API_PORT:-3100}:3100"
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: services/dashboard/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_GATEWAY_URL: http://api-gateway:3100
+      DEMO_API_KEY: ${DEMO_API_KEY:-sh_demo_key_change_me}
+      PORT: "8080"
+    depends_on:
+      api-gateway:
+        condition: service_started
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
+    networks: [smart-home]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  smart-home:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mosquitto_data:

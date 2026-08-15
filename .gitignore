@@ -8,3 +8,8 @@ dist
 .DS_Store
 apps/web/prisma/dev.db
 apps/web/prisma/dev.db-journal
+smart-home/**/node_modules
+smart-home/**/package-lock.json
+smart-home/.env
+smart-home/secrets/*
+!smart-home/secrets/.gitignore

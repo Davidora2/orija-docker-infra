@@ -46,3 +46,17 @@ Seeded campaign: **Spring Glow Serum Launch** (hybrid paid + affiliate).
 - Brand analytics dashboard
 
 See [PLAN.md](./PLAN.md) for full product roadmap.
+
+---
+
+## Haven Smart Home (`smart-home/`)
+
+Dockerized Ring doorbell → Google phone notifications (FCM), built as a scalable event-driven smart-home core.
+
+```bash
+cd smart-home
+cp .env.example .env
+docker compose up --build -d
+```
+
+Open [http://localhost:8080](http://localhost:8080). See [`smart-home/README.md`](./smart-home/README.md).
