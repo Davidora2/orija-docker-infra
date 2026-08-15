@@ -50,15 +50,10 @@ def service_block(
     extra_env: str = "",
     extra_volumes: str = "",
 ) -> str:
+    # Portainer compose up fails if healthchecks stay non-healthy during long pip installs.
+    # Keep services restarting; omit Docker healthchecks in the Portainer stack.
+    _ = health
     health_yaml = ""
-    if health:
-        health_yaml = """
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 120s"""
 
     if role == "registry":
         run = """
@@ -113,10 +108,6 @@ def service_block(
         raise ValueError(role)
 
     install_curl = ""
-    if health:
-        install_curl = """
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl >/dev/null"""
 
     return f"""
   {name}:
@@ -227,7 +218,7 @@ services:
 {service_block(
         "home-registry",
         role="registry",
-        health=True,
+        health=False,
         depends="""      seed:
         condition: service_completed_successfully
       postgres:
@@ -239,13 +230,13 @@ services:
 {service_block(
         "ring-ingest",
         role="ring",
-        health=True,
+        health=False,
         depends="""      seed:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
       home-registry:
-        condition: service_healthy""",
+        condition: service_started""",
         extra_env="""      REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       RING_WEBHOOK_SECRET: ${RING_WEBHOOK_SECRET:-}
@@ -259,7 +250,7 @@ services:
       redis:
         condition: service_healthy
       home-registry:
-        condition: service_healthy
+        condition: service_started
       mosquitto:
         condition: service_started""",
         extra_env="""      REDIS_URL: redis://redis:6379/0
@@ -277,7 +268,7 @@ services:
       redis:
         condition: service_healthy
       home-registry:
-        condition: service_healthy""",
+        condition: service_started""",
         extra_env="""      REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       FRIGATE_BASE_URL: ${FRIGATE_BASE_URL:-http://frigate:5000}
@@ -295,7 +286,7 @@ services:
       redis:
         condition: service_healthy
       home-registry:
-        condition: service_healthy""",
+        condition: service_started""",
         extra_env="""      REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       FCM_MODE: ${FCM_MODE:-dry_run}
@@ -313,7 +304,7 @@ services:
       redis:
         condition: service_healthy
       home-registry:
-        condition: service_healthy
+        condition: service_started
       mosquitto:
         condition: service_started""",
         extra_env="""      REDIS_URL: redis://redis:6379/0
@@ -331,7 +322,7 @@ services:
       redis:
         condition: service_healthy
       home-registry:
-        condition: service_healthy""",
+        condition: service_started""",
         extra_env="""      REDIS_URL: redis://redis:6379/0
       REGISTRY_URL: http://home-registry:8000
       LOCK_CHECK_INTERVAL_SECONDS: ${LOCK_CHECK_INTERVAL_SECONDS:-60}
@@ -357,9 +348,9 @@ services:
       seed:
         condition: service_completed_successfully
       home-registry:
-        condition: service_healthy
+        condition: service_started
       ring-ingest:
-        condition: service_healthy
+        condition: service_started
     networks: [homepulse]
 
 networks:
