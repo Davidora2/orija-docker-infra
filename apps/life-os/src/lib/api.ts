@@ -848,6 +848,12 @@ export type SavingGoal = {
   currentCents: number;
   monthlyContributionCents?: number | null;
   contributionDay?: number | null;
+  targetDate?: string | null;
+  gapNotes?: string;
+  monthsRemaining?: number | null;
+  remainingCents?: number;
+  requiredMonthlyCents?: number | null;
+  shortfallCents?: number;
 };
 
 export type InvestmentAccount = {
@@ -950,6 +956,26 @@ function mapSaving(raw: Record<string, unknown>): SavingGoal {
     contributionDay: (raw.contributionDay ?? raw.contribution_day ?? null) as
       | number
       | null,
+    targetDate: raw.targetDate ?? raw.target_date
+      ? String(raw.targetDate ?? raw.target_date).slice(0, 10)
+      : null,
+    gapNotes: String(raw.gapNotes ?? raw.gap_notes ?? ""),
+    monthsRemaining:
+      raw.monthsRemaining != null || raw.months_remaining != null
+        ? Number(raw.monthsRemaining ?? raw.months_remaining)
+        : null,
+    remainingCents:
+      raw.remainingCents != null || raw.remaining_cents != null
+        ? Number(raw.remainingCents ?? raw.remaining_cents)
+        : undefined,
+    requiredMonthlyCents:
+      raw.requiredMonthlyCents != null || raw.required_monthly_cents != null
+        ? Number(raw.requiredMonthlyCents ?? raw.required_monthly_cents)
+        : null,
+    shortfallCents:
+      raw.shortfallCents != null || raw.shortfall_cents != null
+        ? Number(raw.shortfallCents ?? raw.shortfall_cents)
+        : 0,
   };
 }
 
@@ -1095,6 +1121,9 @@ export async function createSavingGoal(input: {
   visibility?: "PRIVATE" | "SHARED";
   monthlyContributionCents?: number | null;
   contributionDay?: number | null;
+  targetDate?: string | null;
+  gapNotes?: string;
+  applyTimelineToMonthly?: boolean;
 }): Promise<SavingGoal> {
   const raw = await request<Record<string, unknown>>("/v1/saving-goals", {
     method: "POST",
@@ -1113,6 +1142,9 @@ export async function updateSavingGoal(
     currentCents: number;
     monthlyContributionCents: number | null;
     contributionDay: number | null;
+    targetDate: string | null;
+    gapNotes: string;
+    applyTimelineToMonthly: boolean;
   }>,
 ): Promise<SavingGoal> {
   const raw = await request<Record<string, unknown>>(`/v1/saving-goals/${id}`, {
@@ -1214,4 +1246,89 @@ export async function getDraftImpact(budgetId: string): Promise<DraftImpact> {
     drafts: (raw.drafts ?? []).map(mapDraft),
     impact: raw.impact as DraftImpact["impact"],
   };
+}
+
+export type CashflowSeriesPoint = {
+  year: number;
+  month: number;
+  label: string;
+  incomeCents: number;
+  expenseCents: number;
+  dailyExpenseCents: number;
+  recurringCents: number;
+  savingContributionCents: number;
+  debtPaymentCents: number;
+  netCents: number;
+};
+
+export type CashflowSeries = {
+  budgetId: string;
+  currency: string;
+  months: number;
+  series: CashflowSeriesPoint[];
+};
+
+export async function getCashflowSeries(
+  budgetId: string,
+  months = 6,
+): Promise<CashflowSeries> {
+  return request<CashflowSeries>(
+    `/v1/budgets/${budgetId}/cashflow-series?months=${months}`,
+  );
+}
+
+export type WealthGapSummary = {
+  totalShortfallCents: number;
+  goals: {
+    savingGoalId: string;
+    name: string;
+    requiredMonthlyCents: number | null;
+    monthlyContributionCents: number | null;
+    shortfallCents: number;
+    monthsRemaining: number | null;
+    targetDate: string | null;
+    gapNotes: string;
+  }[];
+};
+
+export type WealthGapIdea = {
+  id: string;
+  body: string;
+  relatedSavingGoalId: string | null;
+};
+
+export async function getWealthGapSummary(): Promise<WealthGapSummary> {
+  return request<WealthGapSummary>("/v1/wealth/gap-summary");
+}
+
+export async function listWealthGapIdeas(): Promise<WealthGapIdea[]> {
+  const rows = await request<Record<string, unknown>[]>("/v1/wealth/gap-ideas");
+  return rows.map((row) => ({
+    id: String(row.id),
+    body: String(row.body),
+    relatedSavingGoalId: (row.relatedSavingGoalId ??
+      row.related_saving_goal_id ??
+      null) as string | null,
+  }));
+}
+
+export async function createWealthGapIdea(input: {
+  body: string;
+  relatedSavingGoalId?: string | null;
+}): Promise<WealthGapIdea> {
+  const raw = await request<Record<string, unknown>>("/v1/wealth/gap-ideas", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return {
+    id: String(raw.id),
+    body: String(raw.body),
+    relatedSavingGoalId: (raw.relatedSavingGoalId ??
+      raw.related_saving_goal_id ??
+      null) as string | null,
+  };
+}
+
+export async function deleteWealthGapIdea(id: string): Promise<void> {
+  await request(`/v1/wealth/gap-ideas/${id}`, { method: "DELETE" });
 }

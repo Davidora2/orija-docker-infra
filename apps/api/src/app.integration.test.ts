@@ -711,6 +711,54 @@ suite('account and couple household API', () => {
     );
     expect(savingEdit.json<{ currentCents: number }>().currentCents).toBe(150_000);
 
+    const timeline = await app.inject({
+      method: 'PATCH',
+      url: `/v1/saving-goals/${savingId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        targetDate: '2027-08-01',
+        applyTimelineToMonthly: true,
+      },
+    });
+    expect(timeline.statusCode).toBe(200);
+    const timed = timeline.json<{
+      requiredMonthlyCents: number;
+      monthlyContributionCents: number;
+      shortfallCents: number;
+      monthsRemaining: number;
+    }>();
+    expect(timed.monthsRemaining).toBeGreaterThan(0);
+    expect(timed.requiredMonthlyCents).toBeGreaterThan(0);
+    expect(timed.monthlyContributionCents).toBe(timed.requiredMonthlyCents);
+    expect(timed.shortfallCents).toBe(0);
+
+    const underfunded = await app.inject({
+      method: 'PATCH',
+      url: `/v1/saving-goals/${savingId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        monthlyContributionCents: Math.max(
+          1,
+          Math.floor(timed.requiredMonthlyCents / 2),
+        ),
+        contributionDay: 5,
+      },
+    });
+    expect(underfunded.statusCode).toBe(200);
+    expect(
+      underfunded.json<{ shortfallCents: number }>().shortfallCents,
+    ).toBeGreaterThan(0);
+
+    const gap = await app.inject({
+      method: 'GET',
+      url: '/v1/wealth/gap-summary',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(gap.statusCode).toBe(200);
+    expect(
+      gap.json<{ totalShortfallCents: number }>().totalShortfallCents,
+    ).toBeGreaterThan(0);
+
     const investment = await app.inject({
       method: 'POST',
       url: '/v1/investments',
@@ -766,6 +814,14 @@ suite('account and couple household API', () => {
     expect(budget.statusCode).toBe(201);
     const budgetId = budget.json<{ id: string; currency: string }>().id;
     expect(budget.json<{ currency: string }>().currency).toBe('CAD');
+
+    const series = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budgetId}/cashflow-series?months=3`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(series.statusCode).toBe(200);
+    expect(series.json<{ series: unknown[] }>().series).toHaveLength(3);
 
     await app.inject({
       method: 'PATCH',

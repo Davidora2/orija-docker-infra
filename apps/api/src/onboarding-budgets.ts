@@ -1197,6 +1197,142 @@ export function registerOnboardingAndBudgetRoutes(
     },
   );
 
+  app.get(
+    '/v1/budgets/:id/cashflow-series',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertBudgetAccess(sql, userId, id);
+      const query = z
+        .object({
+          months: z.coerce.number().int().min(1).max(24).default(6),
+        })
+        .parse(request.query);
+
+      const [budget] = await sql<{ currency: string }[]>`
+        SELECT currency FROM budgets WHERE id = ${id}
+      `;
+      if (!budget) {
+        throw new ApiError(404, 'budget_not_found', 'Budget not found.');
+      }
+
+      const recurring = await listRecurring(sql, id);
+      const savingGoals = await sql<
+        {
+          monthlyContributionCents: number;
+          contributionDay: number;
+        }[]
+      >`
+        SELECT monthly_contribution_cents, contribution_day
+        FROM saving_goals
+        WHERE monthly_contribution_cents IS NOT NULL
+          AND contribution_day IS NOT NULL
+          AND (
+            owner_user_id = ${userId}
+            OR (
+              visibility = 'SHARED'
+              AND EXISTS (
+                SELECT 1 FROM household_members hm
+                WHERE hm.household_id = saving_goals.household_id
+                  AND hm.user_id = ${userId}
+              )
+            )
+          )
+      `;
+      const debts = await sql<
+        { monthlyPaymentCents: number; paymentDay: number }[]
+      >`
+        SELECT monthly_payment_cents, payment_day
+        FROM debts
+        WHERE monthly_payment_cents IS NOT NULL
+          AND payment_day IS NOT NULL
+          AND (
+            owner_user_id = ${userId}
+            OR (
+              visibility = 'SHARED'
+              AND EXISTS (
+                SELECT 1 FROM household_members hm
+                WHERE hm.household_id = debts.household_id
+                  AND hm.user_id = ${userId}
+              )
+            )
+          )
+      `;
+
+      const now = new Date();
+      const series = [];
+      for (let offset = query.months - 1; offset >= 0; offset -= 1) {
+        const cursor = new Date(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1),
+        );
+        const year = cursor.getUTCFullYear();
+        const month = cursor.getUTCMonth() + 1;
+        const start = `${year}-${String(month).padStart(2, '0')}-01`;
+        const endDay = daysInMonth(year, month);
+        const end = `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+        const [entryTotals] = await sql<
+          {
+            incomeCents: string | number;
+            expenseCents: string | number;
+          }[]
+        >`
+          SELECT
+            COALESCE(SUM(CASE WHEN kind = 'INCOME' THEN amount_cents ELSE 0 END), 0)
+              AS income_cents,
+            COALESCE(SUM(CASE WHEN kind = 'EXPENSE' THEN amount_cents ELSE 0 END), 0)
+              AS expense_cents
+          FROM budget_entries
+          WHERE budget_id = ${id}
+            AND occurred_on >= ${start}::date
+            AND occurred_on <= ${end}::date
+        `;
+
+        const recurringCents = projectRecurringForMonth(
+          year,
+          month,
+          recurring,
+        ).reduce((sum, item) => sum + item.amountCents, 0);
+        const dailyExpenseCents = Number(entryTotals?.expenseCents ?? 0);
+        const incomeCents = Number(entryTotals?.incomeCents ?? 0);
+        const savingContributionCents = savingGoals.reduce(
+          (sum, goal) => sum + Number(goal.monthlyContributionCents),
+          0,
+        );
+        const debtPaymentCents = debts.reduce(
+          (sum, debt) => sum + Number(debt.monthlyPaymentCents),
+          0,
+        );
+        const expenseCents =
+          dailyExpenseCents +
+          recurringCents +
+          savingContributionCents +
+          debtPaymentCents;
+
+        series.push({
+          year,
+          month,
+          label: `${year}-${String(month).padStart(2, '0')}`,
+          incomeCents,
+          expenseCents,
+          dailyExpenseCents,
+          recurringCents,
+          savingContributionCents,
+          debtPaymentCents,
+          netCents: incomeCents - expenseCents,
+        });
+      }
+
+      return {
+        budgetId: id,
+        currency: budget.currency,
+        months: query.months,
+        series,
+      };
+    },
+  );
+
   app.post(
     '/v1/budgets/:id/payments',
     { preHandler: auth.authenticate },

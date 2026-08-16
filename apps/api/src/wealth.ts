@@ -2,6 +2,10 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import type { Database } from './db.js';
 import { ApiError } from './errors.js';
+import {
+  contributionShortfallCents,
+  requiredMonthlyContributionCents,
+} from './saving-timeline.js';
 
 type AuthUser = { id: string; email: string };
 
@@ -97,6 +101,62 @@ type WealthHelpers = {
     preferredCurrency?: string;
   }>;
 };
+
+function asDateOnly(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = String(value);
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  return match?.[1] ?? null;
+}
+
+function enrichSavingGoal(row: Record<string, unknown>) {
+  const targetCents = Number(row.targetCents ?? row.target_cents ?? 0);
+  const currentCents = Number(row.currentCents ?? row.current_cents ?? 0);
+  const targetDate = asDateOnly(row.targetDate ?? row.target_date ?? null);
+  const monthlyContributionCents = (row.monthlyContributionCents ??
+    row.monthly_contribution_cents ??
+    null) as number | null;
+  const timeline = requiredMonthlyContributionCents({
+    targetCents,
+    currentCents,
+    targetDate,
+  });
+  const shortfallCents = contributionShortfallCents({
+    requiredMonthlyCents: timeline.requiredMonthlyCents,
+    monthlyContributionCents,
+  });
+  return {
+    ...row,
+    targetDate,
+    gapNotes: String(row.gapNotes ?? row.gap_notes ?? ''),
+    monthsRemaining: timeline.monthsRemaining,
+    remainingCents: timeline.remainingCents,
+    requiredMonthlyCents: timeline.requiredMonthlyCents,
+    shortfallCents,
+  };
+}
+
+async function listSavingGoalsForUser(sql: Database, userId: string) {
+  const rows = await sql`
+    SELECT *
+    FROM saving_goals
+    WHERE
+      owner_user_id = ${userId}
+      OR (
+        visibility = 'SHARED'
+        AND EXISTS (
+          SELECT 1 FROM household_members hm
+          WHERE hm.household_id = saving_goals.household_id
+            AND hm.user_id = ${userId}
+        )
+      )
+    ORDER BY sort_order ASC, updated_at DESC
+  `;
+  return rows.map((row) => enrichSavingGoal(row as Record<string, unknown>));
+}
 
 async function resolveHousehold(
   sql: Database,
@@ -230,21 +290,7 @@ export function registerWealthRoutes(
 
   app.get('/v1/saving-goals', { preHandler: auth.authenticate }, async (request) => {
     const userId = (request as { authUser: AuthUser }).authUser.id;
-    return sql`
-      SELECT *
-      FROM saving_goals
-      WHERE
-        owner_user_id = ${userId}
-        OR (
-          visibility = 'SHARED'
-          AND EXISTS (
-            SELECT 1 FROM household_members hm
-            WHERE hm.household_id = saving_goals.household_id
-              AND hm.user_id = ${userId}
-          )
-        )
-      ORDER BY sort_order ASC, updated_at DESC
-    `;
+    return listSavingGoalsForUser(sql, userId);
   });
 
   app.post('/v1/saving-goals', { preHandler: auth.authenticate }, async (request, reply) => {
@@ -259,6 +305,13 @@ export function registerWealthRoutes(
         visibility: visibilitySchema.default('PRIVATE'),
         monthlyContributionCents: z.number().int().positive().nullable().optional(),
         contributionDay: z.number().int().min(1).max(28).nullable().optional(),
+        targetDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable()
+          .optional(),
+        gapNotes: z.string().trim().max(4000).optional(),
+        applyTimelineToMonthly: z.boolean().optional(),
       })
       .superRefine((value, ctx) => {
         const hasAmount = value.monthlyContributionCents != null;
@@ -277,6 +330,23 @@ export function registerWealthRoutes(
       throw new ApiError(400, 'custom_label_required', 'Custom savings need a label.');
     }
 
+    const timeline = requiredMonthlyContributionCents({
+      targetCents: body.targetCents,
+      currentCents: body.currentCents,
+      targetDate: body.targetDate ?? null,
+    });
+    let monthlyContributionCents = body.monthlyContributionCents ?? null;
+    let contributionDay = body.contributionDay ?? null;
+    if (
+      body.applyTimelineToMonthly &&
+      timeline.requiredMonthlyCents != null &&
+      timeline.requiredMonthlyCents > 0
+    ) {
+      monthlyContributionCents = timeline.requiredMonthlyCents;
+      contributionDay =
+        contributionDay ?? ((new Date().getUTCDate() % 28) || 1);
+    }
+
     const householdId = await resolveHousehold(
       sql,
       userId,
@@ -287,7 +357,8 @@ export function registerWealthRoutes(
       INSERT INTO saving_goals (
         owner_user_id, household_id, visibility, category, custom_label,
         name, target_cents, current_cents,
-        monthly_contribution_cents, contribution_day
+        monthly_contribution_cents, contribution_day,
+        target_date, gap_notes
       ) VALUES (
         ${userId},
         ${householdId},
@@ -297,12 +368,14 @@ export function registerWealthRoutes(
         ${body.name},
         ${body.targetCents},
         ${body.currentCents},
-        ${body.monthlyContributionCents ?? null},
-        ${body.contributionDay ?? null}
+        ${monthlyContributionCents},
+        ${contributionDay},
+        ${body.targetDate ?? null},
+        ${body.gapNotes ?? ''}
       )
       RETURNING *
     `;
-    return reply.code(201).send(row);
+    return reply.code(201).send(enrichSavingGoal(row as Record<string, unknown>));
   });
 
   app.patch('/v1/saving-goals/:id', { preHandler: auth.authenticate }, async (request) => {
@@ -319,6 +392,13 @@ export function registerWealthRoutes(
         sortOrder: z.number().int().optional(),
         monthlyContributionCents: z.number().int().positive().nullable().optional(),
         contributionDay: z.number().int().min(1).max(28).nullable().optional(),
+        targetDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable()
+          .optional(),
+        gapNotes: z.string().trim().max(4000).optional(),
+        applyTimelineToMonthly: z.boolean().optional(),
       })
       .refine((value) => Object.keys(value).length > 0)
       .parse(request.body);
@@ -327,20 +407,54 @@ export function registerWealthRoutes(
       {
         monthlyContributionCents: number | null;
         contributionDay: number | null;
+        targetCents: number;
+        currentCents: number;
+        targetDate: string | null;
       }[]
     >`
-      SELECT monthly_contribution_cents, contribution_day
+      SELECT
+        monthly_contribution_cents,
+        contribution_day,
+        target_cents,
+        current_cents,
+        target_date::text
       FROM saving_goals
       WHERE id = ${id}
     `;
-    const nextAmount =
+    if (!existing) {
+      throw new ApiError(404, 'not_found', 'Saving goal not found.');
+    }
+
+    let nextAmount =
       body.monthlyContributionCents !== undefined
         ? body.monthlyContributionCents
-        : existing?.monthlyContributionCents ?? null;
-    const nextDay =
+        : existing.monthlyContributionCents;
+    let nextDay =
       body.contributionDay !== undefined
         ? body.contributionDay
-        : existing?.contributionDay ?? null;
+        : existing.contributionDay;
+
+    const nextTargetCents = body.targetCents ?? existing.targetCents;
+    const nextCurrentCents = body.currentCents ?? existing.currentCents;
+    const nextTargetDate =
+      body.targetDate !== undefined
+        ? body.targetDate
+        : existing.targetDate
+          ? existing.targetDate.slice(0, 10)
+          : null;
+
+    if (body.applyTimelineToMonthly) {
+      const timeline = requiredMonthlyContributionCents({
+        targetCents: nextTargetCents,
+        currentCents: nextCurrentCents,
+        targetDate: nextTargetDate,
+      });
+      if (timeline.requiredMonthlyCents != null && timeline.requiredMonthlyCents > 0) {
+        nextAmount = timeline.requiredMonthlyCents;
+        nextDay = nextDay ?? ((new Date().getUTCDate() % 28) || 1);
+      }
+    }
+
     if ((nextAmount == null) !== (nextDay == null)) {
       throw new ApiError(
         400,
@@ -361,20 +475,25 @@ export function registerWealthRoutes(
         current_cents = COALESCE(${body.currentCents ?? null}, current_cents),
         sort_order = COALESCE(${body.sortOrder ?? null}, sort_order),
         monthly_contribution_cents = CASE
-          WHEN ${body.monthlyContributionCents !== undefined}
-            THEN ${body.monthlyContributionCents ?? null}
+          WHEN ${body.monthlyContributionCents !== undefined || body.applyTimelineToMonthly === true}
+            THEN ${nextAmount}
           ELSE monthly_contribution_cents
         END,
         contribution_day = CASE
-          WHEN ${body.contributionDay !== undefined}
-            THEN ${body.contributionDay ?? null}
+          WHEN ${body.contributionDay !== undefined || body.applyTimelineToMonthly === true}
+            THEN ${nextDay}
           ELSE contribution_day
         END,
+        target_date = CASE
+          WHEN ${body.targetDate !== undefined} THEN ${body.targetDate ?? null}
+          ELSE target_date
+        END,
+        gap_notes = COALESCE(${body.gapNotes ?? null}, gap_notes),
         updated_at = now()
       WHERE id = ${id}
       RETURNING *
     `;
-    return row;
+    return enrichSavingGoal(row as Record<string, unknown>);
   });
 
   app.delete(
@@ -728,6 +847,103 @@ export function registerWealthRoutes(
     await sql`DELETE FROM debts WHERE id = ${id}`;
     return reply.code(204).send();
   });
+
+  app.get('/v1/wealth/gap-summary', { preHandler: auth.authenticate }, async (request) => {
+    const userId = (request as { authUser: AuthUser }).authUser.id;
+    const goals = await listSavingGoalsForUser(sql, userId);
+    const shortfalls = goals
+      .filter((goal) => Number(goal.shortfallCents ?? 0) > 0)
+      .map((goal) => ({
+        savingGoalId: goal.id,
+        name: goal.name,
+        requiredMonthlyCents: goal.requiredMonthlyCents,
+        monthlyContributionCents: goal.monthlyContributionCents ?? null,
+        shortfallCents: goal.shortfallCents,
+        monthsRemaining: goal.monthsRemaining,
+        targetDate: goal.targetDate,
+        gapNotes: goal.gapNotes,
+      }));
+    const totalShortfallCents = shortfalls.reduce(
+      (sum, item) => sum + Number(item.shortfallCents ?? 0),
+      0,
+    );
+    return {
+      totalShortfallCents,
+      goals: shortfalls,
+    };
+  });
+
+  app.get('/v1/wealth/gap-ideas', { preHandler: auth.authenticate }, async (request) => {
+    const userId = (request as { authUser: AuthUser }).authUser.id;
+    return sql`
+      SELECT *
+      FROM wealth_gap_ideas
+      WHERE
+        owner_user_id = ${userId}
+        OR (
+          visibility = 'SHARED'
+          AND EXISTS (
+            SELECT 1 FROM household_members hm
+            WHERE hm.household_id = wealth_gap_ideas.household_id
+              AND hm.user_id = ${userId}
+          )
+        )
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+  });
+
+  app.post(
+    '/v1/wealth/gap-ideas',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const body = z
+        .object({
+          body: z.string().trim().min(1).max(1000),
+          visibility: visibilitySchema.default('PRIVATE'),
+          relatedSavingGoalId: z.string().uuid().nullable().optional(),
+        })
+        .parse(request.body);
+      const householdId = await resolveHousehold(
+        sql,
+        userId,
+        body.visibility,
+        helpers.getUser,
+      );
+      const [row] = await sql`
+        INSERT INTO wealth_gap_ideas (
+          owner_user_id, household_id, visibility, body, related_saving_goal_id
+        ) VALUES (
+          ${userId},
+          ${householdId},
+          ${body.visibility},
+          ${body.body},
+          ${body.relatedSavingGoalId ?? null}
+        )
+        RETURNING *
+      `;
+      return reply.code(201).send(row);
+    },
+  );
+
+  app.delete(
+    '/v1/wealth/gap-ideas/:id',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const result = await sql`
+        DELETE FROM wealth_gap_ideas
+        WHERE id = ${id} AND owner_user_id = ${userId}
+        RETURNING id
+      `;
+      if (result.count === 0) {
+        throw new ApiError(404, 'not_found', 'Idea not found.');
+      }
+      return reply.code(204).send();
+    },
+  );
 
   app.get('/v1/net-worth', { preHandler: auth.authenticate }, async (request) => {
     const userId = (request as { authUser: AuthUser }).authUser.id;

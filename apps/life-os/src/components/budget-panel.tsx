@@ -8,6 +8,7 @@ import {
   type Account,
   type Budget,
 } from "../lib/api";
+import { DashboardPanel } from "./dashboard-panel";
 import { OutgoingsPanel } from "./outgoings-panel";
 import { WealthPanel } from "./wealth-panel";
 
@@ -21,7 +22,9 @@ export function BudgetPanel({ account, onError }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"outgoings" | "wealth">("outgoings");
+  const [section, setSection] = useState<"outgoings" | "wealth" | "dashboard">(
+    "outgoings",
+  );
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || "GBP";
 
@@ -148,6 +151,17 @@ export function BudgetPanel({ account, onError }: Props) {
             >
               Savings & investing
             </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                section === "dashboard"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] bg-white text-[#14241f]"
+              }`}
+              onClick={() => setSection("dashboard")}
+            >
+              Dashboard
+            </button>
           </div>
 
           {section === "outgoings" ? (
@@ -165,6 +179,14 @@ export function BudgetPanel({ account, onError }: Props) {
               budgetId={detail.id}
               currency={currency}
               canShare={canShare}
+              onError={onError}
+            />
+          ) : null}
+
+          {section === "dashboard" ? (
+            <DashboardPanel
+              budgetId={detail.id}
+              currency={currency}
               onError={onError}
             />
           ) : null}

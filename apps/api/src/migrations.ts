@@ -53,6 +53,12 @@ const migrations = [
     version: '009_debts',
     path: fileURLToPath(new URL('../migrations/009_debts.sql', import.meta.url)),
   },
+  {
+    version: '010_saving_timeline_dashboard',
+    path: fileURLToPath(
+      new URL('../migrations/010_saving_timeline_dashboard.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

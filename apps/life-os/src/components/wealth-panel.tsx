@@ -7,18 +7,22 @@ import {
   createDraftExpense,
   createInvestment,
   createSavingGoal,
+  createWealthGapIdea,
   deleteDebt,
   deleteDraftExpense,
   deleteInvestment,
   deleteSavingGoal,
+  deleteWealthGapIdea,
   formatMoney,
   getDraftImpact,
   getNetWorth,
+  getWealthGapSummary,
   getWealthMeta,
   listDebts,
   listDraftExpenses,
   listInvestments,
   listSavingGoals,
+  listWealthGapIdeas,
   updateDebt,
   updateInvestment,
   updateSavingGoal,
@@ -29,6 +33,8 @@ import {
   type InvestmentAccount,
   type NetWorth,
   type SavingGoal,
+  type WealthGapIdea,
+  type WealthGapSummary,
 } from "../lib/api";
 
 type Props = {
@@ -73,6 +79,11 @@ export function WealthPanel({
   const [goalShared, setGoalShared] = useState(false);
   const [goalMonthly, setGoalMonthly] = useState("");
   const [goalDay, setGoalDay] = useState("1");
+  const [goalTargetDate, setGoalTargetDate] = useState("");
+  const [applyTimeline, setApplyTimeline] = useState(true);
+  const [gapSummary, setGapSummary] = useState<WealthGapSummary | null>(null);
+  const [gapIdeas, setGapIdeas] = useState<WealthGapIdea[]>([]);
+  const [gapIdeaBody, setGapIdeaBody] = useState("");
   const [editingSavingId, setEditingSavingId] = useState<string | null>(null);
   const [editGoalName, setEditGoalName] = useState("");
   const [editGoalCategory, setEditGoalCategory] =
@@ -82,6 +93,7 @@ export function WealthPanel({
   const [editGoalCurrent, setEditGoalCurrent] = useState("");
   const [editGoalMonthly, setEditGoalMonthly] = useState("");
   const [editGoalDay, setEditGoalDay] = useState("1");
+  const [editGoalTargetDate, setEditGoalTargetDate] = useState("");
 
   const [invName, setInvName] = useState("");
   const [invType, setInvType] =
@@ -117,18 +129,22 @@ export function WealthPanel({
     formatMoney(cents, account.user.preferredCurrency || currency);
 
   const reload = useCallback(async () => {
-    const [s, i, d, n, m] = await Promise.all([
+    const [s, i, d, n, m, gap, ideas] = await Promise.all([
       listSavingGoals(),
       listInvestments(),
       listDebts(),
       getNetWorth(),
       getWealthMeta(),
+      getWealthGapSummary(),
+      listWealthGapIdeas(),
     ]);
     setSavings(s);
     setInvestments(i);
     setDebts(d);
     setNetWorth(n);
     setMeta(m);
+    setGapSummary(gap);
+    setGapIdeas(ideas);
     if (budgetId) {
       const [d, imp] = await Promise.all([
         listDraftExpenses(budgetId),
@@ -173,6 +189,7 @@ export function WealthPanel({
         : "",
     );
     setEditGoalDay(String(goal.contributionDay ?? 1));
+    setEditGoalTargetDate(goal.targetDate ?? "");
   }
 
   function startEditInvestment(item: InvestmentAccount) {
@@ -282,7 +299,26 @@ export function WealthPanel({
             value={goalDay}
             onChange={(e) => setGoalDay(e.target.value)}
           />
+          <label className="space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              Target date (timeline)
+            </span>
+            <input
+              className="w-full rounded-xl border border-[#dde2dd] px-3 py-2"
+              type="date"
+              value={goalTargetDate}
+              onChange={(e) => setGoalTargetDate(e.target.value)}
+            />
+          </label>
         </div>
+        <label className="flex items-center gap-2 text-xs font-bold">
+          <input
+            type="checkbox"
+            checked={applyTimeline}
+            onChange={(e) => setApplyTimeline(e.target.checked)}
+          />
+          Divide timeline into months and add that amount to monthly outgoings
+        </label>
         {canShare ? (
           <label className="flex items-center gap-2 text-xs font-bold">
             <input
@@ -314,12 +350,15 @@ export function WealthPanel({
                   ? Math.round(monthly * 100)
                   : null,
                 contributionDay: hasMonthly ? Number(goalDay || 1) : null,
+                targetDate: goalTargetDate || null,
+                applyTimelineToMonthly: applyTimeline && !!goalTargetDate,
               });
               setGoalName("");
               setGoalTarget("");
               setGoalCurrent("");
               setGoalCustom("");
               setGoalMonthly("");
+              setGoalTargetDate("");
             })
           }
         >
@@ -386,6 +425,17 @@ export function WealthPanel({
                     value={editGoalDay}
                     onChange={(e) => setEditGoalDay(e.target.value)}
                   />
+                  <label className="space-y-1 sm:col-span-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                      Target date
+                    </span>
+                    <input
+                      className="w-full rounded-xl border border-[#dde2dd] px-3 py-2"
+                      type="date"
+                      value={editGoalTargetDate}
+                      onChange={(e) => setEditGoalTargetDate(e.target.value)}
+                    />
+                  </label>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -421,12 +471,29 @@ export function WealthPanel({
                           contributionDay: hasMonthly
                             ? Number(editGoalDay || 1)
                             : null,
+                          targetDate: editGoalTargetDate || null,
                         });
                         setEditingSavingId(null);
                       })
                     }
                   >
                     Save changes
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !editGoalTargetDate}
+                    className="rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold disabled:opacity-50"
+                    onClick={() =>
+                      void run(async () => {
+                        await updateSavingGoal(goal.id, {
+                          targetDate: editGoalTargetDate || null,
+                          applyTimelineToMonthly: true,
+                        });
+                        setEditingSavingId(null);
+                      })
+                    }
+                  >
+                    Apply timeline to monthly outgoings
                   </button>
                   <button
                     type="button"
@@ -477,11 +544,28 @@ export function WealthPanel({
                   {money(goal.currentCents)} / {money(goal.targetCents)} (
                   {progress(goal.currentCents, goal.targetCents)}%)
                 </p>
+                {goal.targetDate ? (
+                  <p className="mt-1 text-xs text-[#6c7771]">
+                    Timeline to {goal.targetDate}
+                    {goal.monthsRemaining != null
+                      ? ` · ${goal.monthsRemaining} month${goal.monthsRemaining === 1 ? "" : "s"} left`
+                      : ""}
+                    {goal.requiredMonthlyCents != null
+                      ? ` · needs ${money(goal.requiredMonthlyCents)}/mo`
+                      : ""}
+                  </p>
+                ) : null}
                 {goal.monthlyContributionCents ? (
                   <p className="mt-1 text-xs text-[#6c7771]">
                     Monthly {money(goal.monthlyContributionCents)} on day{" "}
                     {goal.contributionDay} · tracked in Outgoings with email
                     reminders
+                  </p>
+                ) : null}
+                {(goal.shortfallCents ?? 0) > 0 ? (
+                  <p className="mt-1 text-xs font-semibold text-[#c9634f]">
+                    Shortfall {money(goal.shortfallCents ?? 0)}/mo vs timeline —
+                    shown under Investments
                   </p>
                 ) : null}
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2ea]">
@@ -492,7 +576,23 @@ export function WealthPanel({
                     }}
                   />
                 </div>
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {goal.targetDate && (goal.shortfallCents ?? 0) > 0 ? (
+                    <button
+                      type="button"
+                      className="rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          await updateSavingGoal(goal.id, {
+                            applyTimelineToMonthly: true,
+                          });
+                        })
+                      }
+                    >
+                      Match monthly to timeline
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
@@ -519,6 +619,82 @@ export function WealthPanel({
         <p className="text-sm text-[#6c7771]">
           Track FHSA, TFSA, ISA, and other portfolios — goal vs current value.
         </p>
+
+        {gapSummary && gapSummary.totalShortfallCents > 0 ? (
+          <div className="space-y-2 rounded-xl border border-[#f0d4cc] bg-[#fff8f6] p-3">
+            <p className="text-sm font-semibold text-[#c9634f]">
+              Timeline shortfall {money(gapSummary.totalShortfallCents)}/mo
+            </p>
+            <p className="text-xs text-[#6c7771]">
+              Planned monthly savings in Outgoings are lower than what the
+              timeline needs. Close the gap by raising contributions or finding
+              extra investable cash.
+            </p>
+            {gapSummary.goals.map((item) => (
+              <div key={item.savingGoalId} className="text-xs text-[#6c7771]">
+                <span className="font-semibold text-[#14241f]">{item.name}</span>
+                {" · needs "}
+                {money(item.requiredMonthlyCents ?? 0)}
+                {" · planned "}
+                {money(item.monthlyContributionCents ?? 0)}
+                {" · gap "}
+                {money(item.shortfallCents)}
+              </div>
+            ))}
+            <textarea
+              className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+              rows={2}
+              placeholder="Brainstorm: how could we raise this difference?"
+              value={gapIdeaBody}
+              onChange={(e) => setGapIdeaBody(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+              onClick={() =>
+                void run(async () => {
+                  if (!gapIdeaBody.trim()) {
+                    throw new Error("Write a brainstorm note first.");
+                  }
+                  await createWealthGapIdea({ body: gapIdeaBody.trim() });
+                  setGapIdeaBody("");
+                })
+              }
+            >
+              Save brainstorm note
+            </button>
+            {gapIdeas.length > 0 ? (
+              <div className="space-y-2 border-t border-[#f0d4cc] pt-2">
+                {gapIdeas.map((idea) => (
+                  <div
+                    key={idea.id}
+                    className="flex items-start justify-between gap-2 text-xs"
+                  >
+                    <p className="text-[#14241f]">{idea.body}</p>
+                    <button
+                      type="button"
+                      className="font-bold text-[#c9634f]"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => deleteWealthGapIdea(idea.id))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-xs text-[#6c7771]">
+            When a saving goal&apos;s monthly Outgoings amount is below its
+            timeline need, the difference appears here with space to brainstorm
+            how to close it.
+          </p>
+        )}
+
         <div className="grid gap-2 sm:grid-cols-2">
           <input
             className="rounded-xl border border-[#dde2dd] px-3 py-2"
