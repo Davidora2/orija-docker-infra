@@ -119,7 +119,7 @@ export function BudgetPanel({ account, onError }: Props) {
           <button
             type="button"
             disabled={busy}
-            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
             onClick={() => void create("PRIVATE")}
           >
             + Personal
@@ -149,7 +149,7 @@ export function BudgetPanel({ account, onError }: Props) {
               className={`rounded-full px-3 py-1.5 text-xs font-bold ${
                 activeId === budget.id
                   ? "bg-[#14241f] text-[#d6f57a]"
-                  : "border border-[#dde2dd] bg-white"
+                  : "border border-[#dde2dd] bg-white text-[#14241f]"
               }`}
               onClick={() => {
                 setActiveId(budget.id);
@@ -264,7 +264,7 @@ export function BudgetPanel({ account, onError }: Props) {
             <button
               type="button"
               disabled={busy}
-              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
               onClick={() => void saveEntry()}
             >
               Save entry

@@ -50,7 +50,7 @@ export default function JoinHouseholdPage({
           </div>
 
           <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#14241f] text-xs font-bold text-white"
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#14241f] text-xs font-bold text-[#f4f5f0]"
             href={deepLink}
           >
             Open in Life OS <ExternalLink className="h-4 w-4" />

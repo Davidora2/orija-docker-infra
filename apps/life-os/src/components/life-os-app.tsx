@@ -146,14 +146,14 @@ export function LifeOSApp() {
         ) : null}
         <div className="flex gap-2">
           <button
-            className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "login" ? "bg-[#14241f] text-white" : "bg-[#dbe8d7]"}`}
+            className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "login" ? "bg-[#14241f] text-[#f4f5f0]" : "bg-[#dbe8d7] text-[#14241f]"}`}
             onClick={() => setAuthMode("login")}
             type="button"
           >
             Sign in
           </button>
           <button
-            className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "register" ? "bg-[#14241f] text-white" : "bg-[#dbe8d7]"}`}
+            className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "register" ? "bg-[#14241f] text-[#f4f5f0]" : "bg-[#dbe8d7] text-[#14241f]"}`}
             onClick={() => setAuthMode("register")}
             type="button"
           >
@@ -183,7 +183,7 @@ export function LifeOSApp() {
         />
         {error ? <p className="text-sm text-[#c9634f]">{error}</p> : null}
         <button
-          className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+          className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
           disabled={busy}
           type="button"
           onClick={() =>
@@ -249,7 +249,7 @@ export function LifeOSApp() {
         ).map(([id, label]) => (
           <button
             key={id}
-            className={`rounded-full px-3 py-1.5 text-xs font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd]"}`}
+            className={`rounded-full px-3 py-1.5 text-xs font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
             type="button"
             onClick={() => setTab(id)}
           >
@@ -276,7 +276,7 @@ export function LifeOSApp() {
                   {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
                 </p>
                 <button
-                  className="mt-4 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white"
+                  className="mt-4 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0]"
                   type="button"
                   disabled={busy}
                   onClick={() =>
@@ -323,7 +323,7 @@ export function LifeOSApp() {
               onChange={(e) => setIdeaNote(e.target.value)}
             />
             <button
-              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
               type="button"
               disabled={busy}
               onClick={() =>
@@ -382,7 +382,7 @@ export function LifeOSApp() {
                 onChange={(e) => setAreaTitle(e.target.value)}
               />
               <button
-                className="rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+                className="rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
                 type="button"
                 disabled={busy}
                 onClick={() =>
@@ -466,7 +466,7 @@ export function LifeOSApp() {
               onChange={(e) => setActionHours(e.target.value)}
             />
             <button
-              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
               type="button"
               disabled={busy}
               onClick={() =>
@@ -563,7 +563,7 @@ export function LifeOSApp() {
                   −1h
                 </button>
                 <button
-                  className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-white"
+                  className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-[#f4f5f0]"
                   type="button"
                   disabled={busy}
                   onClick={() =>

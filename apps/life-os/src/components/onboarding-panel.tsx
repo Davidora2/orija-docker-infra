@@ -88,7 +88,7 @@ export function OnboardingPanel({ onComplete, onError }: Props) {
                 className={`rounded-full px-3 py-2 text-xs font-bold ${
                   active
                     ? "bg-[#14241f] text-[#d6f57a]"
-                    : "border border-[#dde2dd] bg-white"
+                    : "border border-[#dde2dd] bg-white text-[#14241f]"
                 }`}
               >
                 {area.title}
@@ -138,7 +138,7 @@ export function OnboardingPanel({ onComplete, onError }: Props) {
         <button
           type="button"
           disabled={busy}
-          className="mt-5 w-full rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+          className="mt-5 w-full rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
           onClick={() => void finish()}
         >
           {busy ? "Saving…" : "Continue to Life OS"}

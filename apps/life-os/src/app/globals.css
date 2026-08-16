@@ -41,9 +41,8 @@ textarea {
   font: inherit;
 }
 
-button {
-  color: inherit;
-}
+/* Do not force `color: inherit` on buttons — it beats Tailwind text utilities
+   (unlayered CSS > @layer utilities) and hides labels on dark primary buttons. */
 
 button:focus-visible,
 input:focus-visible,
