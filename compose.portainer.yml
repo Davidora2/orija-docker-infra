@@ -44,19 +44,22 @@ services:
         BRANCH="$${LIFE_OS_REPO_REF#refs/heads/}"
         ROOT=/opt/life-os
         mkdir -p "$$ROOT"
-        if [ ! -f "$$ROOT/.bootstrap-ok" ]; then
-          echo "Bootstrapping Life OS API from $$BRANCH..."
-          apk add --no-cache git
+        echo "Syncing Life OS API from $$BRANCH..."
+        apk add --no-cache git
+        if [ ! -d "$$ROOT/repo/.git" ]; then
           rm -rf "$$ROOT/repo"
           git clone --depth 1 --branch "$$BRANCH" "$$REPO_URL" "$$ROOT/repo"
+        else
           cd "$$ROOT/repo"
-          corepack enable
-          corepack prepare pnpm@10.33.3 --activate
-          pnpm install --frozen-lockfile --filter life-os-api...
-          pnpm --filter life-os-api build
-          touch "$$ROOT/.bootstrap-ok"
-          echo "API bootstrap complete."
+          git fetch --depth 1 origin "$$BRANCH"
+          git checkout -f "$$BRANCH"
+          git reset --hard "origin/$$BRANCH"
         fi
+        cd "$$ROOT/repo"
+        corepack enable
+        corepack prepare pnpm@10.33.3 --activate
+        pnpm install --frozen-lockfile --filter life-os-api...
+        pnpm --filter life-os-api build
         cd "$$ROOT/repo/apps/api"
         exec node dist/server.js
     depends_on:
