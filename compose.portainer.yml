@@ -32,6 +32,10 @@ services:
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_DAYS: 30
       AUTO_MIGRATE: "true"
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-}
       LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
       LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
     volumes:

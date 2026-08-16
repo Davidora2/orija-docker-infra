@@ -21,6 +21,14 @@ suite('account and couple household API', () => {
     accessTokenTtl: '15m',
     refreshTokenDays: 30,
     autoMigrate: true,
+    googleClientIds: [],
+    resendApiKey: null,
+    emailFrom: 'Life OS <test@example.com>',
+    smtpUser: null,
+    smtpAppPassword: null,
+    smtpHost: 'smtp.gmail.com',
+    smtpPort: 465,
+    authDebugCodes: true,
   };
 
   beforeAll(async () => {
@@ -35,6 +43,7 @@ suite('account and couple household API', () => {
   beforeEach(async () => {
     await sql`
       TRUNCATE TABLE
+        auth_codes,
         budget_entries,
         budget_recurring_outgoings,
         budget_categories,
@@ -400,5 +409,61 @@ suite('account and couple household API', () => {
     expect(month.list.length).toBeGreaterThan(0);
     expect(month.paySchedule.payDates).toContain('2026-08-28');
     expect(month.recommendations.length).toBeGreaterThan(0);
+  });
+
+  it('sends a password reset code and resets the password', async () => {
+    const user = await register('reset@example.com', 'Reset User');
+
+    const forgot = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/forgot-password',
+      payload: { email: 'reset@example.com' },
+    });
+    expect(forgot.statusCode).toBe(200);
+    const code = forgot.json<{ debugCode?: string }>().debugCode;
+    expect(code).toMatch(/^\d{6}$/);
+
+    const verify = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/verify-reset-code',
+      payload: { email: 'reset@example.com', code },
+    });
+    expect(verify.statusCode).toBe(200);
+
+    const reset = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/reset-password',
+      payload: {
+        email: 'reset@example.com',
+        code,
+        newPassword: 'brand-new-password-123',
+        deviceName: 'vitest',
+      },
+    });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json<{ accessToken: string }>().accessToken).toBeTruthy();
+
+    const oldLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/login',
+      payload: {
+        email: 'reset@example.com',
+        password: 'correct-horse-battery-staple',
+        deviceName: 'vitest',
+      },
+    });
+    expect(oldLogin.statusCode).toBe(401);
+
+    const newLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/login',
+      payload: {
+        email: 'reset@example.com',
+        password: 'brand-new-password-123',
+        deviceName: 'vitest',
+      },
+    });
+    expect(newLogin.statusCode).toBe(200);
+    void user;
   });
 });

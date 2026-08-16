@@ -14,6 +14,14 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+  GOOGLE_CLIENT_IDS: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_APP_PASSWORD: z.string().optional(),
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_PORT: z.coerce.number().int().default(465),
+  AUTH_DEBUG_CODES: z.enum(['true', 'false']).optional(),
 });
 
 export type AppConfig = {
@@ -27,10 +35,23 @@ export type AppConfig = {
   accessTokenTtl: string;
   refreshTokenDays: number;
   autoMigrate: boolean;
+  googleClientIds: string[];
+  resendApiKey: string | null;
+  emailFrom: string;
+  smtpUser: string | null;
+  smtpAppPassword: string | null;
+  smtpHost: string;
+  smtpPort: number;
+  authDebugCodes: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = envSchema.parse(env);
+  const smtpUser = parsed.SMTP_USER?.trim() || null;
+  const authDebugCodes =
+    parsed.AUTH_DEBUG_CODES === 'true' ||
+    parsed.NODE_ENV === 'test' ||
+    parsed.NODE_ENV === 'development';
 
   return {
     nodeEnv: parsed.NODE_ENV,
@@ -45,5 +66,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     accessTokenTtl: parsed.ACCESS_TOKEN_TTL,
     refreshTokenDays: parsed.REFRESH_TOKEN_DAYS,
     autoMigrate: parsed.AUTO_MIGRATE,
+    googleClientIds: (parsed.GOOGLE_CLIENT_IDS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    resendApiKey: parsed.RESEND_API_KEY ?? null,
+    emailFrom:
+      parsed.EMAIL_FROM?.trim() ||
+      (smtpUser ? `Life OS <${smtpUser}>` : 'Life OS <onboarding@resend.dev>'),
+    smtpUser,
+    smtpAppPassword: parsed.SMTP_APP_PASSWORD?.replace(/\s+/g, '') || null,
+    smtpHost: parsed.SMTP_HOST,
+    smtpPort: parsed.SMTP_PORT,
+    authDebugCodes,
   };
 }

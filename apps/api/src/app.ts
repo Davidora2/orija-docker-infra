@@ -4,6 +4,8 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
 import { createAuth } from './auth.js';
+import { registerAuthExtras } from './auth-extras.js';
+import { registerCalendarRoutes } from './calendar.js';
 import type { AppConfig } from './config.js';
 import { createDatabase, type Database } from './db.js';
 import { ApiError } from './errors.js';
@@ -110,12 +112,13 @@ const updateItemSchema = z
 type UserRow = {
   id: string;
   email: string;
-  passwordHash: string;
+  passwordHash: string | null;
   displayName: string;
   avatarUrl: string | null;
   timezone: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
+  googleSub?: string | null;
   createdAt: Date;
 };
 
@@ -381,7 +384,11 @@ export async function buildApp(
         WHERE email = ${body.email}
       `;
 
-      if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+      if (
+        !user ||
+        !user.passwordHash ||
+        !(await verifyPassword(body.password, user.passwordHash))
+      ) {
         throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
       }
 
@@ -777,6 +784,11 @@ export async function buildApp(
     getUser,
     getAccountPayload,
   });
+  registerAuthExtras(app, sql, config, auth, {
+    getAccountPayload,
+    publicUser,
+  });
+  registerCalendarRoutes(app, sql, auth);
 
   app.addHook('onClose', async () => {
     if (ownsDatabase) await sql.end();

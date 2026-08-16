@@ -19,6 +19,12 @@ const migrations = [
       new URL('../migrations/003_pay_schedule_outgoings.sql', import.meta.url),
     ),
   },
+  {
+    version: '004_auth_google_reset',
+    path: fileURLToPath(
+      new URL('../migrations/004_auth_google_reset.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {
