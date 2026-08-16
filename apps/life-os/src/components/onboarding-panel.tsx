@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   SUGGESTED_LIFE_AREAS,
   completeOnboarding,
+  getWealthMeta,
   listAreaSuggestions,
   type Account,
   type AreaSuggestion,
@@ -19,6 +20,13 @@ export function OnboardingPanel({ onComplete, onError }: Props) {
     useState<AreaSuggestion[]>(SUGGESTED_LIFE_AREAS);
   const [selected, setSelected] = useState<Record<string, AreaSuggestion>>({});
   const [customTitle, setCustomTitle] = useState("");
+  const [currencies, setCurrencies] = useState<string[]>([
+    "GBP",
+    "USD",
+    "CAD",
+    "EUR",
+  ]);
+  const [currency, setCurrency] = useState("GBP");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -26,6 +34,13 @@ export function OnboardingPanel({ onComplete, onError }: Props) {
       .then(setSuggestions)
       .catch(() => {
         // keep local defaults
+      });
+    void getWealthMeta()
+      .then((meta) => {
+        if (meta.currencies?.length) setCurrencies(meta.currencies);
+      })
+      .catch(() => {
+        // keep defaults
       });
   }, []);
 
@@ -57,7 +72,7 @@ export function OnboardingPanel({ onComplete, onError }: Props) {
     }
     setBusy(true);
     try {
-      const account = await completeOnboarding(selectedList);
+      const account = await completeOnboarding(selectedList, currency);
       onComplete(account);
     } catch (error) {
       onError(error instanceof Error ? error.message : "Could not save areas.");
@@ -134,6 +149,27 @@ export function OnboardingPanel({ onComplete, onError }: Props) {
             ))}
           </div>
         ) : null}
+
+        <div className="mt-5 rounded-2xl border border-[#dde2dd] bg-white p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#617a57]">
+            Currency
+          </p>
+          <p className="mt-1 text-sm text-[#6c7771]">
+            Used for budgets, savings, and net worth. You can change this later in
+            profile settings.
+          </p>
+          <select
+            className="mt-3 w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+          >
+            {currencies.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <button
           type="button"

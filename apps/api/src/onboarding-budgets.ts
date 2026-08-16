@@ -167,6 +167,7 @@ export function registerOnboardingAndBudgetRoutes(
     getUser: (sql: Database, userId: string) => Promise<{
       id: string;
       activeHouseholdId: string | null;
+      preferredCurrency?: string;
     }>;
     getAccountPayload: (sql: Database, userId: string) => Promise<unknown>;
   },
@@ -191,6 +192,12 @@ export function registerOnboardingAndBudgetRoutes(
             )
             .min(1)
             .max(20),
+          preferredCurrency: z
+            .string()
+            .trim()
+            .toUpperCase()
+            .regex(/^[A-Z]{3}$/)
+            .optional(),
         })
         .parse(request.body);
 
@@ -246,7 +253,10 @@ export function registerOnboardingAndBudgetRoutes(
 
         await tx`
           UPDATE users
-          SET onboarding_completed_at = now(), updated_at = now()
+          SET
+            onboarding_completed_at = now(),
+            preferred_currency = COALESCE(${body.preferredCurrency ?? null}, preferred_currency),
+            updated_at = now()
           WHERE id = ${userId}
         `;
       });
@@ -280,13 +290,14 @@ export function registerOnboardingAndBudgetRoutes(
       .object({
         name: z.string().trim().min(1).max(120),
         visibility: z.enum(['PRIVATE', 'SHARED']).default('PRIVATE'),
-        currency: z.string().trim().min(3).max(8).default('GBP'),
+        currency: z.string().trim().min(3).max(8).optional(),
         period: z.enum(['weekly', 'monthly']).default('monthly'),
         seedCategories: z.boolean().default(true),
       })
       .parse(request.body);
 
     const user = await helpers.getUser(sql, userId);
+    const currency = (body.currency ?? user.preferredCurrency ?? 'GBP').toUpperCase();
     const householdId = body.visibility === 'SHARED' ? user.activeHouseholdId : null;
     if (body.visibility === 'SHARED' && !householdId) {
       throw new ApiError(400, 'no_active_household', 'Choose a household before sharing.');
@@ -312,7 +323,7 @@ export function registerOnboardingAndBudgetRoutes(
           owner_user_id, household_id, visibility, name, currency, period
         ) VALUES (
           ${userId}, ${householdId}, ${body.visibility}, ${body.name},
-          ${body.currency.toUpperCase()}, ${body.period}
+          ${currency}, ${body.period}
         )
         RETURNING *
       `;
@@ -873,6 +884,7 @@ export function registerOnboardingAndBudgetRoutes(
           oneOffCents: expenseCents - recurringCents,
         },
         recommendations,
+        flags: recommendations.filter((item) => item.flagged),
         generatedOn: toDateString(new Date()),
       };
     },

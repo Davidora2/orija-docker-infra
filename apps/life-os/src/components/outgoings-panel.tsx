@@ -394,6 +394,36 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
 
       {data ? (
         <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+          <h4 className="font-serif text-xl">Pay vs bills flags</h4>
+          {(data.flags ?? data.recommendations.filter((item) => item.flagged))
+            .length === 0 ? (
+            <p className="text-sm text-[#6c7771]">
+              No timing conflicts flagged for this pay cycle.
+            </p>
+          ) : (
+            (data.flags ?? data.recommendations.filter((item) => item.flagged)).map(
+              (item) => (
+                <div
+                  key={`flag-${item.id}`}
+                  className="rounded-xl border border-[#efd4cd] bg-[#fff7f5] p-3"
+                >
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#c9634f]">
+                    Flagged · {item.scenario ?? item.severity}
+                  </p>
+                  <p className="mt-1 font-semibold">{item.title}</p>
+                  <p className="mt-1 text-sm text-[#6c7771]">{item.detail}</p>
+                  <p className="mt-2 text-sm font-semibold text-[#14241f]">
+                    {item.action}
+                  </p>
+                </div>
+              ),
+            )
+          )}
+        </article>
+      ) : null}
+
+      {data ? (
+        <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
           <h4 className="font-serif text-xl">Optimise recommendations</h4>
           {data.recommendations.length === 0 ? (
             <p className="text-sm text-[#6c7771]">
@@ -412,6 +442,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
                 }`}
               >
                 <p className="text-[10px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  {item.flagged ? "Flagged · " : ""}
                   {item.severity}
                 </p>
                 <p className="mt-1 font-semibold">{item.title}</p>

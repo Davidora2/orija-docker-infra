@@ -466,4 +466,113 @@ suite('account and couple household API', () => {
     expect(newLogin.statusCode).toBe(200);
     void user;
   });
+
+  it('tracks savings, investments, net worth, currency and draft expenses', async () => {
+    const user = await register('wealth@example.com', 'Wealth User');
+
+    const onboard = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Wealth', icon: 'wallet-outline' }],
+        preferredCurrency: 'CAD',
+      },
+    });
+    expect(onboard.statusCode).toBe(200);
+    expect(
+      onboard.json<{ user: { preferredCurrency: string } }>().user.preferredCurrency,
+    ).toBe('CAD');
+
+    const saving = await app.inject({
+      method: 'POST',
+      url: '/v1/saving-goals',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Rainy day',
+        category: 'emergency',
+        targetCents: 500_000,
+        currentCents: 120_000,
+      },
+    });
+    expect(saving.statusCode).toBe(201);
+
+    const investment = await app.inject({
+      method: 'POST',
+      url: '/v1/investments',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'TFSA Growth',
+        accountType: 'tfsa',
+        goalCents: 1_000_000,
+        currentCents: 250_000,
+      },
+    });
+    expect(investment.statusCode).toBe(201);
+
+    const netWorth = await app.inject({
+      method: 'GET',
+      url: '/v1/net-worth',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(netWorth.statusCode).toBe(200);
+    const wealth = netWorth.json<{
+      currency: string;
+      personal: { netWorthCents: number; savingsCents: number; investmentsCents: number };
+    }>();
+    expect(wealth.currency).toBe('CAD');
+    expect(wealth.personal.savingsCents).toBe(120_000);
+    expect(wealth.personal.investmentsCents).toBe(250_000);
+    expect(wealth.personal.netWorthCents).toBeGreaterThanOrEqual(370_000);
+
+    const budget = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { name: 'CAD budget', visibility: 'PRIVATE' },
+    });
+    expect(budget.statusCode).toBe(201);
+    const budgetId = budget.json<{ id: string; currency: string }>().id;
+    expect(budget.json<{ currency: string }>().currency).toBe('CAD');
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/v1/budgets/${budgetId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        payFrequency: 'monthly',
+        nextPayDate: '2026-08-28',
+        typicalPayCents: 400_000,
+      },
+    });
+
+    const draft = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budgetId}/drafts`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { name: 'New gym', amountCents: 80_00 },
+    });
+    expect(draft.statusCode).toBe(201);
+
+    const impact = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budgetId}/draft-impact`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(impact.statusCode).toBe(200);
+    expect(
+      impact.json<{ impact: { draftCents: number } }>().impact.draftCents,
+    ).toBe(80_00);
+
+    const profile = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { preferredCurrency: 'GBP' },
+    });
+    expect(profile.statusCode).toBe(200);
+    expect(
+      profile.json<{ user: { preferredCurrency: string } }>().user.preferredCurrency,
+    ).toBe('GBP');
+  });
 });

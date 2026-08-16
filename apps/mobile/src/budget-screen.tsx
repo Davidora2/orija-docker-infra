@@ -18,6 +18,7 @@ import {
   type Budget,
 } from './api';
 import { OutgoingsView } from './outgoings-view';
+import { WealthView } from './wealth-view';
 
 const colors = {
   ink: '#14241F',
@@ -44,8 +45,9 @@ export function BudgetScreen({ account, notify }: Props) {
   const [kind, setKind] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<'outgoings' | 'ledger'>('outgoings');
+  const [section, setSection] = useState<'outgoings' | 'ledger' | 'wealth'>('outgoings');
   const canShare = (account.members?.length ?? 0) >= 2;
+  const currency = account.user.preferredCurrency || 'GBP';
 
   const reload = useCallback(async () => {
     const list = await listBudgets();
@@ -79,6 +81,7 @@ export function BudgetScreen({ account, notify }: Props) {
       const created = await createBudget({
         name: visibility === 'SHARED' ? 'Shared budget' : 'Personal budget',
         visibility,
+        currency,
       });
       setActiveId(created.id);
       await reload();
@@ -225,6 +228,19 @@ export function BudgetScreen({ account, notify }: Props) {
                 Ledger
               </Text>
             </Pressable>
+            <Pressable
+              style={[styles.chip, section === 'wealth' && styles.chipActive]}
+              onPress={() => setSection('wealth')}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  section === 'wealth' && styles.chipTextActive,
+                ]}
+              >
+                Wealth
+              </Text>
+            </Pressable>
           </View>
 
           {section === 'outgoings' ? (
@@ -232,6 +248,15 @@ export function BudgetScreen({ account, notify }: Props) {
               budget={detail}
               notify={notify}
               onChanged={() => void reload()}
+            />
+          ) : null}
+
+          {section === 'wealth' ? (
+            <WealthView
+              account={account}
+              budgetId={detail.id}
+              currency={detail.currency || currency}
+              notify={notify}
             />
           ) : null}
 

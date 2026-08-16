@@ -34,6 +34,16 @@ export type Recommendation = {
   title: string;
   detail: string;
   action: string;
+  flagged: boolean;
+  scenario:
+    | 'bills_before_payday'
+    | 'pre_pay_cluster'
+    | 'recurring_vs_pay'
+    | 'month_vs_pay'
+    | 'front_loaded'
+    | 'frequent_spend'
+    | 'add_recurring'
+    | 'other';
 };
 
 function pad(n: number) {
@@ -194,6 +204,8 @@ export function buildRecommendations(input: {
       detail:
         'Add how often you get paid and your next payday so we can spot cash-flow squeezes before they hit.',
       action: 'Save pay frequency and next payday in this budget.',
+      flagged: true,
+      scenario: 'other',
     });
   }
 
@@ -209,6 +221,8 @@ export function buildRecommendations(input: {
         detail: `${formatPounds(beforeTotal)} is due before ${firstPay}. That often forces overdraft or card use.`,
         action:
           'Move flexible bills (subscriptions, gym, insurance) to the day after payday, or ask providers for a later collection date.',
+        flagged: true,
+        scenario: 'bills_before_payday',
       });
     }
 
@@ -227,6 +241,8 @@ export function buildRecommendations(input: {
           detail: `${cluster.length} outgoings totaling ${formatPounds(clusterTotal)} hit just before pay clears.`,
           action:
             'Shift at least one larger bill to payday or the day after so the account isn’t empty overnight.',
+          flagged: true,
+          scenario: 'pre_pay_cluster',
         });
         break;
       }
@@ -256,6 +272,8 @@ export function buildRecommendations(input: {
       action: input.payFrequency === 'weekly' || input.payFrequency === 'biweekly'
         ? 'Create a per-pay envelope for this category and top it up on payday so the rest of the balance stays untouched.'
         : 'Set a weekly cap for this category and check it every payday weekend.',
+      flagged: false,
+      scenario: 'frequent_spend',
     });
   }
 
@@ -275,6 +293,8 @@ export function buildRecommendations(input: {
       detail: `Estimated recurring load ${formatPounds(recurringMonthly)} vs typical pay ${formatPounds(pay)}.`,
       action:
         'List cancelable subscriptions, renegotiate broadband/mobile, or move one large bill onto a longer cycle.',
+      flagged: true,
+      scenario: 'recurring_vs_pay',
     });
   } else if (pay > 0 && totalExpense > pay * 0.9) {
     recommendations.push({
@@ -284,6 +304,8 @@ export function buildRecommendations(input: {
       detail: `${formatPounds(totalExpense)} out vs typical ${formatPounds(pay)} in.`,
       action:
         'Delay non-essential purchases until after the next payday and park a fixed savings transfer on payday morning.',
+      flagged: true,
+      scenario: 'month_vs_pay',
     });
   }
 
@@ -301,6 +323,8 @@ export function buildRecommendations(input: {
           input.payFrequency === 'monthly'
             ? 'If you’re paid late in the month, move flexible bills later so the dry stretch mid-month is shorter.'
             : 'Align bigger bills with a payday week instead of the calendar start of the month.',
+        flagged: true,
+        scenario: 'front_loaded',
       });
     }
   }
@@ -313,14 +337,17 @@ export function buildRecommendations(input: {
       detail:
         'Calendar and list views get much clearer when fixed outgoings are marked recurring instead of retyped each month.',
       action: 'Add rent, council tax, and subscriptions under Recurring outgoings.',
+      flagged: false,
+      scenario: 'add_recurring',
     });
   }
 
   // Deduplicate by id, prefer higher severity
   const rank = { high: 0, medium: 1, low: 2 } as const;
-  return recommendations
+  const deduped = recommendations
     .sort((a, b) => rank[a.severity] - rank[b.severity])
-    .slice(0, 6);
+    .slice(0, 8);
+  return deduped;
 }
 
 function formatPounds(cents: number): string {

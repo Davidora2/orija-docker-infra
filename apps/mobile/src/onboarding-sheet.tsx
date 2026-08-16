@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   completeOnboarding,
+  getWealthMeta,
   listAreaSuggestions,
   type Account,
   type AreaSuggestion,
@@ -44,6 +45,8 @@ export function OnboardingSheet({ visible, onComplete, notify }: Props) {
   );
   const [selected, setSelected] = useState<Record<string, AreaSuggestion>>({});
   const [customTitle, setCustomTitle] = useState('');
+  const [currencies, setCurrencies] = useState<string[]>(['GBP', 'USD', 'CAD', 'EUR']);
+  const [currency, setCurrency] = useState('GBP');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -52,6 +55,13 @@ export function OnboardingSheet({ visible, onComplete, notify }: Props) {
       .then(setSuggestions)
       .catch(() => {
         // keep local defaults
+      });
+    void getWealthMeta()
+      .then((meta) => {
+        if (meta.currencies?.length) setCurrencies(meta.currencies);
+      })
+      .catch(() => {
+        // keep defaults
       });
   }, [visible]);
 
@@ -83,7 +93,7 @@ export function OnboardingSheet({ visible, onComplete, notify }: Props) {
     }
     setBusy(true);
     try {
-      const account = await completeOnboarding(selectedList);
+      const account = await completeOnboarding(selectedList, currency);
       onComplete(account);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not save areas.');
@@ -151,6 +161,31 @@ export function OnboardingSheet({ visible, onComplete, notify }: Props) {
             ))}
           </View>
         ) : null}
+
+        <View style={styles.selectedBox}>
+          <Text style={styles.selectedLabel}>Currency</Text>
+          <Text style={styles.body}>
+            Used for budgets, savings, and net worth.
+          </Text>
+          <View style={styles.grid}>
+            {currencies.map((code) => (
+              <Pressable
+                key={code}
+                onPress={() => setCurrency(code)}
+                style={[styles.chip, currency === code && styles.chipActive]}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    currency === code && styles.chipTextActive,
+                  ]}
+                >
+                  {code}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
 
         <Pressable
           style={[styles.cta, busy && styles.disabled, { marginBottom: insets.bottom + 16 }]}

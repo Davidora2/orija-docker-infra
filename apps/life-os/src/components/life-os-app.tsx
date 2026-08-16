@@ -13,7 +13,9 @@ import {
   register,
   resetPassword,
   updateLifeItem,
+  updateProfile,
   verifyResetCode,
+  getWealthMeta,
   type Account,
   type AuthProviders,
   type LifeItem,
@@ -85,6 +87,14 @@ export function LifeOSApp() {
   const [actionHours, setActionHours] = useState("2");
   const [areaTitle, setAreaTitle] = useState("");
   const [busy, setBusy] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileCurrency, setProfileCurrency] = useState("GBP");
+  const [currencies, setCurrencies] = useState<string[]>([
+    "GBP",
+    "USD",
+    "CAD",
+    "EUR",
+  ]);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -108,6 +118,12 @@ export function LifeOSApp() {
           setProviders(await getAuthProviders());
         } catch {
           setProviders(null);
+        }
+        try {
+          const meta = await getWealthMeta();
+          if (meta.currencies?.length) setCurrencies(meta.currencies);
+        } catch {
+          // keep defaults
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load");
@@ -134,6 +150,12 @@ export function LifeOSApp() {
   const planned = openActions.reduce((sum, action) => sum + num(action, "hours", 1), 0);
   const primary = openActions[0] ?? null;
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
+
+  useEffect(() => {
+    if (account?.user.preferredCurrency) {
+      setProfileCurrency(account.user.preferredCurrency);
+    }
+  }, [account?.user.preferredCurrency]);
 
   async function run(work: () => Promise<void>) {
     setBusy(true);
@@ -367,23 +389,69 @@ export function LifeOSApp() {
         <div>
           <p className="font-serif text-3xl">Life OS</p>
           <p className="text-sm text-[#6c7771]">
-            {account.user.displayName} · {online ? "Online" : "Offline"}
+            {account.user.displayName} · {online ? "Online" : "Offline"} ·{" "}
+            {account.user.preferredCurrency || "GBP"}
           </p>
         </div>
-        <button
-          className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold"
-          type="button"
-          onClick={() =>
-            void run(async () => {
-              await logout();
-              setAccount(null);
-              setItems([]);
-            })
-          }
-        >
-          Sign out
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold"
+            type="button"
+            onClick={() => setSettingsOpen((value) => !value)}
+          >
+            Profile
+          </button>
+          <button
+            className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold"
+            type="button"
+            onClick={() =>
+              void run(async () => {
+                await logout();
+                setAccount(null);
+                setItems([]);
+              })
+            }
+          >
+            Sign out
+          </button>
+        </div>
       </header>
+
+      {settingsOpen ? (
+        <article className="mb-5 space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
+          <h2 className="font-serif text-2xl">Profile settings</h2>
+          <p className="text-sm text-[#6c7771]">
+            Change the currency used for budgets, savings, and net worth.
+          </p>
+          <select
+            className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+            value={profileCurrency}
+            onChange={(e) => setProfileCurrency(e.target.value)}
+          >
+            {currencies.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={busy}
+            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+            onClick={() =>
+              void run(async () => {
+                const next = await updateProfile({
+                  preferredCurrency: profileCurrency,
+                });
+                setAccount(next);
+                setSettingsOpen(false);
+              })
+            }
+          >
+            Save currency
+          </button>
+        </article>
+      ) : null}
 
       <nav className="mb-5 flex flex-wrap gap-2">
         {(

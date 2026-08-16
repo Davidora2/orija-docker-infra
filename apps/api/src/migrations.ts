@@ -25,6 +25,12 @@ const migrations = [
       new URL('../migrations/004_auth_google_reset.sql', import.meta.url),
     ),
   },
+  {
+    version: '005_wealth_currency',
+    path: fileURLToPath(
+      new URL('../migrations/005_wealth_currency.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

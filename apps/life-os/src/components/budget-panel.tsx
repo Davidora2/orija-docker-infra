@@ -12,6 +12,7 @@ import {
   type Budget,
 } from "../lib/api";
 import { OutgoingsPanel } from "./outgoings-panel";
+import { WealthPanel } from "./wealth-panel";
 
 type Props = {
   account: Account;
@@ -27,8 +28,11 @@ export function BudgetPanel({ account, onError }: Props) {
   const [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<"ledger" | "outgoings">("outgoings");
+  const [section, setSection] = useState<"ledger" | "outgoings" | "wealth">(
+    "outgoings",
+  );
   const canShare = (account.members?.length ?? 0) >= 2;
+  const currency = account.user.preferredCurrency || "GBP";
 
   const reload = useCallback(async () => {
     const list = await listBudgets();
@@ -60,6 +64,7 @@ export function BudgetPanel({ account, onError }: Props) {
       const created = await createBudget({
         name: visibility === "SHARED" ? "Shared budget" : "Personal budget",
         visibility,
+        currency,
       });
       setActiveId(created.id);
       await reload();
@@ -197,6 +202,17 @@ export function BudgetPanel({ account, onError }: Props) {
             >
               Ledger
             </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                section === "wealth"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] bg-white text-[#14241f]"
+              }`}
+              onClick={() => setSection("wealth")}
+            >
+              Savings & investing
+            </button>
           </div>
 
           {section === "outgoings" ? (
@@ -204,6 +220,16 @@ export function BudgetPanel({ account, onError }: Props) {
               budget={detail}
               onError={onError}
               onChanged={() => void reload()}
+            />
+          ) : null}
+
+          {section === "wealth" ? (
+            <WealthPanel
+              account={account}
+              budgetId={detail.id}
+              currency={detail.currency || currency}
+              canShare={canShare}
+              onError={onError}
             />
           ) : null}
 

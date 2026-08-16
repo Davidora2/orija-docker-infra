@@ -17,6 +17,7 @@ export type AccountUser = {
   displayName: string;
   avatarUrl: string | null;
   timezone: string;
+  preferredCurrency: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: string | null;
 };
@@ -393,6 +394,7 @@ export async function getAccount(): Promise<Account | null> {
 export async function updateProfile(input: {
   displayName?: string;
   timezone?: string;
+  preferredCurrency?: string;
   avatarUrl?: string | null;
 }): Promise<Account> {
   return request<Account>('/v1/me', {
@@ -496,10 +498,11 @@ export async function listAreaSuggestions(): Promise<AreaSuggestion[]> {
 
 export async function completeOnboarding(
   areas: { title: string; icon?: string }[],
+  preferredCurrency?: string,
 ): Promise<Account> {
   return request<Account>('/v1/onboarding/complete', {
     method: 'POST',
-    body: JSON.stringify({ areas }),
+    body: JSON.stringify({ areas, preferredCurrency }),
   });
 }
 
@@ -565,6 +568,8 @@ export type BudgetRecommendation = {
   title: string;
   detail: string;
   action: string;
+  flagged?: boolean;
+  scenario?: string;
 };
 
 export type OutgoingItem = {
@@ -606,6 +611,7 @@ export type MonthOutgoings = {
     oneOffCents: number;
   };
   recommendations: BudgetRecommendation[];
+  flags?: BudgetRecommendation[];
 };
 
 function mapBudget(raw: Record<string, unknown>): Budget {
@@ -697,7 +703,7 @@ export async function createBudget(input: {
     body: JSON.stringify({
       name: input.name,
       visibility: input.visibility ?? 'PRIVATE',
-      currency: input.currency ?? 'GBP',
+      currency: input.currency,
       period: input.period ?? 'monthly',
       seedCategories: true,
     }),
@@ -787,4 +793,256 @@ export async function getMonthOutgoings(
   return request<MonthOutgoings>(
     `/v1/budgets/${budgetId}/outgoings?year=${year}&month=${month}`,
   );
+}
+
+export type SavingGoal = {
+  id: string;
+  ownerUserId: string;
+  householdId: string | null;
+  visibility: "PRIVATE" | "SHARED";
+  category: "emergency" | "six_month_salary" | "holiday" | "house_deposit" | "custom";
+  customLabel: string | null;
+  name: string;
+  targetCents: number;
+  currentCents: number;
+};
+
+export type InvestmentAccount = {
+  id: string;
+  ownerUserId: string;
+  householdId: string | null;
+  visibility: "PRIVATE" | "SHARED";
+  accountType: "fhsa" | "tfsa" | "rrsp" | "isa" | "stocks" | "crypto" | "pension" | "other";
+  customLabel: string | null;
+  name: string;
+  goalCents: number;
+  currentCents: number;
+};
+
+export type NetWorth = {
+  currency: string;
+  personal: {
+    savingsCents: number;
+    investmentsCents: number;
+    budgetBalanceCents: number;
+    netWorthCents: number;
+  };
+  household: {
+    savingsCents: number;
+    investmentsCents: number;
+    netWorthCents: number;
+    householdId: string | null;
+  };
+  totalVisibleCents: number;
+};
+
+export type DraftExpense = {
+  id: string;
+  budgetId: string;
+  name: string;
+  amountCents: number;
+  categoryId: string | null;
+  dayOfMonth: number | null;
+  note: string;
+  active: boolean;
+};
+
+export type DraftImpact = {
+  budgetId: string;
+  currency: string;
+  drafts: DraftExpense[];
+  impact: {
+    typicalPayCents: number;
+    monthIncomeCents: number;
+    monthExpenseCents: number;
+    recurringMonthlyCents: number;
+    draftCents: number;
+    remainingWithoutDraftsCents: number;
+    remainingWithDraftsCents: number;
+    wouldOverspend: boolean;
+    overspendCents: number;
+  };
+};
+
+function mapSaving(raw: Record<string, unknown>): SavingGoal {
+  return {
+    id: String(raw.id),
+    ownerUserId: String(raw.ownerUserId ?? raw.owner_user_id),
+    householdId: (raw.householdId ?? raw.household_id ?? null) as string | null,
+    visibility: raw.visibility as "PRIVATE" | "SHARED",
+    category: raw.category as SavingGoal["category"],
+    customLabel: (raw.customLabel ?? raw.custom_label ?? null) as string | null,
+    name: String(raw.name),
+    targetCents: Number(raw.targetCents ?? raw.target_cents ?? 0),
+    currentCents: Number(raw.currentCents ?? raw.current_cents ?? 0),
+  };
+}
+
+function mapInvestment(raw: Record<string, unknown>): InvestmentAccount {
+  return {
+    id: String(raw.id),
+    ownerUserId: String(raw.ownerUserId ?? raw.owner_user_id),
+    householdId: (raw.householdId ?? raw.household_id ?? null) as string | null,
+    visibility: raw.visibility as "PRIVATE" | "SHARED",
+    accountType: (raw.accountType ?? raw.account_type) as InvestmentAccount["accountType"],
+    customLabel: (raw.customLabel ?? raw.custom_label ?? null) as string | null,
+    name: String(raw.name),
+    goalCents: Number(raw.goalCents ?? raw.goal_cents ?? 0),
+    currentCents: Number(raw.currentCents ?? raw.current_cents ?? 0),
+  };
+}
+
+function mapDraft(raw: Record<string, unknown>): DraftExpense {
+  return {
+    id: String(raw.id),
+    budgetId: String(raw.budgetId ?? raw.budget_id),
+    name: String(raw.name),
+    amountCents: Number(raw.amountCents ?? raw.amount_cents),
+    categoryId: (raw.categoryId ?? raw.category_id ?? null) as string | null,
+    dayOfMonth:
+      raw.dayOfMonth != null || raw.day_of_month != null
+        ? Number(raw.dayOfMonth ?? raw.day_of_month)
+        : null,
+    note: String(raw.note ?? ""),
+    active: Boolean(raw.active ?? true),
+  };
+}
+
+export async function getWealthMeta(): Promise<{
+  savingCategories: { id: string; label: string }[];
+  investmentTypes: { id: string; label: string }[];
+  currencies: string[];
+}> {
+  return request("/v1/wealth/meta");
+}
+
+export async function listSavingGoals(): Promise<SavingGoal[]> {
+  const rows = await request<Record<string, unknown>[]>("/v1/saving-goals");
+  return rows.map(mapSaving);
+}
+
+export async function createSavingGoal(input: {
+  name: string;
+  category: SavingGoal["category"];
+  customLabel?: string;
+  targetCents?: number;
+  currentCents?: number;
+  visibility?: "PRIVATE" | "SHARED";
+}): Promise<SavingGoal> {
+  const raw = await request<Record<string, unknown>>("/v1/saving-goals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return mapSaving(raw);
+}
+
+export async function updateSavingGoal(
+  id: string,
+  input: Partial<{
+    name: string;
+    category: SavingGoal["category"];
+    customLabel: string | null;
+    targetCents: number;
+    currentCents: number;
+  }>,
+): Promise<SavingGoal> {
+  const raw = await request<Record<string, unknown>>(`/v1/saving-goals/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return mapSaving(raw);
+}
+
+export async function deleteSavingGoal(id: string): Promise<void> {
+  await request(`/v1/saving-goals/${id}`, { method: "DELETE" });
+}
+
+export async function listInvestments(): Promise<InvestmentAccount[]> {
+  const rows = await request<Record<string, unknown>[]>("/v1/investments");
+  return rows.map(mapInvestment);
+}
+
+export async function createInvestment(input: {
+  name: string;
+  accountType: InvestmentAccount["accountType"];
+  customLabel?: string;
+  goalCents?: number;
+  currentCents?: number;
+  visibility?: "PRIVATE" | "SHARED";
+}): Promise<InvestmentAccount> {
+  const raw = await request<Record<string, unknown>>("/v1/investments", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return mapInvestment(raw);
+}
+
+export async function updateInvestment(
+  id: string,
+  input: Partial<{
+    name: string;
+    accountType: InvestmentAccount["accountType"];
+    customLabel: string | null;
+    goalCents: number;
+    currentCents: number;
+  }>,
+): Promise<InvestmentAccount> {
+  const raw = await request<Record<string, unknown>>(`/v1/investments/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return mapInvestment(raw);
+}
+
+export async function deleteInvestment(id: string): Promise<void> {
+  await request(`/v1/investments/${id}`, { method: "DELETE" });
+}
+
+export async function getNetWorth(): Promise<NetWorth> {
+  return request<NetWorth>("/v1/net-worth");
+}
+
+export async function listDraftExpenses(budgetId: string): Promise<DraftExpense[]> {
+  const rows = await request<Record<string, unknown>[]>(
+    `/v1/budgets/${budgetId}/drafts`,
+  );
+  return rows.map(mapDraft);
+}
+
+export async function createDraftExpense(
+  budgetId: string,
+  input: {
+    name: string;
+    amountCents: number;
+    categoryId?: string | null;
+    dayOfMonth?: number | null;
+    note?: string;
+  },
+): Promise<DraftExpense> {
+  const raw = await request<Record<string, unknown>>(
+    `/v1/budgets/${budgetId}/drafts`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return mapDraft(raw);
+}
+
+export async function deleteDraftExpense(
+  budgetId: string,
+  draftId: string,
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/drafts/${draftId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getDraftImpact(budgetId: string): Promise<DraftImpact> {
+  const raw = await request<Record<string, unknown> & { drafts: Record<string, unknown>[] }>(
+    `/v1/budgets/${budgetId}/draft-impact`,
+  );
+  return {
+    budgetId: String(raw.budgetId),
+    currency: String(raw.currency),
+    drafts: (raw.drafts ?? []).map(mapDraft),
+    impact: raw.impact as DraftImpact["impact"],
+  };
 }

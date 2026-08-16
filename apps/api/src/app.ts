@@ -11,6 +11,7 @@ import { createDatabase, type Database } from './db.js';
 import { ApiError } from './errors.js';
 import { runMigrations } from './migrations.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
+import { registerWealthRoutes } from './wealth.js';
 import {
   createOpaqueToken,
   hashPassword,
@@ -39,6 +40,12 @@ const profileSchema = z
     displayName: z.string().trim().min(1).max(100).optional(),
     avatarUrl: z.string().url().max(2_000).nullable().optional(),
     timezone: z.string().trim().min(1).max(100).optional(),
+    preferredCurrency: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
 
@@ -116,6 +123,7 @@ type UserRow = {
   displayName: string;
   avatarUrl: string | null;
   timezone: string;
+  preferredCurrency?: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
   googleSub?: string | null;
@@ -135,13 +143,24 @@ type AppDependencies = {
   runSchemaMigrations?: boolean;
 };
 
-function publicUser(user: UserRow) {
+function publicUser(user: {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  timezone: string;
+  preferredCurrency?: string;
+  activeHouseholdId: string | null;
+  onboardingCompletedAt: Date | null;
+  createdAt: Date;
+}) {
   return {
     id: user.id,
     email: user.email,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     timezone: user.timezone,
+    preferredCurrency: user.preferredCurrency ?? 'GBP',
     activeHouseholdId: user.activeHouseholdId,
     onboardingCompletedAt: user.onboardingCompletedAt,
     createdAt: user.createdAt,
@@ -152,7 +171,7 @@ async function getUser(sql: Database, userId: string): Promise<UserRow> {
   const [user] = await sql<UserRow[]>`
     SELECT
       id, email, password_hash, display_name, avatar_url, timezone,
-      active_household_id, onboarding_completed_at, created_at
+      preferred_currency, active_household_id, onboarding_completed_at, created_at
     FROM users
     WHERE id = ${userId}
   `;
@@ -453,6 +472,7 @@ export async function buildApp(
       UPDATE users SET
         display_name = COALESCE(${body.displayName ?? null}, display_name),
         timezone = COALESCE(${body.timezone ?? null}, timezone),
+        preferred_currency = COALESCE(${body.preferredCurrency ?? null}, preferred_currency),
         avatar_url = CASE
           WHEN ${avatarProvided} THEN ${body.avatarUrl ?? null}
           ELSE avatar_url
@@ -784,6 +804,7 @@ export async function buildApp(
     getUser,
     getAccountPayload,
   });
+  registerWealthRoutes(app, sql, auth, { getUser });
   registerAuthExtras(app, sql, config, auth, {
     getAccountPayload,
     publicUser,

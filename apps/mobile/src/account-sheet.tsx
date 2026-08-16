@@ -30,6 +30,7 @@ import {
   setActiveHousehold,
   updateProfile,
   verifyResetCode,
+  getWealthMeta,
   type Account,
   type AuthProviders,
   ApiError,
@@ -164,6 +165,8 @@ export function AccountSheet({
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [providers, setProviders] = useState<AuthProviders | null>(null);
+  const [profileCurrency, setProfileCurrency] = useState('GBP');
+  const [currencies, setCurrencies] = useState<string[]>(['GBP', 'USD', 'CAD', 'EUR']);
   const [partnerEmail, setPartnerEmail] = useState('');
   const [inviteToken, setInviteToken] = useState('');
   const [generatedInvite, setGeneratedInvite] = useState<{
@@ -183,8 +186,22 @@ export function AccountSheet({
   });
 
   useEffect(() => {
-    if (account) setDisplayName(account.user.displayName);
+    if (account) {
+      setDisplayName(account.user.displayName);
+      setProfileCurrency(account.user.preferredCurrency || 'GBP');
+    }
   }, [account]);
+
+  useEffect(() => {
+    if (!visible) return;
+    void getWealthMeta()
+      .then((meta) => {
+        if (meta.currencies?.length) setCurrencies(meta.currencies);
+      })
+      .catch(() => {
+        // keep defaults
+      });
+  }, [visible]);
 
   useEffect(() => {
     if (!visible || account) return;
@@ -247,7 +264,10 @@ export function AccountSheet({
 
   async function saveProfile() {
     await perform(async () => {
-      const next = await updateProfile({ displayName });
+      const next = await updateProfile({
+        displayName,
+        preferredCurrency: profileCurrency,
+      });
       onAccountChange(next);
       notify('Profile updated.');
     });
@@ -559,6 +579,28 @@ export function AccountSheet({
                   placeholder="Your name"
                   value={displayName}
                 />
+                <Text style={styles.label}>CURRENCY</Text>
+                <View style={styles.modeRow}>
+                  {currencies.slice(0, 4).map((code) => (
+                    <Pressable
+                      key={code}
+                      onPress={() => setProfileCurrency(code)}
+                      style={[
+                        styles.modeButton,
+                        profileCurrency === code && styles.modeButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modeText,
+                          profileCurrency === code && styles.modeTextActive,
+                        ]}
+                      >
+                        {code}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
                 <ActionButton
                   disabled={busy || !displayName.trim()}
                   label="Save profile"

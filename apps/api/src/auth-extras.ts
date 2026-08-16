@@ -15,6 +15,7 @@ type UserRow = {
   displayName: string;
   avatarUrl: string | null;
   timezone: string;
+  preferredCurrency?: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
   googleSub: string | null;
@@ -28,7 +29,17 @@ export function registerAuthExtras(
   auth: AuthService,
   helpers: {
     getAccountPayload: (sql: Database, userId: string) => Promise<unknown>;
-    publicUser: (user: UserRow) => unknown;
+    publicUser: (user: {
+      id: string;
+      email: string;
+      displayName: string;
+      avatarUrl: string | null;
+      timezone: string;
+      preferredCurrency?: string;
+      activeHouseholdId: string | null;
+      onboardingCompletedAt: Date | null;
+      createdAt: Date;
+    }) => unknown;
   },
 ): void {
   const mailer = createMailer(config);
