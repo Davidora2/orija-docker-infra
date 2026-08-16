@@ -8,6 +8,8 @@ import {
 } from 'react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  addBudgetEntry,
+  createBudgetCategory,
   createRecurringOutgoing,
   currencySymbol,
   deleteRecurringOutgoing,
@@ -17,6 +19,7 @@ import {
   markOutgoingPaid,
   unmarkOutgoingPaid,
   updateBudget,
+  updateBudgetEntry,
   updateRecurringOutgoing,
   type Budget,
   type MonthOutgoings,
@@ -96,6 +99,14 @@ export function OutgoingsView({
   const [editNote, setEditNote] = useState('');
   const [editWeekday, setEditWeekday] = useState('1');
   const [editDate, setEditDate] = useState('');
+  const [dailyAmount, setDailyAmount] = useState('');
+  const [dailyNote, setDailyNote] = useState('');
+  const [dailyCategoryId, setDailyCategoryId] = useState<string | null>(null);
+  const [dailyDate, setDailyDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categories, setCategories] = useState(budget.categories ?? []);
   const displayCurrency =
     preferredCurrency || data?.currency || budget.currency || 'GBP';
   const symbol = currencySymbol(displayCurrency);
@@ -106,7 +117,18 @@ export function OutgoingsView({
     setTypicalPay(
       budget.typicalPayCents != null ? String(budget.typicalPayCents / 100) : '',
     );
-  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents]);
+    setCategories(budget.categories ?? []);
+    if (!dailyCategoryId && budget.categories?.[0]) {
+      setDailyCategoryId(budget.categories[0].id);
+    }
+  }, [
+    budget.id,
+    budget.payFrequency,
+    budget.nextPayDate,
+    budget.typicalPayCents,
+    budget.categories,
+    dailyCategoryId,
+  ]);
 
   const load = useCallback(async () => {
     const [next, recurring] = await Promise.all([
@@ -151,6 +173,71 @@ export function OutgoingsView({
       notify('Pay schedule saved.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not save pay schedule.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addDailyExpense() {
+    const pounds = Number(dailyAmount);
+    if (!Number.isFinite(pounds) || pounds <= 0) {
+      notify('Enter a positive amount for the daily expense.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await addBudgetEntry(budget.id, {
+        kind: 'EXPENSE',
+        amountCents: Math.round(pounds * 100),
+        categoryId: dailyCategoryId,
+        note: dailyNote.trim(),
+        occurredOn: dailyDate || undefined,
+      });
+      setDailyAmount('');
+      setDailyNote('');
+      await load();
+      onChanged();
+      notify('Daily expense added to this month.');
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : 'Could not save daily expense.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addCategory() {
+    const name = newCategoryName.trim();
+    if (!name) {
+      notify('Enter a category name.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await createBudgetCategory(budget.id, { name });
+      setCategories((prev) => [...prev, created]);
+      setDailyCategoryId(created.id);
+      setNewCategoryName('');
+      onChanged();
+      notify('Category added.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not add category.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeEntryCategory(entryId: string, categoryId: string | null) {
+    setBusy(true);
+    try {
+      await updateBudgetEntry(budget.id, entryId, { categoryId });
+      await load();
+      onChanged();
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : 'Could not update category.',
+      );
     } finally {
       setBusy(false);
     }
@@ -325,7 +412,7 @@ export function OutgoingsView({
     if (item.source === 'recurring') return 'Bill';
     if (item.source === 'saving') return 'Savings';
     if (item.source === 'debt') return 'Debt';
-    return 'Logged';
+    return 'Daily';
   }
 
   return (
@@ -360,12 +447,42 @@ export function OutgoingsView({
           </Pressable>
         </View>
         {data ? (
-          <Text style={styles.meta}>
-            {formatMoney(data.totals.expenseCents, displayCurrency)} out this month
-            {data.totals.outstandingCents != null
-              ? ` · ${formatMoney(data.totals.outstandingCents, displayCurrency)} outstanding`
-              : ''}
-          </Text>
+          <View style={{ gap: 4, marginTop: 4 }}>
+            <Text style={styles.totalOut}>
+              {formatMoney(data.totals.expenseCents, displayCurrency)}
+            </Text>
+            <Text style={styles.meta}>total out this month</Text>
+            <Text style={styles.meta}>
+              {formatMoney(data.totals.recurringCents, displayCurrency)} bills ·{' '}
+              {formatMoney(
+                data.totals.dailyExpenseCents ?? data.totals.oneOffCents,
+                displayCurrency,
+              )}{' '}
+              daily
+              {data.totals.outstandingCents != null
+                ? ` · ${formatMoney(data.totals.outstandingCents, displayCurrency)} outstanding`
+                : ''}
+            </Text>
+            {data.totals.expectedPayCents != null &&
+            data.totals.deltaCents != null ? (
+              <Text
+                style={{
+                  color:
+                    data.totals.deltaCents >= 0 ? colors.sageDeep : colors.danger,
+                  fontWeight: '700',
+                  fontSize: 12,
+                }}
+              >
+                {data.totals.deltaCents >= 0 ? '+' : '−'}
+                {formatMoney(Math.abs(data.totals.deltaCents), displayCurrency)}{' '}
+                {data.totals.deltaCents >= 0 ? 'left' : 'over'} vs expected pay
+              </Text>
+            ) : (
+              <Text style={styles.meta}>
+                Set typical pay to see pay vs outgoings delta.
+              </Text>
+            )}
+          </View>
         ) : null}
       </View>
 
@@ -410,6 +527,79 @@ export function OutgoingsView({
           onPress={() => void savePaySchedule()}
         >
           <Text style={styles.buttonText}>Save pay schedule</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.eyebrow}>Add daily expense</Text>
+        <Text style={styles.meta}>
+          One-off spends count toward this month&apos;s total and delta.
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.row}>
+            {categories.map((category) => (
+              <Pressable
+                key={category.id}
+                style={[
+                  styles.chip,
+                  dailyCategoryId === category.id && styles.chipActive,
+                ]}
+                onPress={() => setDailyCategoryId(category.id)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    dailyCategoryId === category.id && styles.chipTextActive,
+                  ]}
+                >
+                  {category.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+        <TextInput
+          style={styles.input}
+          placeholder="New category"
+          placeholderTextColor="#9BA49E"
+          value={newCategoryName}
+          onChangeText={setNewCategoryName}
+        />
+        <Pressable
+          style={[styles.buttonSecondary, busy && styles.disabled]}
+          disabled={busy}
+          onPress={() => void addCategory()}
+        >
+          <Text style={styles.buttonTextSecondary}>Add category</Text>
+        </Pressable>
+        <TextInput
+          style={styles.input}
+          placeholder={`Amount (${symbol})`}
+          placeholderTextColor="#9BA49E"
+          keyboardType="decimal-pad"
+          value={dailyAmount}
+          onChangeText={setDailyAmount}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Date YYYY-MM-DD"
+          placeholderTextColor="#9BA49E"
+          value={dailyDate}
+          onChangeText={setDailyDate}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Note (optional)"
+          placeholderTextColor="#9BA49E"
+          value={dailyNote}
+          onChangeText={setDailyNote}
+        />
+        <Pressable
+          style={[styles.button, busy && styles.disabled]}
+          disabled={busy}
+          onPress={() => void addDailyExpense()}
+        >
+          <Text style={styles.buttonText}>Add to this month&apos;s outgoings</Text>
         </Pressable>
       </View>
 
@@ -812,6 +1002,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   title: { fontSize: 22, fontWeight: '700', color: colors.ink },
+  totalOut: { fontSize: 26, fontWeight: '700', color: colors.ink },
   meta: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -842,6 +1033,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: { color: colors.paper, fontWeight: '700' },
+  buttonSecondary: {
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonTextSecondary: { color: colors.ink, fontWeight: '700' },
   disabled: { opacity: 0.45 },
   weekHeader: { flexDirection: 'row' },
   weekLabel: {

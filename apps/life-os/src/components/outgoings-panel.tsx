@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  addBudgetEntry,
+  createBudgetCategory,
   createRecurringOutgoing,
   currencySymbol,
   deleteRecurringOutgoing,
@@ -11,6 +13,7 @@ import {
   markOutgoingPaid,
   unmarkOutgoingPaid,
   updateBudget,
+  updateBudgetEntry,
   updateRecurringOutgoing,
   type Budget,
   type MonthOutgoings,
@@ -85,6 +88,15 @@ export function OutgoingsPanel({
     return `${y}-${m}-${d}`;
   });
 
+  const [dailyAmount, setDailyAmount] = useState("");
+  const [dailyNote, setDailyNote] = useState("");
+  const [dailyCategoryId, setDailyCategoryId] = useState<string | null>(null);
+  const [dailyDate, setDailyDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categories, setCategories] = useState(budget.categories ?? []);
+
   const displayCurrency =
     preferredCurrency || data?.currency || budget.currency || "GBP";
   const symbol = currencySymbol(displayCurrency);
@@ -95,7 +107,18 @@ export function OutgoingsPanel({
     setTypicalPay(
       budget.typicalPayCents != null ? String(budget.typicalPayCents / 100) : "",
     );
-  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents]);
+    setCategories(budget.categories ?? []);
+    if (!dailyCategoryId && budget.categories?.[0]) {
+      setDailyCategoryId(budget.categories[0].id);
+    }
+  }, [
+    budget.id,
+    budget.payFrequency,
+    budget.nextPayDate,
+    budget.typicalPayCents,
+    budget.categories,
+    dailyCategoryId,
+  ]);
 
   const load = useCallback(async () => {
     const [next, recurring] = await Promise.all([
@@ -143,6 +166,71 @@ export function OutgoingsPanel({
       onChanged();
     } catch (error) {
       onError(error instanceof Error ? error.message : "Could not save pay schedule.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addDailyExpense() {
+    const pounds = Number(dailyAmount);
+    if (!Number.isFinite(pounds) || pounds <= 0) {
+      onError("Enter a positive amount for the daily expense.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await addBudgetEntry(budget.id, {
+        kind: "EXPENSE",
+        amountCents: Math.round(pounds * 100),
+        categoryId: dailyCategoryId,
+        note: dailyNote.trim(),
+        occurredOn: dailyDate || undefined,
+      });
+      setDailyAmount("");
+      setDailyNote("");
+      await load();
+      onChanged();
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Could not save daily expense.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addCategory() {
+    const name = newCategoryName.trim();
+    if (!name) {
+      onError("Enter a category name.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await createBudgetCategory(budget.id, { name });
+      setCategories((prev) => [...prev, created]);
+      setDailyCategoryId(created.id);
+      setNewCategoryName("");
+      onChanged();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not add category.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeEntryCategory(entryId: string, categoryId: string) {
+    setBusy(true);
+    try {
+      await updateBudgetEntry(budget.id, entryId, {
+        categoryId: categoryId || null,
+      });
+      await load();
+      onChanged();
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Could not update category.",
+      );
     } finally {
       setBusy(false);
     }
@@ -241,7 +329,7 @@ export function OutgoingsPanel({
     if (item.source === "recurring") return "Bill";
     if (item.source === "saving") return "Savings";
     if (item.source === "debt") return "Debt";
-    return "Logged";
+    return "Daily";
   }
 
   function PaymentToggle({ item }: { item: OutgoingItem }) {
@@ -409,20 +497,65 @@ export function OutgoingsPanel({
           </div>
         </div>
         {data ? (
-          <p className="mt-2 text-sm text-[#6c7771]">
-            {formatMoney(data.totals.expenseCents, displayCurrency)} out ·{" "}
-            {formatMoney(data.totals.recurringCents, displayCurrency)} recurring ·{" "}
-            {formatMoney(data.totals.oneOffCents, displayCurrency)} one-off
-            {data.totals.outstandingCents != null ? (
-              <>
-                {" "}
-                ·{" "}
-                <span className="font-semibold text-[#c9634f]">
-                  {formatMoney(data.totals.outstandingCents, displayCurrency)} outstanding
+          <div className="mt-3 space-y-1 text-sm text-[#6c7771]">
+            <p className="font-serif text-2xl text-[#14241f]">
+              {formatMoney(data.totals.expenseCents, displayCurrency)}{" "}
+              <span className="text-base font-sans font-normal text-[#6c7771]">
+                total out this month
+              </span>
+            </p>
+            <p>
+              {formatMoney(
+                data.totals.recurringCents ?? 0,
+                displayCurrency,
+              )}{" "}
+              bills ·{" "}
+              {formatMoney(
+                data.totals.dailyExpenseCents ?? data.totals.oneOffCents,
+                displayCurrency,
+              )}{" "}
+              daily
+              {(data.totals.savingContributionCents ?? 0) > 0
+                ? ` · ${formatMoney(data.totals.savingContributionCents ?? 0, displayCurrency)} savings`
+                : ""}
+              {(data.totals.debtPaymentCents ?? 0) > 0
+                ? ` · ${formatMoney(data.totals.debtPaymentCents ?? 0, displayCurrency)} debts`
+                : ""}
+              {data.totals.outstandingCents != null ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span className="font-semibold text-[#c9634f]">
+                    {formatMoney(data.totals.outstandingCents, displayCurrency)}{" "}
+                    outstanding
+                  </span>
+                </>
+              ) : null}
+            </p>
+            {data.totals.expectedPayCents != null &&
+            data.totals.deltaCents != null ? (
+              <p>
+                Expected pay{" "}
+                {formatMoney(data.totals.expectedPayCents, displayCurrency)}
+                {" · "}
+                <span
+                  className={`font-semibold ${
+                    data.totals.deltaCents >= 0
+                      ? "text-[#617a57]"
+                      : "text-[#c9634f]"
+                  }`}
+                >
+                  {data.totals.deltaCents >= 0 ? "+" : "−"}
+                  {formatMoney(Math.abs(data.totals.deltaCents), displayCurrency)}{" "}
+                  {data.totals.deltaCents >= 0 ? "left" : "over"}
                 </span>
-              </>
-            ) : null}
-          </p>
+              </p>
+            ) : (
+              <p className="text-xs">
+                Set typical pay in Pay schedule to see pay vs outgoings delta.
+              </p>
+            )}
+          </div>
         ) : null}
       </article>
 
@@ -466,6 +599,83 @@ export function OutgoingsPanel({
           onClick={() => void savePaySchedule()}
         >
           Save pay schedule
+        </button>
+      </article>
+
+      <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+        <h4 className="font-semibold">Add daily expense</h4>
+        <p className="text-sm text-[#6c7771]">
+          One-off spends count toward this month&apos;s total outgoings and delta.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                dailyCategoryId === category.id
+                  ? "bg-[#14241f] text-[#d6f57a]"
+                  : "border border-[#dde2dd]"
+              }`}
+              onClick={() => setDailyCategoryId(category.id)}
+            >
+              {category.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <input
+            className="min-w-[10rem] flex-1 rounded-xl border border-[#dde2dd] px-3 py-3"
+            placeholder="New category"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={busy}
+            className="rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold disabled:opacity-50"
+            onClick={() => void addCategory()}
+          >
+            Add category
+          </button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              Amount
+            </span>
+            <input
+              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+              placeholder={`Amount (${symbol})`}
+              value={dailyAmount}
+              onChange={(e) => setDailyAmount(e.target.value)}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              Date
+            </span>
+            <input
+              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+              type="date"
+              value={dailyDate}
+              onChange={(e) => setDailyDate(e.target.value)}
+            />
+          </label>
+        </div>
+        <input
+          className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+          placeholder="Note (optional)"
+          value={dailyNote}
+          onChange={(e) => setDailyNote(e.target.value)}
+        />
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+          onClick={() => void addDailyExpense()}
+        >
+          Add to this month&apos;s outgoings
         </button>
       </article>
 
@@ -521,26 +731,51 @@ export function OutgoingsPanel({
                 <p className="text-sm text-[#6c7771]">No outgoings on this day.</p>
               ) : (
                 selectedDay.items.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{item.title}</p>
-                      <p className="text-xs text-[#6c7771]">
-                        {sourceLabel(item)}
-                        {item.paid ? " · paid" : item.source !== "entry" ? " · outstanding" : ""}
-                        {item.note ? ` · ${item.note}` : ""}
-                      </p>
+                  <div key={item.id} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{item.title}</p>
+                        <p className="text-xs text-[#6c7771]">
+                          {sourceLabel(item)}
+                          {item.paid
+                            ? " · paid"
+                            : item.source !== "entry"
+                              ? " · outstanding"
+                              : ""}
+                          {item.note ? ` · ${item.note}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <PaymentToggle item={item} />
+                        <p
+                          className={`font-bold ${
+                            item.kind === "INCOME"
+                              ? "text-[#617a57]"
+                              : "text-[#c9634f]"
+                          }`}
+                        >
+                          {item.kind === "INCOME" ? "+" : "-"}
+                          {formatMoney(item.amountCents, displayCurrency)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <PaymentToggle item={item} />
-                      <p
-                        className={`font-bold ${
-                          item.kind === "INCOME" ? "text-[#617a57]" : "text-[#c9634f]"
-                        }`}
+                    {item.source === "entry" ? (
+                      <select
+                        className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                        value={item.categoryId ?? ""}
+                        disabled={busy}
+                        onChange={(e) =>
+                          void changeEntryCategory(item.id, e.target.value)
+                        }
                       >
-                        {item.kind === "INCOME" ? "+" : "-"}
-                        {formatMoney(item.amountCents, displayCurrency)}
-                      </p>
-                    </div>
+                        <option value="">Uncategorised</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                   </div>
                 ))
               )}
@@ -557,22 +792,45 @@ export function OutgoingsPanel({
             data.list.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-3 border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
+                className="space-y-2 border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
               >
-                <div>
-                  <p className="font-semibold">{item.title}</p>
-                  <p className="text-xs text-[#6c7771]">
-                    {item.date} · {sourceLabel(item)}
-                    {item.paid ? " · paid" : item.source !== "entry" ? " · outstanding" : ""}
-                    {item.note ? ` · ${item.note}` : ""}
-                  </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{item.title}</p>
+                    <p className="text-xs text-[#6c7771]">
+                      {item.date} · {sourceLabel(item)}
+                      {item.paid
+                        ? " · paid"
+                        : item.source !== "entry"
+                          ? " · outstanding"
+                          : ""}
+                      {item.note ? ` · ${item.note}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <PaymentToggle item={item} />
+                    <p className="font-bold text-[#c9634f]">
+                      -{formatMoney(item.amountCents, displayCurrency)}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <PaymentToggle item={item} />
-                  <p className="font-bold text-[#c9634f]">
-                    -{formatMoney(item.amountCents, displayCurrency)}
-                  </p>
-                </div>
+                {item.source === "entry" ? (
+                  <select
+                    className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                    value={item.categoryId ?? ""}
+                    disabled={busy}
+                    onChange={(e) =>
+                      void changeEntryCategory(item.id, e.target.value)
+                    }
+                  >
+                    <option value="">Uncategorised</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
               </div>
             ))
           )}

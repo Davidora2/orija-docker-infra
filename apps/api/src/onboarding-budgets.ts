@@ -1119,6 +1119,15 @@ export function registerOnboardingAndBudgetRoutes(
       const recurringCents = list
         .filter((item) => item.kind === 'EXPENSE' && item.source === 'recurring')
         .reduce((sum, item) => sum + item.amountCents, 0);
+      const dailyExpenseCents = list
+        .filter((item) => item.kind === 'EXPENSE' && item.source === 'entry')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const savingContributionCents = list
+        .filter((item) => item.kind === 'EXPENSE' && item.source === 'saving')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const debtPaymentCents = list
+        .filter((item) => item.kind === 'EXPENSE' && item.source === 'debt')
+        .reduce((sum, item) => sum + item.amountCents, 0);
       const outstandingCents = list
         .filter(
           (item) =>
@@ -1139,6 +1148,12 @@ export function registerOnboardingAndBudgetRoutes(
             item.paid,
         )
         .reduce((sum, item) => sum + item.amountCents, 0);
+      const expectedPayCents =
+        schedule?.typicalPayCents != null && payDates.length > 0
+          ? Number(schedule.typicalPayCents) * payDates.length
+          : null;
+      const deltaCents =
+        expectedPayCents != null ? expectedPayCents - expenseCents : null;
 
       const recommendations = buildRecommendations({
         currency: schedule?.currency ?? budget.currency,
@@ -1166,9 +1181,14 @@ export function registerOnboardingAndBudgetRoutes(
           expenseCents,
           incomeCents,
           recurringCents,
-          oneOffCents: expenseCents - recurringCents,
+          dailyExpenseCents,
+          savingContributionCents,
+          debtPaymentCents,
+          oneOffCents: dailyExpenseCents,
           outstandingCents,
           paidTrackedCents,
+          expectedPayCents,
+          deltaCents,
         },
         recommendations,
         flags: recommendations.filter((item) => item.flagged),

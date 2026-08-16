@@ -517,8 +517,13 @@ export type MonthOutgoings = {
     incomeCents: number;
     recurringCents: number;
     oneOffCents: number;
+    dailyExpenseCents?: number;
+    savingContributionCents?: number;
+    debtPaymentCents?: number;
     outstandingCents?: number;
     paidTrackedCents?: number;
+    expectedPayCents?: number | null;
+    deltaCents?: number | null;
   };
   recommendations: BudgetRecommendation[];
   flags?: BudgetRecommendation[];

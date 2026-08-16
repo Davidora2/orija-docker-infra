@@ -413,15 +413,27 @@ suite('account and couple household API', () => {
     });
     expect(outgoings.statusCode).toBe(200);
     const month = outgoings.json<{
-      list: { title: string; date: string }[];
+      list: { title: string; date: string; source?: string }[];
       days: unknown[];
       recommendations: { id: string }[];
       paySchedule: { payDates: string[] };
+      totals: {
+        expenseCents: number;
+        dailyExpenseCents: number;
+        recurringCents: number;
+        expectedPayCents: number | null;
+        deltaCents: number | null;
+      };
     }>();
     expect(month.days.length).toBe(31);
     expect(month.list.length).toBeGreaterThan(0);
     expect(month.paySchedule.payDates).toContain('2026-08-28');
     expect(month.recommendations.length).toBeGreaterThan(0);
+    expect(month.totals.dailyExpenseCents).toBe(1250);
+    expect(month.totals.expectedPayCents).toBe(250_000);
+    expect(month.totals.deltaCents).toBe(
+      250_000 - month.totals.expenseCents,
+    );
     expect(
       month.list.filter((item) => item.title === 'Car finance').map((item) => item.date),
     ).toEqual(['2026-08-07', '2026-08-21']);
