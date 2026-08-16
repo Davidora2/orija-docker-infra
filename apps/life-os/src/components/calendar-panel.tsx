@@ -25,8 +25,10 @@ function eventTone(type: CalendarEvent["type"]) {
 }
 
 export function CalendarPanel({
+  preferredCurrency,
   onError,
 }: {
+  preferredCurrency?: string;
   onError: (message: string | null) => void;
 }) {
   const now = useMemo(() => new Date(), []);
@@ -251,7 +253,12 @@ export function CalendarPanel({
                     >
                       <p className="font-semibold">{event.title}</p>
                       {event.amountCents != null ? (
-                        <p>{formatMoney(event.amountCents)}</p>
+                        <p>
+                          {formatMoney(
+                            event.amountCents,
+                            preferredCurrency || "GBP",
+                          )}
+                        </p>
                       ) : null}
                       {event.areaTitle ? (
                         <p className="opacity-80">{event.areaTitle}</p>

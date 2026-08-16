@@ -67,7 +67,7 @@ export function BudgetScreen({ account, notify }: Props) {
     void reload().catch((error) =>
       notify(error instanceof Error ? error.message : 'Could not load budgets.'),
     );
-  }, [reload, notify]);
+  }, [reload, notify, account.user.preferredCurrency]);
 
   useEffect(() => {
     if (detail?.categories?.[0] && !categoryId) {
@@ -246,6 +246,7 @@ export function BudgetScreen({ account, notify }: Props) {
           {section === 'outgoings' ? (
             <OutgoingsView
               budget={detail}
+              preferredCurrency={currency}
               notify={notify}
               onChanged={() => void reload()}
             />
@@ -255,7 +256,7 @@ export function BudgetScreen({ account, notify }: Props) {
             <WealthView
               account={account}
               budgetId={detail.id}
-              currency={detail.currency || currency}
+              currency={currency}
               notify={notify}
             />
           ) : null}
@@ -265,12 +266,12 @@ export function BudgetScreen({ account, notify }: Props) {
           <View style={styles.card}>
             <Text style={styles.eyebrow}>This period</Text>
             <Text style={styles.cardTitle}>
-              {formatMoney(detail.summary?.balanceCents ?? 0, detail.currency)}
+              {formatMoney(detail.summary?.balanceCents ?? 0, currency)}
             </Text>
             <Text style={styles.meta}>
-              In {formatMoney(detail.summary?.incomeCents ?? 0, detail.currency)} · Out{' '}
-              {formatMoney(detail.summary?.expenseCents ?? 0, detail.currency)} · Planned{' '}
-              {formatMoney(detail.summary?.plannedCents ?? 0, detail.currency)}
+              In {formatMoney(detail.summary?.incomeCents ?? 0, currency)} · Out{' '}
+              {formatMoney(detail.summary?.expenseCents ?? 0, currency)} · Planned{' '}
+              {formatMoney(detail.summary?.plannedCents ?? 0, currency)}
             </Text>
           </View>
 
@@ -281,7 +282,7 @@ export function BudgetScreen({ account, notify }: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.categoryName}>{category.name}</Text>
                   <Text style={styles.meta}>
-                    Spent {formatMoney(category.spentCents ?? 0, detail.currency)}
+                    Spent {formatMoney(category.spentCents ?? 0, currency)}
                   </Text>
                 </View>
                 <TextInput
@@ -378,7 +379,7 @@ export function BudgetScreen({ account, notify }: Props) {
                   }}
                 >
                   {entry.kind === 'INCOME' ? '+' : '-'}
-                  {formatMoney(entry.amountCents, detail.currency)}
+                  {formatMoney(entry.amountCents, currency)}
                 </Text>
               </View>
             ))}

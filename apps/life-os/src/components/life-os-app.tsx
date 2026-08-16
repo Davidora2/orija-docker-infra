@@ -802,7 +802,12 @@ export function LifeOSApp() {
         <BudgetPanel account={account} onError={setError} />
       ) : null}
 
-      {tab === "calendar" ? <CalendarPanel onError={setError} /> : null}
+      {tab === "calendar" ? (
+        <CalendarPanel
+          preferredCurrency={account.user.preferredCurrency}
+          onError={setError}
+        />
+      ) : null}
 
       {tab === "review" ? (
         <section className="space-y-4">

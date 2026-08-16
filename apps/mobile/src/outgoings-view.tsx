@@ -47,11 +47,17 @@ const MONTH_NAMES = [
 
 type Props = {
   budget: Budget;
+  preferredCurrency?: string;
   notify: (message: string) => void;
   onChanged: () => void;
 };
 
-export function OutgoingsView({ budget, notify, onChanged }: Props) {
+export function OutgoingsView({
+  budget,
+  preferredCurrency,
+  notify,
+  onChanged,
+}: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -67,7 +73,8 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
   const [recName, setRecName] = useState('');
   const [recAmount, setRecAmount] = useState('');
   const [recDay, setRecDay] = useState('1');
-  const displayCurrency = data?.currency || budget.currency || 'GBP';
+  const displayCurrency =
+    preferredCurrency || data?.currency || budget.currency || 'GBP';
   const symbol = currencySymbol(displayCurrency);
 
   useEffect(() => {
@@ -76,7 +83,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
     setTypicalPay(
       budget.typicalPayCents != null ? String(budget.typicalPayCents / 100) : '',
     );
-  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents, budget.currency]);
+  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents]);
 
   const load = useCallback(async () => {
     const next = await getMonthOutgoings(budget.id, year, month);
@@ -87,7 +94,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
     void load().catch((error) =>
       notify(error instanceof Error ? error.message : 'Could not load outgoings.'),
     );
-  }, [load, notify]);
+  }, [load, notify, budget.currency, preferredCurrency]);
 
   const firstWeekday = useMemo(
     () => new Date(Date.UTC(year, month - 1, 1)).getUTCDay(),
@@ -181,7 +188,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
         </View>
         {data ? (
           <Text style={styles.meta}>
-            {formatMoney(data.totals.expenseCents, data.currency)} out this month
+            {formatMoney(data.totals.expenseCents, displayCurrency)} out this month
           </Text>
         ) : null}
       </View>
@@ -288,7 +295,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
                       </Text>
                     </View>
                     <Text style={styles.expense}>
-                      -{formatMoney(item.amountCents, data.currency)}
+                      -{formatMoney(item.amountCents, displayCurrency)}
                     </Text>
                   </View>
                 ))
@@ -312,7 +319,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
                   </Text>
                 </View>
                 <Text style={styles.expense}>
-                  -{formatMoney(item.amountCents, data.currency)}
+                  -{formatMoney(item.amountCents, displayCurrency)}
                 </Text>
               </View>
             ))

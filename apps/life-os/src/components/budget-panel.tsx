@@ -218,6 +218,7 @@ export function BudgetPanel({ account, onError }: Props) {
           {section === "outgoings" ? (
             <OutgoingsPanel
               budget={detail}
+              preferredCurrency={currency}
               onError={onError}
               onChanged={() => void reload()}
             />
@@ -227,7 +228,7 @@ export function BudgetPanel({ account, onError }: Props) {
             <WealthPanel
               account={account}
               budgetId={detail.id}
-              currency={detail.currency || currency}
+              currency={currency}
               canShare={canShare}
               onError={onError}
             />
@@ -240,12 +241,12 @@ export function BudgetPanel({ account, onError }: Props) {
               This period
             </p>
             <h3 className="mt-2 font-serif text-2xl">
-              {formatMoney(detail.summary?.balanceCents ?? 0, detail.currency)}
+              {formatMoney(detail.summary?.balanceCents ?? 0, currency)}
             </h3>
             <p className="text-sm text-[#6c7771]">
-              In {formatMoney(detail.summary?.incomeCents ?? 0, detail.currency)} · Out{" "}
-              {formatMoney(detail.summary?.expenseCents ?? 0, detail.currency)} · Planned{" "}
-              {formatMoney(detail.summary?.plannedCents ?? 0, detail.currency)}
+              In {formatMoney(detail.summary?.incomeCents ?? 0, currency)} · Out{" "}
+              {formatMoney(detail.summary?.expenseCents ?? 0, currency)} · Planned{" "}
+              {formatMoney(detail.summary?.plannedCents ?? 0, currency)}
             </p>
           </article>
 
@@ -261,7 +262,7 @@ export function BudgetPanel({ account, onError }: Props) {
                 <div className="flex-1">
                   <p className="font-semibold">{category.name}</p>
                   <p className="text-xs text-[#6c7771]">
-                    Spent {formatMoney(category.spentCents ?? 0, detail.currency)}
+                    Spent {formatMoney(category.spentCents ?? 0, currency)}
                   </p>
                 </div>
                 <input
@@ -356,7 +357,7 @@ export function BudgetPanel({ account, onError }: Props) {
                   }`}
                 >
                   {entry.kind === "INCOME" ? "+" : "-"}
-                  {formatMoney(entry.amountCents, detail.currency)}
+                  {formatMoney(entry.amountCents, currency)}
                 </p>
               </div>
             ))}

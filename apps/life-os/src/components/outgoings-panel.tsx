@@ -29,11 +29,17 @@ const MONTH_NAMES = [
 
 type Props = {
   budget: Budget;
+  preferredCurrency?: string;
   onError: (message: string) => void;
   onChanged: () => void;
 };
 
-export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
+export function OutgoingsPanel({
+  budget,
+  preferredCurrency,
+  onError,
+  onChanged,
+}: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -56,7 +62,8 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
   );
   const [recWeekday, setRecWeekday] = useState("1");
 
-  const displayCurrency = data?.currency || budget.currency || "GBP";
+  const displayCurrency =
+    preferredCurrency || data?.currency || budget.currency || "GBP";
   const symbol = currencySymbol(displayCurrency);
 
   useEffect(() => {
@@ -65,7 +72,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
     setTypicalPay(
       budget.typicalPayCents != null ? String(budget.typicalPayCents / 100) : "",
     );
-  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents, budget.currency]);
+  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents]);
 
   const load = useCallback(async () => {
     const next = await getMonthOutgoings(budget.id, year, month);
@@ -77,7 +84,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
     void load().catch((error) =>
       onError(error instanceof Error ? error.message : "Could not load outgoings."),
     );
-  }, [load, onError]);
+  }, [load, onError, budget.currency, preferredCurrency]);
 
   const selectedDay = useMemo(
     () => data?.days.find((day) => day.date === selectedDate) ?? null,
@@ -193,9 +200,9 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
         </div>
         {data ? (
           <p className="mt-2 text-sm text-[#6c7771]">
-            {formatMoney(data.totals.expenseCents, data.currency)} out ·{" "}
-            {formatMoney(data.totals.recurringCents, data.currency)} recurring ·{" "}
-            {formatMoney(data.totals.oneOffCents, data.currency)} one-off
+            {formatMoney(data.totals.expenseCents, displayCurrency)} out ·{" "}
+            {formatMoney(data.totals.recurringCents, displayCurrency)} recurring ·{" "}
+            {formatMoney(data.totals.oneOffCents, displayCurrency)} one-off
           </p>
         ) : null}
       </article>
@@ -273,7 +280,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
                   <div className="text-[11px] font-bold">{dayNum}</div>
                   {day.totalCents > 0 ? (
                     <div className={`mt-1 text-[10px] ${active ? "text-[#d6f57a]" : "text-[#c9634f]"}`}>
-                      {formatMoney(day.totalCents, data.currency)}
+                      {formatMoney(day.totalCents, displayCurrency)}
                     </div>
                   ) : null}
                   {day.isPayDay ? (
@@ -309,7 +316,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
                       }`}
                     >
                       {item.kind === "INCOME" ? "+" : "-"}
-                      {formatMoney(item.amountCents, data.currency)}
+                      {formatMoney(item.amountCents, displayCurrency)}
                     </p>
                   </div>
                 ))
@@ -336,7 +343,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
                   </p>
                 </div>
                 <p className="font-bold text-[#c9634f]">
-                  -{formatMoney(item.amountCents, data.currency)}
+                  -{formatMoney(item.amountCents, displayCurrency)}
                 </p>
               </div>
             ))
