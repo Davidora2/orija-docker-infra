@@ -51,6 +51,12 @@ import {
   supportingActions,
   weeklyCapacityHours,
 } from './src/life-data';
+import {
+  PRIORITY_MATRIX_ORDER,
+  PRIORITY_QUADRANT_META,
+  projectPriorityQuadrant,
+  type PriorityQuadrant,
+} from './src/priority-matrix';
 
 const colors = {
   ink: '#14241F',
@@ -286,6 +292,8 @@ function AppContent() {
   const [projectTitle, setProjectTitle] = useState('');
   const [projectOutcome, setProjectOutcome] = useState('');
   const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
+  const [projectPriority, setProjectPriority] =
+    useState<PriorityQuadrant>('SCHEDULE');
   const [actionTitle, setActionTitle] = useState('');
   const [actionHours, setActionHours] = useState('2');
   const [actionDay, setActionDay] = useState<string>('Fri');
@@ -477,6 +485,7 @@ function AppContent() {
     setProjectTitle(idea.title);
     setProjectOutcome(bodyString(idea, 'note'));
     setProjectPillarId(idea.parentId);
+    setProjectPriority('SCHEDULE');
     setActionTitle(`Advance: ${idea.title}`);
     setActionHours('2');
     setActionDay('Fri');
@@ -505,6 +514,7 @@ function AppContent() {
         body: {
           outcome: projectOutcome.trim(),
           fromIdeaId: sourceIdeaId,
+          priorityQuadrant: projectPriority,
         },
       });
       await createLifeItem({
@@ -523,10 +533,20 @@ function AppContent() {
       setSourceIdeaId(null);
       setProjectTitle('');
       setProjectOutcome('');
+      setProjectPriority('SCHEDULE');
       setActionTitle('');
       await reloadItems();
       setTab('portfolio');
       notify('Project and next action saved.');
+    });
+  }
+
+  async function moveProjectPriority(project: LifeItem, quadrant: PriorityQuadrant) {
+    await run('Update priority', async () => {
+      await updateLifeItem(project.id, {
+        body: { ...project.body, priorityQuadrant: quadrant },
+      });
+      await reloadItems();
     });
   }
 
@@ -855,6 +875,7 @@ function AppContent() {
                   setProjectTitle('');
                   setProjectOutcome('');
                   setProjectPillarId(pillars[0]?.id ?? null);
+                  setProjectPriority('SCHEDULE');
                   setActionTitle('');
                   setActionHours('2');
                   setProjectOpen(true);
@@ -892,6 +913,60 @@ function AppContent() {
               )}
             </Card>
 
+            <Card>
+              <Text style={styles.cardEyebrow}>Eisenhower</Text>
+              <Text style={styles.cardTitle}>Priority matrix</Text>
+              <Text style={styles.cardBody}>
+                Sort projects by urgency and importance. Move items as priorities
+                change.
+              </Text>
+              {PRIORITY_MATRIX_ORDER.map((id) => {
+                const meta = PRIORITY_QUADRANT_META[id];
+                const quadrantProjects = projects.filter(
+                  (project) => projectPriorityQuadrant(project.body) === id,
+                );
+                return (
+                  <View key={id} style={styles.matrixQuadrant}>
+                    <Text style={styles.cardEyebrow}>{meta.subtitle}</Text>
+                    <Text style={styles.listTitle}>{meta.title}</Text>
+                    <Text style={styles.listMeta}>{meta.description}</Text>
+                    {quadrantProjects.length === 0 ? (
+                      <Text style={styles.listMeta}>No projects here.</Text>
+                    ) : (
+                      quadrantProjects.map((project) => (
+                        <View key={project.id} style={styles.projectBlock}>
+                          <Text style={styles.listTitle}>{project.title}</Text>
+                          <View style={styles.chipRow}>
+                            {PRIORITY_MATRIX_ORDER.map((option) => (
+                              <Pressable
+                                key={option}
+                                onPress={() =>
+                                  void moveProjectPriority(project, option)
+                                }
+                                style={[
+                                  styles.chip,
+                                  id === option && styles.chipActive,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.chipText,
+                                    id === option && styles.chipTextActive,
+                                  ]}
+                                >
+                                  {PRIORITY_QUADRANT_META[option].title}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                );
+              })}
+            </Card>
+
             {pillars.map((pillar) => {
               const pillarProjects = projects.filter(
                 (project) => project.parentId === pillar.id,
@@ -911,6 +986,8 @@ function AppContent() {
                       const next = childrenOf(items, project.id).find(
                         (item) => item.kind === 'ACTION' && isOpen(item),
                       );
+                      const quadrant = projectPriorityQuadrant(project.body);
+                      const meta = PRIORITY_QUADRANT_META[quadrant];
                       return (
                         <View key={project.id} style={styles.projectBlock}>
                           <Text style={styles.listTitle}>{project.title}</Text>
@@ -919,6 +996,9 @@ function AppContent() {
                               {bodyString(project, 'outcome')}
                             </Text>
                           ) : null}
+                          <Text style={styles.listMeta}>
+                            {meta.title} · {meta.subtitle}
+                          </Text>
                           <Text style={styles.listMeta}>
                             Next:{' '}
                             {next
@@ -1340,6 +1420,28 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
+            <Text style={styles.fieldLabel}>Priority matrix</Text>
+            <Text style={styles.listMeta}>
+              {PRIORITY_QUADRANT_META[projectPriority].description}
+            </Text>
+            <View style={styles.chipRow}>
+              {PRIORITY_MATRIX_ORDER.map((id) => (
+                <Pressable
+                  key={id}
+                  onPress={() => setProjectPriority(id)}
+                  style={[styles.chip, projectPriority === id && styles.chipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      projectPriority === id && styles.chipTextActive,
+                    ]}
+                  >
+                    {PRIORITY_QUADRANT_META[id].title}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
             <Field
               label="First next action"
               value={actionTitle}
@@ -1536,6 +1638,13 @@ const styles = StyleSheet.create({
   projectBlock: {
     gap: 8,
     paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  matrixQuadrant: {
+    gap: 6,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: colors.line,
   },

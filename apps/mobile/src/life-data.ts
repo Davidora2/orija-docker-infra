@@ -3,6 +3,10 @@ import {
   listLifeItems,
   type LifeItem,
 } from './api';
+import {
+  priorityRank,
+  projectPriorityQuadrant,
+} from './priority-matrix';
 
 /** Suggested life areas for onboarding (icons match Ionicons names). */
 export const SUGGESTED_LIFE_AREAS = [
@@ -64,13 +68,23 @@ export function weeklyCapacityHours(items: LifeItem[]): {
 export function primaryAction(items: LifeItem[]): LifeItem | null {
   const open = ofKind(items, 'ACTION').filter(isOpen);
   if (open.length === 0) return null;
+  const projects = ofKind(items, 'PROJECT');
+  const projectById = new Map(projects.map((project) => [project.id, project]));
   const scheduled = open.filter((item) => bodyString(item, 'day'));
   const pool = scheduled.length > 0 ? scheduled : open;
-  return [...pool].sort(
-    (a, b) =>
+  return [...pool].sort((a, b) => {
+    const aRank = priorityRank(
+      projectPriorityQuadrant(projectById.get(a.parentId ?? '')?.body),
+    );
+    const bRank = priorityRank(
+      projectPriorityQuadrant(projectById.get(b.parentId ?? '')?.body),
+    );
+    return (
+      aRank - bRank ||
       bodyNumber(b, 'hours', 0) - bodyNumber(a, 'hours', 0) ||
-      a.sortOrder - b.sortOrder,
-  )[0];
+      a.sortOrder - b.sortOrder
+    );
+  })[0];
 }
 
 export function supportingActions(items: LifeItem[], primaryId?: string): LifeItem[] {

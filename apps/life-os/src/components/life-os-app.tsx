@@ -24,6 +24,14 @@ import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
+import { PriorityMatrixPanel } from "./priority-matrix-panel";
+import {
+  PRIORITY_MATRIX_ORDER,
+  PRIORITY_QUADRANT_META,
+  priorityRank,
+  projectPriorityQuadrant,
+  type PriorityQuadrant,
+} from "../lib/priority-matrix";
 
 function num(item: LifeItem, key: string, fallback = 0) {
   const value = item.body[key];
@@ -83,6 +91,8 @@ export function LifeOSApp() {
   const [projectTitle, setProjectTitle] = useState("");
   const [projectOutcome, setProjectOutcome] = useState("");
   const [projectPillarId, setProjectPillarId] = useState("");
+  const [projectPriority, setProjectPriority] =
+    useState<PriorityQuadrant>("SCHEDULE");
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
   const [areaTitle, setAreaTitle] = useState("");
@@ -148,7 +158,19 @@ export function LifeOSApp() {
         )
       : 11;
   const planned = openActions.reduce((sum, action) => sum + num(action, "hours", 1), 0);
-  const primary = openActions[0] ?? null;
+  const primary = useMemo(() => {
+    if (openActions.length === 0) return null;
+    const projectById = new Map(projects.map((project) => [project.id, project]));
+    return [...openActions].sort((a, b) => {
+      const aRank = priorityRank(
+        projectPriorityQuadrant(projectById.get(a.parentId ?? "")?.body),
+      );
+      const bRank = priorityRank(
+        projectPriorityQuadrant(projectById.get(b.parentId ?? "")?.body),
+      );
+      return aRank - bRank || a.sortOrder - b.sortOrder;
+    })[0];
+  }, [openActions, projects]);
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
 
   useEffect(() => {
@@ -492,6 +514,13 @@ export function LifeOSApp() {
                 <p className="text-sm text-[#6c7771]">
                   {num(primary, "hours", 1)}h
                   {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
+                  {(() => {
+                    const parent = projects.find((p) => p.id === primary.parentId);
+                    if (!parent) return "";
+                    const meta =
+                      PRIORITY_QUADRANT_META[projectPriorityQuadrant(parent.body)];
+                    return ` · ${meta.title}`;
+                  })()}
                 </p>
                 <button
                   className="mt-4 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0]"
@@ -645,6 +674,18 @@ export function LifeOSApp() {
             )}
           </article>
 
+          <PriorityMatrixPanel
+            projects={projects}
+            busy={busy}
+            onMove={(project, quadrant) =>
+              void run(async () => {
+                await updateLifeItem(project.id, {
+                  body: { ...project.body, priorityQuadrant: quadrant },
+                });
+              })
+            }
+          />
+
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">New project</h2>
             <input
@@ -671,6 +712,28 @@ export function LifeOSApp() {
                 </option>
               ))}
             </select>
+            <label className="block space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                Priority matrix
+              </span>
+              <select
+                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                value={projectPriority}
+                onChange={(e) =>
+                  setProjectPriority(e.target.value as PriorityQuadrant)
+                }
+              >
+                {PRIORITY_MATRIX_ORDER.map((id) => (
+                  <option key={id} value={id}>
+                    {PRIORITY_QUADRANT_META[id].title} —{" "}
+                    {PRIORITY_QUADRANT_META[id].subtitle}
+                  </option>
+                ))}
+              </select>
+              <span className="block text-sm text-[#6c7771]">
+                {PRIORITY_QUADRANT_META[projectPriority].description}
+              </span>
+            </label>
             <input
               className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
               placeholder="First next action"
@@ -700,7 +763,10 @@ export function LifeOSApp() {
                     kind: "PROJECT",
                     title: projectTitle.trim(),
                     parentId: projectPillarId || null,
-                    body: { outcome: projectOutcome.trim() },
+                    body: {
+                      outcome: projectOutcome.trim(),
+                      priorityQuadrant: projectPriority,
+                    },
                   });
                   await createLifeItem({
                     kind: "ACTION",
@@ -710,6 +776,7 @@ export function LifeOSApp() {
                   });
                   setProjectTitle("");
                   setProjectOutcome("");
+                  setProjectPriority("SCHEDULE");
                   setActionTitle("");
                 })
               }
@@ -733,12 +800,42 @@ export function LifeOSApp() {
                         item.parentId === project.id &&
                         open(item),
                     );
+                    const quadrant = projectPriorityQuadrant(project.body);
+                    const meta = PRIORITY_QUADRANT_META[quadrant];
                     return (
                       <div key={project.id} className="mt-3 border-t border-[#dde2dd] pt-3">
                         <p className="font-semibold">{project.title}</p>
                         <p className="text-sm text-[#6c7771]">
+                          {meta.title} · {meta.subtitle}
+                        </p>
+                        <p className="text-sm text-[#6c7771]">
                           Next: {next ? `${next.title} (${num(next, "hours", 1)}h)` : "None"}
                         </p>
+                        <label className="mt-2 block text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                          Priority
+                          <select
+                            className="mt-1 w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm font-normal normal-case tracking-normal text-[#14241f]"
+                            value={quadrant}
+                            disabled={busy}
+                            onChange={(e) =>
+                              void run(async () => {
+                                await updateLifeItem(project.id, {
+                                  body: {
+                                    ...project.body,
+                                    priorityQuadrant: e.target
+                                      .value as PriorityQuadrant,
+                                  },
+                                });
+                              })
+                            }
+                          >
+                            {PRIORITY_MATRIX_ORDER.map((id) => (
+                              <option key={id} value={id}>
+                                {PRIORITY_QUADRANT_META[id].title}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
                     );
                   })
