@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   addBudgetEntry,
   createBudget,
+  createBudgetCategory,
   formatMoney,
   getBudget,
   listBudgets,
   updateBudgetCategory,
+  updateBudgetEntry,
   type Account,
   type Budget,
 } from "../lib/api";
@@ -27,6 +29,7 @@ export function BudgetPanel({ account, onError }: Props) {
   const [note, setNote] = useState("");
   const [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [occurredOn, setOccurredOn] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
@@ -104,6 +107,26 @@ export function BudgetPanel({ account, onError }: Props) {
     }
   }
 
+  async function addCategory() {
+    if (!detail) return;
+    const name = newCategoryName.trim();
+    if (!name) {
+      onError("Enter a category name.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await createBudgetCategory(detail.id, { name });
+      setNewCategoryName("");
+      setCategoryId(created.id);
+      setDetail(await getBudget(detail.id));
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not add category.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setPlanned(categoryIdToUpdate: string, planned: string) {
     if (!detail) return;
     const pounds = Number(planned);
@@ -116,6 +139,47 @@ export function BudgetPanel({ account, onError }: Props) {
     } catch (error) {
       onError(error instanceof Error ? error.message : "Could not update category.");
     }
+  }
+
+  async function renameCategory(categoryIdToUpdate: string, name: string) {
+    if (!detail) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = detail.categories?.find((item) => item.id === categoryIdToUpdate);
+    if (existing && existing.name === trimmed) return;
+    try {
+      await updateBudgetCategory(detail.id, categoryIdToUpdate, {
+        name: trimmed,
+      });
+      setDetail(await getBudget(detail.id));
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not rename category.");
+    }
+  }
+
+  async function changeEntryCategory(entryId: string, nextCategoryId: string) {
+    if (!detail) return;
+    setBusy(true);
+    try {
+      await updateBudgetEntry(detail.id, entryId, {
+        categoryId: nextCategoryId || null,
+      });
+      setDetail(await getBudget(detail.id));
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Could not update entry category.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function categoryName(id: string | null) {
+    if (!id) return "Uncategorised";
+    return (
+      detail?.categories?.find((category) => category.id === id)?.name ??
+      "Uncategorised"
+    );
   }
 
   return (
@@ -263,8 +327,13 @@ export function BudgetPanel({ account, onError }: Props) {
                 key={category.id}
                 className="flex items-center gap-3 border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
               >
-                <div className="flex-1">
-                  <p className="font-semibold">{category.name}</p>
+                <div className="flex-1 space-y-1">
+                  <input
+                    className="w-full rounded-lg border border-[#dde2dd] px-2 py-1.5 text-sm font-semibold"
+                    defaultValue={category.name}
+                    onBlur={(e) => void renameCategory(category.id, e.target.value)}
+                    aria-label={`${category.name} category name`}
+                  />
                   <p className="text-xs text-[#6c7771]">
                     Spent {formatMoney(category.spentCents ?? 0, currency)}
                   </p>
@@ -277,6 +346,22 @@ export function BudgetPanel({ account, onError }: Props) {
                 />
               </div>
             ))}
+            <div className="flex flex-wrap gap-2 border-t border-[#dde2dd] pt-3">
+              <input
+                className="min-w-[10rem] flex-1 rounded-xl border border-[#dde2dd] px-3 py-3"
+                placeholder="New category name"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+                onClick={() => void addCategory()}
+              >
+                Add category
+              </button>
+            </div>
           </article>
 
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
@@ -357,23 +442,52 @@ export function BudgetPanel({ account, onError }: Props) {
             {(detail.entries ?? []).slice(0, 12).map((entry) => (
               <div
                 key={entry.id}
-                className="flex items-center justify-between border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
+                className="space-y-2 border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
               >
-                <div>
-                  <p className="font-semibold">
-                    {entry.kind === "INCOME" ? "Income" : "Expense"}
-                    {entry.note ? ` · ${entry.note}` : ""}
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">
+                      {entry.kind === "INCOME" ? "Income" : "Expense"}
+                      {entry.note ? ` · ${entry.note}` : ""}
+                    </p>
+                    <p className="text-xs text-[#6c7771]">
+                      {entry.occurredOn}
+                      {entry.kind === "EXPENSE"
+                        ? ` · ${categoryName(entry.categoryId)}`
+                        : ""}
+                    </p>
+                  </div>
+                  <p
+                    className={`font-bold ${
+                      entry.kind === "INCOME" ? "text-[#617a57]" : "text-[#c9634f]"
+                    }`}
+                  >
+                    {entry.kind === "INCOME" ? "+" : "-"}
+                    {formatMoney(entry.amountCents, currency)}
                   </p>
-                  <p className="text-xs text-[#6c7771]">{entry.occurredOn}</p>
                 </div>
-                <p
-                  className={`font-bold ${
-                    entry.kind === "INCOME" ? "text-[#617a57]" : "text-[#c9634f]"
-                  }`}
-                >
-                  {entry.kind === "INCOME" ? "+" : "-"}
-                  {formatMoney(entry.amountCents, currency)}
-                </p>
+                {entry.kind === "EXPENSE" ? (
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                      Category
+                    </span>
+                    <select
+                      className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                      value={entry.categoryId ?? ""}
+                      disabled={busy}
+                      onChange={(e) =>
+                        void changeEntryCategory(entry.id, e.target.value)
+                      }
+                    >
+                      <option value="">Uncategorised</option>
+                      {(detail.categories ?? []).map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
               </div>
             ))}
           </article>

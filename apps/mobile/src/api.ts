@@ -725,6 +725,30 @@ export async function createBudget(input: {
   return mapBudget(raw);
 }
 
+export async function createBudgetCategory(
+  budgetId: string,
+  input: { name: string; plannedCents?: number },
+): Promise<BudgetCategory> {
+  const raw = await request<Record<string, unknown>>(
+    `/v1/budgets/${budgetId}/categories`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: input.name,
+        plannedCents: input.plannedCents ?? 0,
+      }),
+    },
+  );
+  return {
+    id: String(raw.id),
+    budgetId: String(raw.budgetId ?? raw.budget_id ?? budgetId),
+    name: String(raw.name),
+    plannedCents: Number(raw.plannedCents ?? raw.planned_cents ?? 0),
+    sortOrder: Number(raw.sortOrder ?? raw.sort_order ?? 0),
+    spentCents: Number(raw.spentCents ?? raw.spent_cents ?? 0),
+  };
+}
+
 export async function updateBudgetCategory(
   budgetId: string,
   categoryId: string,
@@ -748,6 +772,23 @@ export async function addBudgetEntry(
 ): Promise<void> {
   await request(`/v1/budgets/${budgetId}/entries`, {
     method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateBudgetEntry(
+  budgetId: string,
+  entryId: string,
+  input: {
+    categoryId?: string | null;
+    note?: string;
+    amountCents?: number;
+    occurredOn?: string;
+    kind?: 'INCOME' | 'EXPENSE';
+  },
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/entries/${entryId}`, {
+    method: 'PATCH',
     body: JSON.stringify(input),
   });
 }

@@ -858,4 +858,88 @@ suite('account and couple household API', () => {
       netWorth.json<{ personal: { debtsCents: number } }>().personal.debtsCents,
     ).toBe(81_000);
   });
+
+  it('creates budget categories and updates entry categories', async () => {
+    const user = await register('categories@example.com', 'Category User');
+    await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Wealth', icon: 'wallet-outline' }],
+        preferredCurrency: 'GBP',
+      },
+    });
+
+    const budgetRes = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Personal budget',
+        visibility: 'PRIVATE',
+        currency: 'GBP',
+        period: 'monthly',
+        seedCategories: true,
+      },
+    });
+    expect(budgetRes.statusCode).toBe(201);
+    const budget = budgetRes.json<{
+      id: string;
+      categories: { id: string; name: string }[];
+    }>();
+    const firstCategoryId = budget.categories[0]?.id;
+    expect(firstCategoryId).toBeTruthy();
+
+    const createdCategory = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budget.id}/categories`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { name: 'Pets', plannedCents: 5000 },
+    });
+    expect(createdCategory.statusCode).toBe(201);
+    const petsId = createdCategory.json<{ id: string; name: string }>().id;
+    expect(createdCategory.json<{ name: string }>().name).toBe('Pets');
+
+    const entry = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budget.id}/entries`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        kind: 'EXPENSE',
+        amountCents: 2500,
+        categoryId: firstCategoryId,
+        note: 'Vet treats',
+      },
+    });
+    expect(entry.statusCode).toBe(201);
+    const entryId = entry.json<{ id: string }>().id;
+
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: `/v1/budgets/${budget.id}/entries/${entryId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { categoryId: petsId },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json<{ categoryId: string }>().categoryId).toBe(petsId);
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: `/v1/budgets/${budget.id}/entries/${entryId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { categoryId: null },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json<{ categoryId: string | null }>().categoryId).toBeNull();
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budget.id}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(detail.statusCode).toBe(200);
+    const categories = detail.json<{ categories: { name: string }[] }>().categories;
+    expect(categories.some((category) => category.name === 'Pets')).toBe(true);
+  });
 });

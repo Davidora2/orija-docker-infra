@@ -539,6 +539,75 @@ export function registerOnboardingAndBudgetRoutes(
     },
   );
 
+  app.patch(
+    '/v1/budgets/:id/entries/:entryId',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const params = z
+        .object({ id: z.string().uuid(), entryId: z.string().uuid() })
+        .parse(request.params);
+      await assertBudgetAccess(sql, userId, params.id);
+      const body = z
+        .object({
+          categoryId: z.string().uuid().nullable().optional(),
+          note: z.string().trim().max(500).optional(),
+          amountCents: z.number().int().positive().optional(),
+          occurredOn: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+          kind: z.enum(['INCOME', 'EXPENSE']).optional(),
+        })
+        .refine((value) => Object.keys(value).length > 0)
+        .parse(request.body);
+
+      if (body.categoryId) {
+        const [category] = await sql<{ id: string }[]>`
+          SELECT id FROM budget_categories
+          WHERE id = ${body.categoryId} AND budget_id = ${params.id}
+        `;
+        if (!category) {
+          throw new ApiError(400, 'invalid_category', 'Category does not belong to this budget.');
+        }
+      }
+
+      const [existing] = await sql<{ id: string; kind: string }[]>`
+        SELECT id, kind FROM budget_entries
+        WHERE id = ${params.entryId} AND budget_id = ${params.id}
+      `;
+      if (!existing) {
+        throw new ApiError(404, 'entry_not_found', 'Entry not found.');
+      }
+
+      const nextKind = body.kind ?? existing.kind;
+      // Income entries are uncategorised; clear category when switching to income.
+      const clearCategory = nextKind === 'INCOME';
+      const categoryIdValue = clearCategory
+        ? null
+        : body.categoryId !== undefined
+          ? body.categoryId
+          : undefined;
+
+      const [entry] = await sql`
+        UPDATE budget_entries SET
+          category_id = CASE
+            WHEN ${clearCategory} THEN NULL
+            WHEN ${categoryIdValue !== undefined} THEN ${categoryIdValue ?? null}
+            ELSE category_id
+          END,
+          note = COALESCE(${body.note ?? null}, note),
+          amount_cents = COALESCE(${body.amountCents ?? null}, amount_cents),
+          occurred_on = COALESCE(${body.occurredOn ?? null}, occurred_on),
+          kind = COALESCE(${body.kind ?? null}, kind)
+        WHERE id = ${params.entryId} AND budget_id = ${params.id}
+        RETURNING *
+      `;
+      await sql`UPDATE budgets SET updated_at = now() WHERE id = ${params.id}`;
+      return entry;
+    },
+  );
+
   app.delete(
     '/v1/budgets/:id/entries/:entryId',
     { preHandler: auth.authenticate },

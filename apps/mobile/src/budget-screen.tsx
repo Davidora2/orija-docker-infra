@@ -10,10 +10,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   addBudgetEntry,
   createBudget,
+  createBudgetCategory,
   formatMoney,
   getBudget,
   listBudgets,
   updateBudgetCategory,
+  updateBudgetEntry,
   type Account,
   type Budget,
 } from './api';
@@ -44,6 +46,7 @@ export function BudgetScreen({ account, notify }: Props) {
   const [note, setNote] = useState('');
   const [kind, setKind] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [occurredOn, setOccurredOn] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
@@ -127,6 +130,27 @@ export function BudgetScreen({ account, notify }: Props) {
     }
   }
 
+  async function addCategory() {
+    if (!detail) return;
+    const name = newCategoryName.trim();
+    if (!name) {
+      notify('Enter a category name.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await createBudgetCategory(detail.id, { name });
+      setNewCategoryName('');
+      setCategoryId(created.id);
+      setDetail(await getBudget(detail.id));
+      notify('Category added.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not add category.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setPlanned(categoryIdToUpdate: string, planned: string) {
     if (!detail) return;
     const pounds = Number(planned);
@@ -139,6 +163,48 @@ export function BudgetScreen({ account, notify }: Props) {
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not update category.');
     }
+  }
+
+  async function renameCategory(categoryIdToUpdate: string, name: string) {
+    if (!detail) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = detail.categories?.find((item) => item.id === categoryIdToUpdate);
+    if (existing && existing.name === trimmed) return;
+    try {
+      await updateBudgetCategory(detail.id, categoryIdToUpdate, {
+        name: trimmed,
+      });
+      setDetail(await getBudget(detail.id));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not rename category.');
+    }
+  }
+
+  async function changeEntryCategory(entryId: string, nextCategoryId: string | null) {
+    if (!detail) return;
+    setBusy(true);
+    try {
+      await updateBudgetEntry(detail.id, entryId, {
+        categoryId: nextCategoryId,
+      });
+      setDetail(await getBudget(detail.id));
+      notify('Entry category updated.');
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : 'Could not update entry category.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function categoryName(id: string | null) {
+    if (!id) return 'Uncategorised';
+    return (
+      detail?.categories?.find((category) => category.id === id)?.name ??
+      'Uncategorised'
+    );
   }
 
   return (
@@ -283,8 +349,14 @@ export function BudgetScreen({ account, notify }: Props) {
             <Text style={styles.eyebrow}>Categories</Text>
             {(detail.categories ?? []).map((category) => (
               <View key={category.id} style={styles.categoryRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.categoryName}>{category.name}</Text>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <TextInput
+                    style={styles.categoryNameInput}
+                    defaultValue={category.name}
+                    onEndEditing={(event) =>
+                      void renameCategory(category.id, event.nativeEvent.text)
+                    }
+                  />
                   <Text style={styles.meta}>
                     Spent {formatMoney(category.spentCents ?? 0, currency)}
                   </Text>
@@ -299,6 +371,20 @@ export function BudgetScreen({ account, notify }: Props) {
                 />
               </View>
             ))}
+            <TextInput
+              style={styles.input}
+              placeholder="New category name"
+              placeholderTextColor="#9BA49E"
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
+            />
+            <Pressable
+              style={[styles.buttonSecondary, busy && styles.disabled]}
+              disabled={busy}
+              onPress={() => void addCategory()}
+            >
+              <Text style={styles.buttonTextSecondary}>Add category</Text>
+            </Pressable>
           </View>
 
           <View style={styles.card}>
@@ -377,23 +463,76 @@ export function BudgetScreen({ account, notify }: Props) {
           <View style={styles.card}>
             <Text style={styles.eyebrow}>Recent</Text>
             {(detail.entries ?? []).slice(0, 12).map((entry) => (
-              <View key={entry.id} style={styles.entryRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.categoryName}>
-                    {entry.kind === 'INCOME' ? 'Income' : 'Expense'}
-                    {entry.note ? ` · ${entry.note}` : ''}
+              <View key={entry.id} style={styles.entryBlock}>
+                <View style={styles.entryRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.categoryName}>
+                      {entry.kind === 'INCOME' ? 'Income' : 'Expense'}
+                      {entry.note ? ` · ${entry.note}` : ''}
+                    </Text>
+                    <Text style={styles.meta}>
+                      {entry.occurredOn}
+                      {entry.kind === 'EXPENSE'
+                        ? ` · ${categoryName(entry.categoryId)}`
+                        : ''}
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      color: entry.kind === 'INCOME' ? colors.sageDeep : colors.danger,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {entry.kind === 'INCOME' ? '+' : '-'}
+                    {formatMoney(entry.amountCents, currency)}
                   </Text>
-                  <Text style={styles.meta}>{entry.occurredOn}</Text>
                 </View>
-                <Text
-                  style={{
-                    color: entry.kind === 'INCOME' ? colors.sageDeep : colors.danger,
-                    fontWeight: '700',
-                  }}
-                >
-                  {entry.kind === 'INCOME' ? '+' : '-'}
-                  {formatMoney(entry.amountCents, currency)}
-                </Text>
+                {entry.kind === 'EXPENSE' ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.tabs}>
+                      <Pressable
+                        style={[
+                          styles.chip,
+                          !entry.categoryId && styles.chipActive,
+                        ]}
+                        disabled={busy}
+                        onPress={() => void changeEntryCategory(entry.id, null)}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            !entry.categoryId && styles.chipTextActive,
+                          ]}
+                        >
+                          Uncategorised
+                        </Text>
+                      </Pressable>
+                      {(detail.categories ?? []).map((category) => (
+                        <Pressable
+                          key={category.id}
+                          style={[
+                            styles.chip,
+                            entry.categoryId === category.id && styles.chipActive,
+                          ]}
+                          disabled={busy}
+                          onPress={() =>
+                            void changeEntryCategory(entry.id, category.id)
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              entry.categoryId === category.id &&
+                                styles.chipTextActive,
+                            ]}
+                          >
+                            {category.name}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                ) : null}
               </View>
             ))}
           </View>
@@ -469,6 +608,15 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   categoryName: { color: colors.ink, fontWeight: '600' },
+  categoryNameInput: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontWeight: '700',
+    color: colors.ink,
+  },
   plannedInput: {
     width: 72,
     borderWidth: 1,
@@ -498,12 +646,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: colors.ink,
   },
+  entryBlock: {
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingTop: 8,
+  },
   entryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-    paddingTop: 8,
   },
 });
