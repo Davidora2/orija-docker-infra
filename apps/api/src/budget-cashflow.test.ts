@@ -19,6 +19,7 @@ describe('budget cashflow helpers', () => {
         cadence: 'monthly',
         dayOfMonth: 1,
         weekday: null,
+        anchorDate: null,
         active: true,
       },
       {
@@ -30,6 +31,7 @@ describe('budget cashflow helpers', () => {
         cadence: 'weekly',
         dayOfMonth: null,
         weekday: 1,
+        anchorDate: null,
         active: true,
       },
     ];
@@ -39,6 +41,25 @@ describe('budget cashflow helpers', () => {
       true,
     );
     expect(items.filter((item) => item.title === 'Gym').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('projects biweekly recurring outgoings from an anchor date', () => {
+    const recurring: RecurringOutgoing[] = [
+      {
+        id: 'car',
+        budgetId: 'b1',
+        categoryId: null,
+        name: 'Car finance',
+        amountCents: 22_000,
+        cadence: 'biweekly',
+        dayOfMonth: null,
+        weekday: null,
+        anchorDate: '2026-08-07',
+        active: true,
+      },
+    ];
+    const items = projectRecurringForMonth(2026, 8, recurring);
+    expect(items.map((item) => item.date)).toEqual(['2026-08-07', '2026-08-21']);
   });
 
   it('lists monthly payday from next pay date', () => {
@@ -132,6 +153,7 @@ describe('budget cashflow helpers', () => {
           cadence: 'monthly',
           dayOfMonth: 20,
           weekday: null,
+          anchorDate: null,
           active: true,
         },
       ],

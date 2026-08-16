@@ -9,9 +9,10 @@ export type RecurringOutgoing = {
   categoryId: string | null;
   name: string;
   amountCents: number;
-  cadence: 'weekly' | 'monthly' | 'yearly';
+  cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
   dayOfMonth: number | null;
   weekday: number | null;
+  anchorDate: string | null;
   active: boolean;
 };
 
@@ -114,6 +115,27 @@ export function payDatesInMonth(
   return dates;
 }
 
+export function intervalDatesInMonth(
+  year: number,
+  month: number,
+  intervalDays: number,
+  anchorDate: string,
+): string[] {
+  if (intervalDays <= 0 || !anchorDate) return [];
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month - 1, daysInMonth(year, month)));
+  const dates: string[] = [];
+  let cursor = parseDate(anchorDate);
+
+  while (cursor > start) cursor = addDays(cursor, -intervalDays);
+  while (cursor < start) cursor = addDays(cursor, intervalDays);
+  while (cursor <= end) {
+    dates.push(toDateString(cursor));
+    cursor = addDays(cursor, intervalDays);
+  }
+  return dates;
+}
+
 export function projectRecurringForMonth(
   year: number,
   month: number,
@@ -125,27 +147,6 @@ export function projectRecurringForMonth(
   for (const row of recurring.filter((item) => item.active)) {
     if (row.cadence === 'monthly' || row.cadence === 'yearly') {
       if (!row.dayOfMonth) continue;
-      if (row.cadence === 'yearly') {
-        // Project yearly on that day every month only if we treat yearly as annual —
-        // for calendar we only show in months matching? For simplicity show monthly-equivalent
-        // only once per year: use January unless day exists; better: show if month matches
-        // next occurrence. Simplest useful behavior: yearly shows on dayOfMonth every year
-        // in every month? No — yearly should appear once. We'll show it every month's
-        // dayOfMonth only when cadence monthly; yearly appears on dayOfMonth in current month always
-        // as a reminder (users often want visibility). Better: appear once — in the selected month
-        // if day fits. Treat yearly like monthly for planning visibility of "annual bills due this month"
-        // only when caller wants — show yearly on day_of_month in EVERY month is wrong.
-        // Show yearly only if the month equals nextPay-style: use month of "today" matching —
-        // For MVP: yearly appears on dayOfMonth in the requested month (user can mark month via name).
-        // Actually: yearly bills have a month. We don't store month. Store as monthly for bills
-        // and yearly shows on dayOfMonth each month as optional reminder — skip yearly projection
-        // unless dayOfMonth is set; project once per year in the requested month always.
-        // Final: yearly projects onto dayOfMonth in the requested month (same as monthly) —
-        // user manages annual bills as monthly reminders or we accept over-projection.
-        // Prefer: yearly projects only in month == (dayOfMonth used as day, assume current).
-        // I'll project yearly on dayOfMonth every month — users set active and can disable.
-        // Better approach: yearly projects on dayOfMonth of the requested month (once).
-      }
       const day = Math.min(row.dayOfMonth, dim);
       const date = `${year}-${pad(month)}-${pad(day)}`;
       items.push({
@@ -180,6 +181,34 @@ export function projectRecurringForMonth(
           amountCents: row.amountCents,
           title: row.name,
           note: 'weekly outgoing',
+          categoryId: row.categoryId,
+          categoryName: null,
+          recurringId: row.id,
+          savingGoalId: null,
+          paid: false,
+          paidAt: null,
+          paymentId: null,
+        });
+      }
+      continue;
+    }
+
+    if (
+      (row.cadence === 'biweekly' || row.cadence === 'four_weekly') &&
+      row.anchorDate
+    ) {
+      const interval = row.cadence === 'biweekly' ? 14 : 28;
+      const note =
+        row.cadence === 'biweekly' ? 'every 2 weeks' : 'every 4 weeks';
+      for (const iso of intervalDatesInMonth(year, month, interval, row.anchorDate)) {
+        items.push({
+          id: `recurring:${row.id}:${iso}`,
+          source: 'recurring',
+          kind: 'EXPENSE',
+          date: iso,
+          amountCents: row.amountCents,
+          title: row.name,
+          note,
           categoryId: row.categoryId,
           categoryName: null,
           recurringId: row.id,
@@ -294,6 +323,8 @@ export function buildRecommendations(input: {
     .filter((row) => row.active)
     .reduce((sum, row) => {
       if (row.cadence === 'weekly') return sum + row.amountCents * 4;
+      if (row.cadence === 'biweekly') return sum + row.amountCents * 2;
+      if (row.cadence === 'four_weekly') return sum + row.amountCents;
       if (row.cadence === 'yearly') return sum + Math.round(row.amountCents / 12);
       return sum + row.amountCents;
     }, 0);
@@ -391,21 +422,36 @@ export async function listRecurring(
       cadence,
       day_of_month,
       weekday,
+      anchor_date::text AS anchor_date,
       active
     FROM budget_recurring_outgoings
     WHERE budget_id = ${budgetId}
     ORDER BY active DESC, cadence ASC, name ASC
   `;
-  return rows;
+  return rows.map((row) => ({
+    ...row,
+    anchorDate: row.anchorDate ? String(row.anchorDate).slice(0, 10) : null,
+  }));
 }
 
 export function assertRecurringCadence(body: {
-  cadence: 'weekly' | 'monthly' | 'yearly';
+  cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
   dayOfMonth?: number | null;
   weekday?: number | null;
+  anchorDate?: string | null;
 }) {
   if (body.cadence === 'weekly' && (body.weekday == null || body.weekday < 0 || body.weekday > 6)) {
     throw new ApiError(400, 'weekday_required', 'Weekly outgoings need a weekday (0=Sun … 6=Sat).');
+  }
+  if (
+    (body.cadence === 'biweekly' || body.cadence === 'four_weekly') &&
+    (!body.anchorDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate))
+  ) {
+    throw new ApiError(
+      400,
+      'anchor_date_required',
+      'Every 2 / 4 week outgoings need a next due date (YYYY-MM-DD).',
+    );
   }
   if (
     (body.cadence === 'monthly' || body.cadence === 'yearly') &&

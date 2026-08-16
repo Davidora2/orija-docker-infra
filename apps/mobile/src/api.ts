@@ -556,9 +556,10 @@ export type RecurringOutgoing = {
   categoryId: string | null;
   name: string;
   amountCents: number;
-  cadence: 'weekly' | 'monthly' | 'yearly';
+  cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
   dayOfMonth: number | null;
   weekday: number | null;
+  anchorDate: string | null;
   active: boolean;
 };
 
@@ -684,6 +685,10 @@ function mapRecurring(raw: Record<string, unknown>): RecurringOutgoing {
         ? Number(raw.dayOfMonth ?? raw.day_of_month)
         : null,
     weekday: raw.weekday != null ? Number(raw.weekday) : null,
+    anchorDate: (() => {
+      const value = (raw.anchorDate ?? raw.anchor_date ?? null) as string | null;
+      return value ? String(value).slice(0, 10) : null;
+    })(),
     active: Boolean(raw.active ?? true),
   };
 }
@@ -788,9 +793,10 @@ export async function createRecurringOutgoing(
   input: {
     name: string;
     amountCents: number;
-    cadence: 'weekly' | 'monthly' | 'yearly';
+    cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
     dayOfMonth?: number | null;
     weekday?: number | null;
+    anchorDate?: string | null;
     categoryId?: string | null;
   },
 ): Promise<RecurringOutgoing> {

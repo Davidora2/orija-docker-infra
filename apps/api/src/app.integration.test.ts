@@ -393,6 +393,19 @@ suite('account and couple household API', () => {
     });
     expect(recurring.statusCode).toBe(201);
 
+    const biweekly = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${personalBudget.id}/recurring`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        name: 'Car finance',
+        amountCents: 22000,
+        cadence: 'biweekly',
+        anchorDate: '2026-08-07',
+      },
+    });
+    expect(biweekly.statusCode).toBe(201);
+
     const outgoings = await app.inject({
       method: 'GET',
       url: `/v1/budgets/${personalBudget.id}/outgoings?year=2026&month=8`,
@@ -400,7 +413,7 @@ suite('account and couple household API', () => {
     });
     expect(outgoings.statusCode).toBe(200);
     const month = outgoings.json<{
-      list: unknown[];
+      list: { title: string; date: string }[];
       days: unknown[];
       recommendations: { id: string }[];
       paySchedule: { payDates: string[] };
@@ -409,6 +422,9 @@ suite('account and couple household API', () => {
     expect(month.list.length).toBeGreaterThan(0);
     expect(month.paySchedule.payDates).toContain('2026-08-28');
     expect(month.recommendations.length).toBeGreaterThan(0);
+    expect(
+      month.list.filter((item) => item.title === 'Car finance').map((item) => item.date),
+    ).toEqual(['2026-08-07', '2026-08-21']);
   });
 
   it('tracks bill payments and sends outstanding reminders', async () => {

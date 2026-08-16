@@ -693,6 +693,8 @@ export function registerWealthRoutes(
       `;
       const recurringCents = recurring.reduce((sum, row) => {
         if (row.cadence === 'weekly') return sum + Number(row.amountCents) * 4;
+        if (row.cadence === 'biweekly') return sum + Number(row.amountCents) * 2;
+        if (row.cadence === 'four_weekly') return sum + Number(row.amountCents);
         if (row.cadence === 'yearly') return sum + Math.round(Number(row.amountCents) / 12);
         return sum + Number(row.amountCents);
       }, 0);

@@ -582,9 +582,14 @@ export function registerOnboardingAndBudgetRoutes(
         .object({
           name: z.string().trim().min(1).max(120),
           amountCents: z.number().int().positive(),
-          cadence: z.enum(['weekly', 'monthly', 'yearly']),
+          cadence: z.enum(['weekly', 'biweekly', 'four_weekly', 'monthly', 'yearly']),
           dayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
           weekday: z.number().int().min(0).max(6).nullable().optional(),
+          anchorDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable()
+            .optional(),
           categoryId: z.string().uuid().nullable().optional(),
           active: z.boolean().default(true),
         })
@@ -604,15 +609,24 @@ export function registerOnboardingAndBudgetRoutes(
       const [row] = await sql`
         INSERT INTO budget_recurring_outgoings (
           budget_id, category_id, name, amount_cents, cadence,
-          day_of_month, weekday, active
+          day_of_month, weekday, anchor_date, active
         ) VALUES (
           ${id},
           ${body.categoryId ?? null},
           ${body.name},
           ${body.amountCents},
           ${body.cadence},
-          ${body.cadence === 'weekly' ? null : (body.dayOfMonth ?? null)},
+          ${
+            body.cadence === 'monthly' || body.cadence === 'yearly'
+              ? (body.dayOfMonth ?? null)
+              : null
+          },
           ${body.cadence === 'weekly' ? (body.weekday ?? null) : null},
+          ${
+            body.cadence === 'biweekly' || body.cadence === 'four_weekly'
+              ? (body.anchorDate ?? null)
+              : null
+          },
           ${body.active}
         )
         RETURNING *
@@ -635,9 +649,16 @@ export function registerOnboardingAndBudgetRoutes(
         .object({
           name: z.string().trim().min(1).max(120).optional(),
           amountCents: z.number().int().positive().optional(),
-          cadence: z.enum(['weekly', 'monthly', 'yearly']).optional(),
+          cadence: z
+            .enum(['weekly', 'biweekly', 'four_weekly', 'monthly', 'yearly'])
+            .optional(),
           dayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
           weekday: z.number().int().min(0).max(6).nullable().optional(),
+          anchorDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable()
+            .optional(),
           categoryId: z.string().uuid().nullable().optional(),
           active: z.boolean().optional(),
         })
@@ -645,11 +666,12 @@ export function registerOnboardingAndBudgetRoutes(
         .parse(request.body);
 
       const [existing] = await sql<{
-        cadence: 'weekly' | 'monthly' | 'yearly';
+        cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
         dayOfMonth: number | null;
         weekday: number | null;
+        anchorDate: string | null;
       }[]>`
-        SELECT cadence, day_of_month, weekday
+        SELECT cadence, day_of_month, weekday, anchor_date::text
         FROM budget_recurring_outgoings
         WHERE id = ${params.recurringId} AND budget_id = ${params.id}
       `;
@@ -662,6 +684,12 @@ export function registerOnboardingAndBudgetRoutes(
         dayOfMonth:
           body.dayOfMonth !== undefined ? body.dayOfMonth : existing.dayOfMonth,
         weekday: body.weekday !== undefined ? body.weekday : existing.weekday,
+        anchorDate:
+          body.anchorDate !== undefined
+            ? body.anchorDate
+            : existing.anchorDate
+              ? existing.anchorDate.slice(0, 10)
+              : null,
       });
 
       const [row] = await sql`
@@ -670,14 +698,19 @@ export function registerOnboardingAndBudgetRoutes(
           amount_cents = COALESCE(${body.amountCents ?? null}, amount_cents),
           cadence = COALESCE(${body.cadence ?? null}, cadence),
           day_of_month = CASE
-            WHEN ${body.dayOfMonth !== undefined} THEN ${body.dayOfMonth ?? null}
-            WHEN ${body.cadence === 'weekly'} THEN NULL
-            ELSE day_of_month
+            WHEN ${nextCadence === 'monthly' || nextCadence === 'yearly'} THEN
+              COALESCE(${body.dayOfMonth ?? null}, day_of_month)
+            ELSE NULL
           END,
           weekday = CASE
-            WHEN ${body.weekday !== undefined} THEN ${body.weekday ?? null}
-            WHEN ${body.cadence !== undefined && body.cadence !== 'weekly'} THEN NULL
-            ELSE weekday
+            WHEN ${nextCadence === 'weekly'} THEN
+              COALESCE(${body.weekday ?? null}, weekday)
+            ELSE NULL
+          END,
+          anchor_date = CASE
+            WHEN ${nextCadence === 'biweekly' || nextCadence === 'four_weekly'} THEN
+              COALESCE(${body.anchorDate ?? null}::date, anchor_date)
+            ELSE NULL
           END,
           category_id = CASE
             WHEN ${body.categoryId !== undefined} THEN ${body.categoryId ?? null}

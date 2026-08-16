@@ -1,6 +1,10 @@
 import type { Database } from './db.js';
 import type { Mailer } from './mailer.js';
-import { daysInMonth, toDateString } from './budget-cashflow.js';
+import {
+  daysInMonth,
+  intervalDatesInMonth,
+  toDateString,
+} from './budget-cashflow.js';
 
 export type OutstandingDueItem = {
   sourceType: 'recurring_outgoing' | 'saving_goal';
@@ -63,9 +67,10 @@ export async function listOutstandingDueOnDate(
       budgetId: string;
       name: string;
       amountCents: number;
-      cadence: 'weekly' | 'monthly' | 'yearly';
+      cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
       dayOfMonth: number | null;
       weekday: number | null;
+      anchorDate: string | null;
       currency: string;
     }[]
   >`
@@ -77,6 +82,7 @@ export async function listOutstandingDueOnDate(
       r.cadence,
       r.day_of_month,
       r.weekday,
+      r.anchor_date::text,
       b.currency
     FROM budget_recurring_outgoings r
     INNER JOIN budgets b ON b.id = r.budget_id
@@ -99,6 +105,17 @@ export async function listOutstandingDueOnDate(
     let matches = false;
     if (row.cadence === 'weekly' && row.weekday != null) {
       matches = row.weekday === weekday;
+    } else if (
+      (row.cadence === 'biweekly' || row.cadence === 'four_weekly') &&
+      row.anchorDate
+    ) {
+      const interval = row.cadence === 'biweekly' ? 14 : 28;
+      matches = intervalDatesInMonth(
+        year,
+        month,
+        interval,
+        row.anchorDate.slice(0, 10),
+      ).includes(due);
     } else if (
       (row.cadence === 'monthly' || row.cadence === 'yearly') &&
       row.dayOfMonth != null

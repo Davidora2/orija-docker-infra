@@ -76,6 +76,11 @@ export function OutgoingsView({
   const [recName, setRecName] = useState('');
   const [recAmount, setRecAmount] = useState('');
   const [recDay, setRecDay] = useState('1');
+  const [recCadence, setRecCadence] = useState<
+    'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly'
+  >('monthly');
+  const [recWeekday, setRecWeekday] = useState('1');
+  const [recAnchor, setRecAnchor] = useState('');
   const displayCurrency =
     preferredCurrency || data?.currency || budget.currency || 'GBP';
   const symbol = currencySymbol(displayCurrency);
@@ -138,16 +143,32 @@ export function OutgoingsView({
       notify('Add a name and amount.');
       return;
     }
+    if (
+      (recCadence === 'biweekly' || recCadence === 'four_weekly') &&
+      !recAnchor
+    ) {
+      notify('Pick the next due date for every 2 / 4 week outgoings.');
+      return;
+    }
     setBusy(true);
     try {
       await createRecurringOutgoing(budget.id, {
         name: recName.trim(),
         amountCents: Math.round(pounds * 100),
-        cadence: 'monthly',
-        dayOfMonth: Number(recDay) || 1,
+        cadence: recCadence,
+        dayOfMonth:
+          recCadence === 'monthly' || recCadence === 'yearly'
+            ? Number(recDay) || 1
+            : null,
+        weekday: recCadence === 'weekly' ? Number(recWeekday) : null,
+        anchorDate:
+          recCadence === 'biweekly' || recCadence === 'four_weekly'
+            ? recAnchor
+            : null,
       });
       setRecName('');
       setRecAmount('');
+      setRecAnchor('');
       await load();
       onChanged();
       notify('Recurring outgoing added.');
@@ -407,7 +428,7 @@ export function OutgoingsView({
       ) : null}
 
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>Add monthly recurring</Text>
+        <Text style={styles.eyebrow}>Add recurring</Text>
         <TextInput
           style={styles.input}
           placeholder="Name"
@@ -423,14 +444,73 @@ export function OutgoingsView({
           value={recAmount}
           onChangeText={setRecAmount}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Day of month (1-28)"
-          placeholderTextColor="#9BA49E"
-          keyboardType="number-pad"
-          value={recDay}
-          onChangeText={setRecDay}
-        />
+        <View style={styles.rowWrap}>
+          {(
+            [
+              ['monthly', 'Monthly'],
+              ['weekly', 'Weekly'],
+              ['biweekly', 'Every 2 weeks'],
+              ['four_weekly', 'Every 4 weeks'],
+              ['yearly', 'Yearly'],
+            ] as const
+          ).map(([value, label]) => (
+            <Pressable
+              key={value}
+              style={[styles.chip, recCadence === value && styles.chipActive]}
+              onPress={() => setRecCadence(value)}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  recCadence === value && styles.chipTextActive,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        {recCadence === 'weekly' ? (
+          <View style={styles.rowWrap}>
+            {WEEKDAYS.map((label, index) => (
+              <Pressable
+                key={`${label}-${index}`}
+                style={[
+                  styles.chip,
+                  recWeekday === String(index) && styles.chipActive,
+                ]}
+                onPress={() => setRecWeekday(String(index))}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    recWeekday === String(index) && styles.chipTextActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : recCadence === 'biweekly' || recCadence === 'four_weekly' ? (
+          <TextInput
+            style={styles.input}
+            placeholder="Next due date (YYYY-MM-DD)"
+            placeholderTextColor="#9BA49E"
+            value={recAnchor}
+            onChangeText={setRecAnchor}
+            autoCapitalize="none"
+          />
+        ) : (
+          <TextInput
+            style={styles.input}
+            placeholder="Day of month (1-28)"
+            placeholderTextColor="#9BA49E"
+            keyboardType="number-pad"
+            value={recDay}
+            onChangeText={setRecDay}
+          />
+        )}
         <Pressable
           style={[styles.button, busy && styles.disabled]}
           disabled={busy}

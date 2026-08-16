@@ -60,10 +60,11 @@ export function OutgoingsPanel({
   const [recName, setRecName] = useState("");
   const [recAmount, setRecAmount] = useState("");
   const [recDay, setRecDay] = useState("1");
-  const [recCadence, setRecCadence] = useState<"weekly" | "monthly" | "yearly">(
-    "monthly",
-  );
+  const [recCadence, setRecCadence] = useState<
+    "weekly" | "biweekly" | "four_weekly" | "monthly" | "yearly"
+  >("monthly");
   const [recWeekday, setRecWeekday] = useState("1");
+  const [recAnchor, setRecAnchor] = useState("");
 
   const displayCurrency =
     preferredCurrency || data?.currency || budget.currency || "GBP";
@@ -130,17 +131,32 @@ export function OutgoingsPanel({
       onError("Add a name and positive amount for the recurring outgoing.");
       return;
     }
+    if (
+      (recCadence === "biweekly" || recCadence === "four_weekly") &&
+      !recAnchor
+    ) {
+      onError("Pick the next due date for every 2 / 4 week outgoings.");
+      return;
+    }
     setBusy(true);
     try {
       await createRecurringOutgoing(budget.id, {
         name: recName.trim(),
         amountCents: Math.round(pounds * 100),
         cadence: recCadence,
-        dayOfMonth: recCadence === "weekly" ? null : Number(recDay),
+        dayOfMonth:
+          recCadence === "monthly" || recCadence === "yearly"
+            ? Number(recDay)
+            : null,
         weekday: recCadence === "weekly" ? Number(recWeekday) : null,
+        anchorDate:
+          recCadence === "biweekly" || recCadence === "four_weekly"
+            ? recAnchor
+            : null,
       });
       setRecName("");
       setRecAmount("");
+      setRecAnchor("");
       await load();
       onChanged();
     } catch (error) {
@@ -439,11 +455,20 @@ export function OutgoingsPanel({
             className="rounded-xl border border-[#dde2dd] px-3 py-3"
             value={recCadence}
             onChange={(e) =>
-              setRecCadence(e.target.value as "weekly" | "monthly" | "yearly")
+              setRecCadence(
+                e.target.value as
+                  | "weekly"
+                  | "biweekly"
+                  | "four_weekly"
+                  | "monthly"
+                  | "yearly",
+              )
             }
           >
             <option value="monthly">Monthly</option>
             <option value="weekly">Weekly</option>
+            <option value="biweekly">Every 2 weeks</option>
+            <option value="four_weekly">Every 4 weeks</option>
             <option value="yearly">Yearly</option>
           </select>
           {recCadence === "weekly" ? (
@@ -458,6 +483,14 @@ export function OutgoingsPanel({
                 </option>
               ))}
             </select>
+          ) : recCadence === "biweekly" || recCadence === "four_weekly" ? (
+            <input
+              className="rounded-xl border border-[#dde2dd] px-3 py-3"
+              type="date"
+              value={recAnchor}
+              onChange={(e) => setRecAnchor(e.target.value)}
+              aria-label="Next due date"
+            />
           ) : (
             <input
               className="rounded-xl border border-[#dde2dd] px-3 py-3"
