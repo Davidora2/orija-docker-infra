@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -18,14 +20,24 @@ import {
   acceptPartnerInvite,
   apiBaseUrl,
   createPartnerInvite,
+  forgotPassword,
+  getAuthProviders,
   login,
+  loginWithGoogle,
   logout,
   register,
+  resetPassword,
   setActiveHousehold,
   updateProfile,
+  verifyResetCode,
   type Account,
+  type AuthProviders,
   ApiError,
 } from './api';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 
 const colors = {
   ink: '#14241F',
@@ -145,10 +157,13 @@ export function AccountSheet({
 }: Props) {
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [mode, setMode] = useState<'register' | 'login'>('register');
+  const [mode, setMode] = useState<'register' | 'login' | 'forgot' | 'reset'>('register');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [providers, setProviders] = useState<AuthProviders | null>(null);
   const [partnerEmail, setPartnerEmail] = useState('');
   const [inviteToken, setInviteToken] = useState('');
   const [generatedInvite, setGeneratedInvite] = useState<{
@@ -158,10 +173,25 @@ export function AccountSheet({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const [googleRequest, , googlePromptAsync] = Google.useIdTokenAuthRequest({
+    clientId: googleClientId || undefined,
+    iosClientId: googleClientId || undefined,
+    androidClientId: googleClientId || undefined,
+    webClientId: googleClientId || undefined,
+  });
 
   useEffect(() => {
     if (account) setDisplayName(account.user.displayName);
   }, [account]);
+
+  useEffect(() => {
+    if (!visible || account) return;
+    void getAuthProviders()
+      .then(setProviders)
+      .catch(() => setProviders(null));
+  }, [visible, account]);
 
   useEffect(() => {
     if (initialInviteToken) setInviteToken(initialInviteToken);
@@ -307,24 +337,40 @@ export function AccountSheet({
           >
             {!account ? (
               <>
-                <View style={styles.modeRow}>
-                  {(['register', 'login'] as const).map((item) => (
-                    <Pressable
-                      key={item}
-                      onPress={() => {
-                        setMode(item);
-                        setError('');
-                      }}
-                      style={[styles.modeButton, mode === item && styles.modeButtonActive]}
-                    >
-                      <Text
-                        style={[styles.modeText, mode === item && styles.modeTextActive]}
+                {mode === 'login' || mode === 'register' ? (
+                  <View style={styles.modeRow}>
+                    {(['register', 'login'] as const).map((item) => (
+                      <Pressable
+                        key={item}
+                        onPress={() => {
+                          setMode(item);
+                          setError('');
+                          setNotice('');
+                        }}
+                        style={[styles.modeButton, mode === item && styles.modeButtonActive]}
                       >
-                        {item === 'register' ? 'Create profile' : 'Sign in'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
+                        <Text
+                          style={[styles.modeText, mode === item && styles.modeTextActive]}
+                        >
+                          {item === 'register' ? 'Create profile' : 'Sign in'}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => {
+                      setMode('login');
+                      setError('');
+                      setNotice('');
+                    }}
+                    style={{ marginBottom: 14 }}
+                  >
+                    <Text style={[styles.modeText, { color: colors.sageDeep, fontWeight: '700' }]}>
+                      ← Back to sign in
+                    </Text>
+                  </Pressable>
+                )}
                 {mode === 'register' && (
                   <Field
                     autoCapitalize="words"
@@ -334,38 +380,153 @@ export function AccountSheet({
                     value={displayName}
                   />
                 )}
-                <Field
-                  keyboardType="email-address"
-                  label="EMAIL"
-                  onChangeText={setEmail}
-                  placeholder="you@example.com"
-                  value={email}
-                />
-                <Field
-                  label="PASSWORD"
-                  onChangeText={setPassword}
-                  placeholder="At least 10 characters"
-                  secureTextEntry
-                  value={password}
-                />
-                <View style={styles.privacyNote}>
-                  <Icon name="lock-closed-outline" size={17} color={colors.sageDeep} />
-                  <Text style={styles.privacyText}>
-                    Your personal account stays separate. Linking a partner creates a
-                    shared household; private items remain private.
-                  </Text>
-                </View>
-                <ActionButton
-                  disabled={
-                    busy ||
-                    !email.trim() ||
-                    password.length < 10 ||
-                    (mode === 'register' && !displayName.trim())
-                  }
-                  icon={mode === 'register' ? 'person-add-outline' : 'log-in-outline'}
-                  label={busy ? 'Connecting…' : mode === 'register' ? 'Create profile' : 'Sign in'}
-                  onPress={authenticate}
-                />
+                {(mode === 'register' ||
+                  mode === 'login' ||
+                  mode === 'forgot' ||
+                  mode === 'reset') && (
+                  <Field
+                    keyboardType="email-address"
+                    label="EMAIL"
+                    onChangeText={setEmail}
+                    placeholder="you@example.com"
+                    value={email}
+                  />
+                )}
+                {(mode === 'register' || mode === 'login') && (
+                  <Field
+                    label="PASSWORD"
+                    onChangeText={setPassword}
+                    placeholder="At least 10 characters"
+                    secureTextEntry
+                    value={password}
+                  />
+                )}
+                {mode === 'reset' && (
+                  <>
+                    <Field
+                      label="VERIFICATION CODE"
+                      onChangeText={setResetCode}
+                      placeholder="6-digit code"
+                      value={resetCode}
+                    />
+                    <Field
+                      label="NEW PASSWORD"
+                      onChangeText={setNewPassword}
+                      placeholder="At least 10 characters"
+                      secureTextEntry
+                      value={newPassword}
+                    />
+                  </>
+                )}
+                {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
+                {mode === 'login' || mode === 'register' ? (
+                  <View style={styles.privacyNote}>
+                    <Icon name="lock-closed-outline" size={17} color={colors.sageDeep} />
+                    <Text style={styles.privacyText}>
+                      Your personal account stays separate. Linking a partner creates a
+                      shared household; private items remain private.
+                    </Text>
+                  </View>
+                ) : null}
+                {(mode === 'login' || mode === 'register') && (
+                  <ActionButton
+                    disabled={
+                      busy ||
+                      !email.trim() ||
+                      password.length < 10 ||
+                      (mode === 'register' && !displayName.trim())
+                    }
+                    icon={mode === 'register' ? 'person-add-outline' : 'log-in-outline'}
+                    label={
+                      busy
+                        ? 'Connecting…'
+                        : mode === 'register'
+                          ? 'Create profile'
+                          : 'Sign in'
+                    }
+                    onPress={authenticate}
+                  />
+                )}
+                {mode === 'forgot' && (
+                  <ActionButton
+                    disabled={busy || !email.trim()}
+                    icon="mail-outline"
+                    label={busy ? 'Sending…' : 'Send verification code'}
+                    onPress={() =>
+                      void perform(async () => {
+                        const result = await forgotPassword(email.trim());
+                        setNotice(result.message);
+                        setMode('reset');
+                      })
+                    }
+                  />
+                )}
+                {mode === 'reset' && (
+                  <ActionButton
+                    disabled={
+                      busy ||
+                      !email.trim() ||
+                      resetCode.trim().length < 4 ||
+                      newPassword.length < 10
+                    }
+                    icon="key-outline"
+                    label={busy ? 'Updating…' : 'Set new password'}
+                    onPress={() =>
+                      void perform(async () => {
+                        await verifyResetCode(email.trim(), resetCode.trim());
+                        const next = await resetPassword({
+                          email: email.trim(),
+                          code: resetCode.trim(),
+                          newPassword,
+                        });
+                        onAccountChange(next);
+                        setPassword('');
+                        setNewPassword('');
+                        setResetCode('');
+                        notify('Password updated. You are signed in.');
+                      })
+                    }
+                  />
+                )}
+                {mode === 'login' ? (
+                  <Pressable
+                    onPress={() => {
+                      setMode('forgot');
+                      setError('');
+                      setNotice('');
+                    }}
+                    style={{ marginTop: 8 }}
+                  >
+                    <Text style={[styles.modeText, { color: colors.sageDeep, fontWeight: '700' }]}>
+                      Forgot password?
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {providers?.google &&
+                googleClientId &&
+                (mode === 'login' || mode === 'register') ? (
+                  <ActionButton
+                    disabled={busy || !googleRequest}
+                    icon="logo-google"
+                    label={busy ? 'Connecting…' : 'Continue with Google'}
+                    onPress={() =>
+                      void perform(async () => {
+                        const result = await googlePromptAsync();
+                        if (result.type !== 'success') {
+                          throw new Error('Google sign-in was cancelled.');
+                        }
+                        const idToken = result.params.id_token;
+                        if (!idToken) {
+                          throw new Error('Google did not return an ID token.');
+                        }
+                        const next = await loginWithGoogle(idToken);
+                        onAccountChange(next);
+                        notify('Signed in with Google.');
+                      })
+                    }
+                    secondary
+                  />
+                ) : null}
                 <Text style={styles.serverText}>Server: {apiBaseUrl}</Text>
               </>
             ) : (
@@ -688,6 +849,15 @@ const styles = StyleSheet.create({
     color: colors.sageDeep,
     fontSize: 9,
     lineHeight: 14,
+  },
+  noticeText: {
+    color: colors.sageDeep,
+    backgroundColor: colors.sage,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 12,
+    marginBottom: 10,
   },
   actionButton: {
     minHeight: 44,

@@ -26,6 +26,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountSheet } from './src/account-sheet';
 import { BudgetScreen } from './src/budget-screen';
+import { CalendarScreen } from './src/calendar-screen';
 import { OnboardingSheet } from './src/onboarding-sheet';
 import {
   ApiError,
@@ -73,7 +74,7 @@ const serif = Platform.select({
   default: 'Georgia',
 });
 
-type Tab = 'command' | 'portfolio' | 'ideas' | 'capacity' | 'budget' | 'review';
+type Tab = 'command' | 'portfolio' | 'ideas' | 'capacity' | 'budget' | 'calendar' | 'review';
 
 function tap(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== 'web') void Haptics.impactAsync(style);
@@ -946,6 +947,8 @@ function AppContent() {
           <BudgetScreen account={account!} notify={notify} />
         ) : null}
 
+        {tab === 'calendar' ? <CalendarScreen notify={notify} /> : null}
+
         {tab === 'capacity' ? (
           <View style={styles.stack}>
             <Text style={styles.sectionTitle}>Capacity</Text>
@@ -1076,6 +1079,7 @@ function AppContent() {
             ['portfolio', 'Areas', 'layers-outline'],
             ['capacity', 'Capacity', 'speedometer-outline'],
             ['budget', 'Budget', 'wallet-outline'],
+            ['calendar', 'Calendar', 'calendar-outline'],
             ['review', 'Review', 'stats-chart-outline'],
           ] as const
         ).map(([id, label, icon]) => (

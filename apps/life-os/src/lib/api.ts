@@ -183,6 +183,121 @@ export async function login(input: {
   return auth.account;
 }
 
+export type AuthProviders = {
+  google: boolean;
+  password: boolean;
+  emailDelivery: "smtp" | "resend" | "console" | "unavailable";
+};
+
+export async function getAuthProviders(): Promise<AuthProviders> {
+  return parseResponse<AuthProviders>(
+    await fetch(`${apiBaseUrl}/v1/auth/providers`),
+  );
+}
+
+export async function loginWithGoogle(idToken: string): Promise<Account> {
+  const auth = await parseResponse<Session & { account: Account }>(
+    await fetch(`${apiBaseUrl}/v1/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idToken,
+        deviceName: "web",
+        timezone:
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      }),
+    }),
+  );
+  saveSession(auth);
+  return auth.account;
+}
+
+export async function forgotPassword(email: string): Promise<{
+  ok: boolean;
+  message: string;
+  delivery?: string;
+}> {
+  return parseResponse(
+    await fetch(`${apiBaseUrl}/v1/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    }),
+  );
+}
+
+export async function verifyResetCode(
+  email: string,
+  code: string,
+): Promise<{ ok: boolean; message: string }> {
+  return parseResponse(
+    await fetch(`${apiBaseUrl}/v1/auth/verify-reset-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code }),
+    }),
+  );
+}
+
+export async function resetPassword(input: {
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<Account> {
+  const auth = await parseResponse<Session & { account: Account }>(
+    await fetch(`${apiBaseUrl}/v1/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, deviceName: "web" }),
+    }),
+  );
+  saveSession(auth);
+  return auth.account;
+}
+
+export type CalendarEvent = {
+  id: string;
+  type: "task" | "payment" | "payday";
+  date: string;
+  title: string;
+  amountCents: number | null;
+  areaId: string | null;
+  areaTitle: string | null;
+  status: string | null;
+  source: string;
+  meta: Record<string, unknown>;
+};
+
+export type CalendarPayload = {
+  view: "week" | "month";
+  rangeStart: string;
+  rangeEnd: string;
+  year: number;
+  month: number;
+  areas: { id: string; title: string }[];
+  filters: { areaIds: string[]; types: string[] };
+  days: { date: string; weekday: string; events: CalendarEvent[] }[];
+  events: CalendarEvent[];
+  counts: { tasks: number; payments: number; paydays: number };
+};
+
+export async function getCalendar(input: {
+  view: "week" | "month";
+  year?: number;
+  month?: number;
+  start?: string;
+  areaIds?: string[];
+  types?: string[];
+}): Promise<CalendarPayload> {
+  const params = new URLSearchParams({ view: input.view });
+  if (input.year) params.set("year", String(input.year));
+  if (input.month) params.set("month", String(input.month));
+  if (input.start) params.set("start", input.start);
+  if (input.areaIds?.length) params.set("areaIds", input.areaIds.join(","));
+  if (input.types?.length) params.set("types", input.types.join(","));
+  return request<CalendarPayload>(`/v1/calendar?${params.toString()}`);
+}
+
 export async function logout() {
   const session = loadSession();
   if (session) {

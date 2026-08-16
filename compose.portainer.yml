@@ -80,6 +80,7 @@ services:
       LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
       LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
       NEXT_PUBLIC_API_URL: https://lifeos.orija.store/api
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_IDS:-}
     volumes:
       - life-os-web-src:/opt/life-os
     entrypoint: ["/bin/sh", "-c"]

@@ -3,17 +3,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createLifeItem,
+  forgotPassword,
   getAccount,
+  getAuthProviders,
   listLifeItems,
   login,
   logout,
   pingApi,
   register,
+  resetPassword,
   updateLifeItem,
+  verifyResetCode,
   type Account,
+  type AuthProviders,
   type LifeItem,
 } from "../lib/api";
 import { BudgetPanel } from "./budget-panel";
+import { CalendarPanel } from "./calendar-panel";
+import { GoogleSignInButton } from "./google-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
 
 function num(item: LifeItem, key: string, fallback = 0) {
@@ -51,12 +58,24 @@ export function LifeOSApp() {
   const [online, setOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    "command" | "ideas" | "portfolio" | "capacity" | "budget" | "review"
+    | "command"
+    | "ideas"
+    | "portfolio"
+    | "capacity"
+    | "budget"
+    | "calendar"
+    | "review"
   >("command");
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authMode, setAuthMode] = useState<
+    "login" | "register" | "forgot" | "reset"
+  >("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [providers, setProviders] = useState<AuthProviders | null>(null);
   const [ideaTitle, setIdeaTitle] = useState("");
   const [ideaNote, setIdeaNote] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
@@ -85,6 +104,11 @@ export function LifeOSApp() {
     void (async () => {
       try {
         await refresh();
+        try {
+          setProviders(await getAuthProviders());
+        } catch {
+          setProviders(null);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
@@ -144,22 +168,45 @@ export function LifeOSApp() {
             API unreachable. Check the Cloudflare tunnel.
           </p>
         ) : null}
-        <div className="flex gap-2">
+        {authMode === "login" || authMode === "register" ? (
+          <div className="flex gap-2">
+            <button
+              className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "login" ? "bg-[#14241f] text-[#f4f5f0]" : "bg-[#dbe8d7] text-[#14241f]"}`}
+              onClick={() => {
+                setAuthMode("login");
+                setAuthNotice(null);
+                setError(null);
+              }}
+              type="button"
+            >
+              Sign in
+            </button>
+            <button
+              className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "register" ? "bg-[#14241f] text-[#f4f5f0]" : "bg-[#dbe8d7] text-[#14241f]"}`}
+              onClick={() => {
+                setAuthMode("register");
+                setAuthNotice(null);
+                setError(null);
+              }}
+              type="button"
+            >
+              Create account
+            </button>
+          </div>
+        ) : (
           <button
-            className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "login" ? "bg-[#14241f] text-[#f4f5f0]" : "bg-[#dbe8d7] text-[#14241f]"}`}
-            onClick={() => setAuthMode("login")}
+            className="self-start text-xs font-bold text-[#617a57]"
             type="button"
+            onClick={() => {
+              setAuthMode("login");
+              setAuthNotice(null);
+              setError(null);
+            }}
           >
-            Sign in
+            ← Back to sign in
           </button>
-          <button
-            className={`rounded-full px-3 py-1 text-xs font-bold ${authMode === "register" ? "bg-[#14241f] text-[#f4f5f0]" : "bg-[#dbe8d7] text-[#14241f]"}`}
-            onClick={() => setAuthMode("register")}
-            type="button"
-          >
-            Create account
-          </button>
-        </div>
+        )}
+
         {authMode === "register" ? (
           <input
             className="rounded-xl border border-[#dde2dd] px-3 py-3"
@@ -168,36 +215,138 @@ export function LifeOSApp() {
             onChange={(e) => setDisplayName(e.target.value)}
           />
         ) : null}
-        <input
-          className="rounded-xl border border-[#dde2dd] px-3 py-3"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="rounded-xl border border-[#dde2dd] px-3 py-3"
-          placeholder="Password (10+ chars)"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+
+        {authMode !== "reset" ? (
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-3"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        ) : null}
+
+        {authMode === "login" || authMode === "register" ? (
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-3"
+            placeholder="Password (10+ chars)"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        ) : null}
+
+        {authMode === "reset" ? (
+          <>
+            <input
+              className="rounded-xl border border-[#dde2dd] px-3 py-3"
+              placeholder="6-digit code from email"
+              value={resetCode}
+              onChange={(e) => setResetCode(e.target.value)}
+            />
+            <input
+              className="rounded-xl border border-[#dde2dd] px-3 py-3"
+              placeholder="New password (10+ chars)"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </>
+        ) : null}
+
+        {authNotice ? (
+          <p className="rounded-xl bg-[#dbe8d7] px-3 py-2 text-sm text-[#2f431e]">
+            {authNotice}
+          </p>
+        ) : null}
         {error ? <p className="text-sm text-[#c9634f]">{error}</p> : null}
-        <button
-          className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
-          disabled={busy}
-          type="button"
-          onClick={() =>
-            void run(async () => {
-              const next =
-                authMode === "register"
-                  ? await register({ displayName, email, password })
-                  : await login({ email, password });
-              setAccount(next);
-            })
-          }
-        >
-          {authMode === "register" ? "Create account" : "Sign in"}
-        </button>
+
+        {authMode === "login" || authMode === "register" ? (
+          <button
+            className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
+            disabled={busy}
+            type="button"
+            onClick={() =>
+              void run(async () => {
+                const next =
+                  authMode === "register"
+                    ? await register({ displayName, email, password })
+                    : await login({ email, password });
+                setAccount(next);
+              })
+            }
+          >
+            {authMode === "register" ? "Create account" : "Sign in"}
+          </button>
+        ) : null}
+
+        {authMode === "forgot" ? (
+          <button
+            className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
+            disabled={busy || !email.trim()}
+            type="button"
+            onClick={() =>
+              void run(async () => {
+                const result = await forgotPassword(email.trim());
+                setAuthNotice(result.message);
+                setAuthMode("reset");
+              })
+            }
+          >
+            Send verification code
+          </button>
+        ) : null}
+
+        {authMode === "reset" ? (
+          <button
+            className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
+            disabled={busy || resetCode.trim().length < 4 || newPassword.length < 10}
+            type="button"
+            onClick={() =>
+              void run(async () => {
+                await verifyResetCode(email.trim(), resetCode.trim());
+                const next = await resetPassword({
+                  email: email.trim(),
+                  code: resetCode.trim(),
+                  newPassword,
+                });
+                setAccount(next);
+              })
+            }
+          >
+            Set new password
+          </button>
+        ) : null}
+
+        {authMode === "login" ? (
+          <button
+            className="text-left text-xs font-bold text-[#617a57]"
+            type="button"
+            onClick={() => {
+              setAuthMode("forgot");
+              setAuthNotice(null);
+              setError(null);
+            }}
+          >
+            Forgot password?
+          </button>
+        ) : null}
+
+        {(authMode === "login" || authMode === "register") &&
+        providers?.google ? (
+          <>
+            <div className="flex items-center gap-3 text-xs text-[#6c7771]">
+              <span className="h-px flex-1 bg-[#dde2dd]" />
+              or
+              <span className="h-px flex-1 bg-[#dde2dd]" />
+            </div>
+            <GoogleSignInButton
+              enabled={Boolean(providers?.google)}
+              busy={busy}
+              onSuccess={(next) => setAccount(next)}
+              onError={(message) => setError(message)}
+            />
+          </>
+        ) : null}
       </main>
     );
   }
@@ -244,6 +393,7 @@ export function LifeOSApp() {
             ["portfolio", "Areas"],
             ["capacity", "Capacity"],
             ["budget", "Budget"],
+            ["calendar", "Calendar"],
             ["review", "Review"],
           ] as const
         ).map(([id, label]) => (
@@ -583,6 +733,8 @@ export function LifeOSApp() {
       {tab === "budget" ? (
         <BudgetPanel account={account} onError={setError} />
       ) : null}
+
+      {tab === "calendar" ? <CalendarPanel onError={setError} /> : null}
 
       {tab === "review" ? (
         <section className="space-y-4">
