@@ -36,6 +36,7 @@ suite('account and couple household API', () => {
     await sql`
       TRUNCATE TABLE
         budget_entries,
+        budget_recurring_outgoings,
         budget_categories,
         budgets,
         life_items,
@@ -358,5 +359,46 @@ suite('account and couple household API', () => {
       },
     });
     expect(entry.statusCode).toBe(201);
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/v1/budgets/${personalBudget.id}`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        payFrequency: 'monthly',
+        nextPayDate: '2026-08-28',
+        typicalPayCents: 250000,
+      },
+    });
+
+    const recurring = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${personalBudget.id}/recurring`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        name: 'Rent',
+        amountCents: 120000,
+        cadence: 'monthly',
+        dayOfMonth: 1,
+      },
+    });
+    expect(recurring.statusCode).toBe(201);
+
+    const outgoings = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${personalBudget.id}/outgoings?year=2026&month=8`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+    });
+    expect(outgoings.statusCode).toBe(200);
+    const month = outgoings.json<{
+      list: unknown[];
+      days: unknown[];
+      recommendations: { id: string }[];
+      paySchedule: { payDates: string[] };
+    }>();
+    expect(month.days.length).toBe(31);
+    expect(month.list.length).toBeGreaterThan(0);
+    expect(month.paySchedule.payDates).toContain('2026-08-28');
+    expect(month.recommendations.length).toBeGreaterThan(0);
   });
 });

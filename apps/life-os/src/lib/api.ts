@@ -313,9 +313,74 @@ export type Budget = {
   name: string;
   currency: string;
   period: "weekly" | "monthly";
+  payFrequency?: "weekly" | "biweekly" | "four_weekly" | "monthly" | null;
+  nextPayDate?: string | null;
+  typicalPayCents?: number | null;
   categories?: BudgetCategory[];
   entries?: BudgetEntry[];
+  recurring?: RecurringOutgoing[];
   summary?: BudgetSummary;
+};
+
+export type RecurringOutgoing = {
+  id: string;
+  budgetId: string;
+  categoryId: string | null;
+  name: string;
+  amountCents: number;
+  cadence: "weekly" | "monthly" | "yearly";
+  dayOfMonth: number | null;
+  weekday: number | null;
+  active: boolean;
+};
+
+export type BudgetRecommendation = {
+  id: string;
+  severity: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  action: string;
+};
+
+export type OutgoingItem = {
+  id: string;
+  source: "entry" | "recurring";
+  kind: "INCOME" | "EXPENSE";
+  date: string;
+  amountCents: number;
+  title: string;
+  note: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  recurringId: string | null;
+};
+
+export type MonthOutgoings = {
+  budgetId: string;
+  year: number;
+  month: number;
+  currency: string;
+  paySchedule: {
+    frequency: "weekly" | "biweekly" | "four_weekly" | "monthly" | null;
+    nextPayDate: string | null;
+    typicalPayCents: number | null;
+    payDates: string[];
+  };
+  days: {
+    date: string;
+    isPayDay: boolean;
+    totalCents: number;
+    incomeCents: number;
+    items: OutgoingItem[];
+  }[];
+  list: OutgoingItem[];
+  totals: {
+    expenseCents: number;
+    incomeCents: number;
+    recurringCents: number;
+    oneOffCents: number;
+  };
+  recommendations: BudgetRecommendation[];
 };
 
 function mapBudget(raw: Record<string, unknown>): Budget {
@@ -327,6 +392,12 @@ function mapBudget(raw: Record<string, unknown>): Budget {
     name: String(raw.name),
     currency: String(raw.currency ?? "GBP"),
     period: (raw.period as "weekly" | "monthly") ?? "monthly",
+    payFrequency: (raw.payFrequency ?? raw.pay_frequency ?? null) as Budget["payFrequency"],
+    nextPayDate: (raw.nextPayDate ?? raw.next_pay_date ?? null) as string | null,
+    typicalPayCents:
+      raw.typicalPayCents != null || raw.typical_pay_cents != null
+        ? Number(raw.typicalPayCents ?? raw.typical_pay_cents)
+        : null,
     categories: Array.isArray(raw.categories)
       ? (raw.categories as Record<string, unknown>[]).map((category) => ({
           id: String(category.id),
@@ -351,6 +422,9 @@ function mapBudget(raw: Record<string, unknown>): Budget {
           occurredOn: String(entry.occurredOn ?? entry.occurred_on),
         }))
       : undefined,
+    recurring: Array.isArray(raw.recurring)
+      ? (raw.recurring as Record<string, unknown>[]).map(mapRecurring)
+      : undefined,
     summary: raw.summary
       ? {
           incomeCents: Number((raw.summary as BudgetSummary).incomeCents),
@@ -359,6 +433,24 @@ function mapBudget(raw: Record<string, unknown>): Budget {
           balanceCents: Number((raw.summary as BudgetSummary).balanceCents),
         }
       : undefined,
+  };
+}
+
+function mapRecurring(raw: Record<string, unknown>): RecurringOutgoing {
+  return {
+    id: String(raw.id),
+    budgetId: String(raw.budgetId ?? raw.budget_id),
+    categoryId: (raw.categoryId ?? raw.category_id ?? null) as string | null,
+    name: String(raw.name),
+    amountCents: Number(raw.amountCents ?? raw.amount_cents),
+    cadence: raw.cadence as RecurringOutgoing["cadence"],
+    dayOfMonth:
+      raw.dayOfMonth != null || raw.day_of_month != null
+        ? Number(raw.dayOfMonth ?? raw.day_of_month)
+        : null,
+    weekday:
+      raw.weekday != null ? Number(raw.weekday) : null,
+    active: Boolean(raw.active ?? true),
   };
 }
 
@@ -422,4 +514,51 @@ export function formatMoney(cents: number, currency = "GBP"): string {
     style: "currency",
     currency,
   }).format(cents / 100);
+}
+
+export async function updateBudget(
+  id: string,
+  input: {
+    name?: string;
+    payFrequency?: "weekly" | "biweekly" | "four_weekly" | "monthly" | null;
+    nextPayDate?: string | null;
+    typicalPayCents?: number | null;
+  },
+): Promise<Budget> {
+  const raw = await request<Record<string, unknown>>(`/v1/budgets/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return mapBudget(raw);
+}
+
+export async function createRecurringOutgoing(
+  budgetId: string,
+  input: {
+    name: string;
+    amountCents: number;
+    cadence: "weekly" | "monthly" | "yearly";
+    dayOfMonth?: number | null;
+    weekday?: number | null;
+    categoryId?: string | null;
+  },
+): Promise<RecurringOutgoing> {
+  const raw = await request<Record<string, unknown>>(
+    `/v1/budgets/${budgetId}/recurring`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+  return mapRecurring(raw);
+}
+
+export async function getMonthOutgoings(
+  budgetId: string,
+  year: number,
+  month: number,
+): Promise<MonthOutgoings> {
+  return request<MonthOutgoings>(
+    `/v1/budgets/${budgetId}/outgoings?year=${year}&month=${month}`,
+  );
 }

@@ -1,5 +1,16 @@
 import { ApiError } from './errors.js';
 import type { Database } from './db.js';
+import {
+  assertRecurringCadence,
+  buildRecommendations,
+  daysInMonth,
+  listRecurring,
+  payDatesInMonth,
+  projectRecurringForMonth,
+  toDateString,
+  type OutgoingItem,
+  type PayFrequency,
+} from './budget-cashflow.js';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 
@@ -101,6 +112,7 @@ async function budgetDetail(sql: Database, budgetId: string) {
     ORDER BY occurred_on DESC, created_at DESC
     LIMIT 100
   `;
+  const recurring = await listRecurring(sql, budgetId);
   const [totals] = await sql<
     {
       incomeCents: string | number;
@@ -130,6 +142,7 @@ async function budgetDetail(sql: Database, budgetId: string) {
       spentCents: spentMap.get(category.id) ?? 0,
     })),
     entries,
+    recurring,
     summary: {
       incomeCents: Number(totals?.incomeCents ?? 0),
       expenseCents: Number(totals?.expenseCents ?? 0),
@@ -338,6 +351,16 @@ export function registerOnboardingAndBudgetRoutes(
         name: z.string().trim().min(1).max(120).optional(),
         currency: z.string().trim().min(3).max(8).optional(),
         period: z.enum(['weekly', 'monthly']).optional(),
+        payFrequency: z
+          .enum(['weekly', 'biweekly', 'four_weekly', 'monthly'])
+          .nullable()
+          .optional(),
+        nextPayDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable()
+          .optional(),
+        typicalPayCents: z.number().int().min(0).nullable().optional(),
       })
       .refine((value) => Object.keys(value).length > 0)
       .parse(request.body);
@@ -347,6 +370,18 @@ export function registerOnboardingAndBudgetRoutes(
         name = COALESCE(${body.name ?? null}, name),
         currency = COALESCE(${body.currency?.toUpperCase() ?? null}, currency),
         period = COALESCE(${body.period ?? null}, period),
+        pay_frequency = CASE
+          WHEN ${body.payFrequency !== undefined} THEN ${body.payFrequency ?? null}
+          ELSE pay_frequency
+        END,
+        next_pay_date = CASE
+          WHEN ${body.nextPayDate !== undefined} THEN ${body.nextPayDate ?? null}
+          ELSE next_pay_date
+        END,
+        typical_pay_cents = CASE
+          WHEN ${body.typicalPayCents !== undefined} THEN ${body.typicalPayCents ?? null}
+          ELSE typical_pay_cents
+        END,
         updated_at = now()
       WHERE id = ${id}
     `;
@@ -511,6 +546,335 @@ export function registerOnboardingAndBudgetRoutes(
         throw new ApiError(404, 'entry_not_found', 'Entry not found.');
       }
       return reply.code(204).send();
+    },
+  );
+
+  app.get(
+    '/v1/budgets/:id/recurring',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertBudgetAccess(sql, userId, id);
+      return listRecurring(sql, id);
+    },
+  );
+
+  app.post(
+    '/v1/budgets/:id/recurring',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertBudgetAccess(sql, userId, id);
+      const body = z
+        .object({
+          name: z.string().trim().min(1).max(120),
+          amountCents: z.number().int().positive(),
+          cadence: z.enum(['weekly', 'monthly', 'yearly']),
+          dayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
+          weekday: z.number().int().min(0).max(6).nullable().optional(),
+          categoryId: z.string().uuid().nullable().optional(),
+          active: z.boolean().default(true),
+        })
+        .parse(request.body);
+      assertRecurringCadence(body);
+
+      if (body.categoryId) {
+        const [category] = await sql<{ id: string }[]>`
+          SELECT id FROM budget_categories
+          WHERE id = ${body.categoryId} AND budget_id = ${id}
+        `;
+        if (!category) {
+          throw new ApiError(400, 'invalid_category', 'Category does not belong to this budget.');
+        }
+      }
+
+      const [row] = await sql`
+        INSERT INTO budget_recurring_outgoings (
+          budget_id, category_id, name, amount_cents, cadence,
+          day_of_month, weekday, active
+        ) VALUES (
+          ${id},
+          ${body.categoryId ?? null},
+          ${body.name},
+          ${body.amountCents},
+          ${body.cadence},
+          ${body.cadence === 'weekly' ? null : (body.dayOfMonth ?? null)},
+          ${body.cadence === 'weekly' ? (body.weekday ?? null) : null},
+          ${body.active}
+        )
+        RETURNING *
+      `;
+      await sql`UPDATE budgets SET updated_at = now() WHERE id = ${id}`;
+      return reply.code(201).send(row);
+    },
+  );
+
+  app.patch(
+    '/v1/budgets/:id/recurring/:recurringId',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const params = z
+        .object({ id: z.string().uuid(), recurringId: z.string().uuid() })
+        .parse(request.params);
+      await assertBudgetAccess(sql, userId, params.id);
+      const body = z
+        .object({
+          name: z.string().trim().min(1).max(120).optional(),
+          amountCents: z.number().int().positive().optional(),
+          cadence: z.enum(['weekly', 'monthly', 'yearly']).optional(),
+          dayOfMonth: z.number().int().min(1).max(28).nullable().optional(),
+          weekday: z.number().int().min(0).max(6).nullable().optional(),
+          categoryId: z.string().uuid().nullable().optional(),
+          active: z.boolean().optional(),
+        })
+        .refine((value) => Object.keys(value).length > 0)
+        .parse(request.body);
+
+      const [existing] = await sql<{
+        cadence: 'weekly' | 'monthly' | 'yearly';
+        dayOfMonth: number | null;
+        weekday: number | null;
+      }[]>`
+        SELECT cadence, day_of_month, weekday
+        FROM budget_recurring_outgoings
+        WHERE id = ${params.recurringId} AND budget_id = ${params.id}
+      `;
+      if (!existing) {
+        throw new ApiError(404, 'recurring_not_found', 'Recurring outgoing not found.');
+      }
+      const nextCadence = body.cadence ?? existing.cadence;
+      assertRecurringCadence({
+        cadence: nextCadence,
+        dayOfMonth:
+          body.dayOfMonth !== undefined ? body.dayOfMonth : existing.dayOfMonth,
+        weekday: body.weekday !== undefined ? body.weekday : existing.weekday,
+      });
+
+      const [row] = await sql`
+        UPDATE budget_recurring_outgoings SET
+          name = COALESCE(${body.name ?? null}, name),
+          amount_cents = COALESCE(${body.amountCents ?? null}, amount_cents),
+          cadence = COALESCE(${body.cadence ?? null}, cadence),
+          day_of_month = CASE
+            WHEN ${body.dayOfMonth !== undefined} THEN ${body.dayOfMonth ?? null}
+            WHEN ${body.cadence === 'weekly'} THEN NULL
+            ELSE day_of_month
+          END,
+          weekday = CASE
+            WHEN ${body.weekday !== undefined} THEN ${body.weekday ?? null}
+            WHEN ${body.cadence !== undefined && body.cadence !== 'weekly'} THEN NULL
+            ELSE weekday
+          END,
+          category_id = CASE
+            WHEN ${body.categoryId !== undefined} THEN ${body.categoryId ?? null}
+            ELSE category_id
+          END,
+          active = COALESCE(${body.active ?? null}, active),
+          updated_at = now()
+        WHERE id = ${params.recurringId} AND budget_id = ${params.id}
+        RETURNING *
+      `;
+      await sql`UPDATE budgets SET updated_at = now() WHERE id = ${params.id}`;
+      return row;
+    },
+  );
+
+  app.delete(
+    '/v1/budgets/:id/recurring/:recurringId',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const params = z
+        .object({ id: z.string().uuid(), recurringId: z.string().uuid() })
+        .parse(request.params);
+      await assertBudgetAccess(sql, userId, params.id);
+      const result = await sql`
+        DELETE FROM budget_recurring_outgoings
+        WHERE id = ${params.recurringId} AND budget_id = ${params.id}
+        RETURNING id
+      `;
+      if (result.count === 0) {
+        throw new ApiError(404, 'recurring_not_found', 'Recurring outgoing not found.');
+      }
+      return reply.code(204).send();
+    },
+  );
+
+  app.get(
+    '/v1/budgets/:id/outgoings',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const budget = await assertBudgetAccess(sql, userId, id);
+      const now = new Date();
+      const query = z
+        .object({
+          year: z.coerce.number().int().min(2000).max(2100).default(now.getUTCFullYear()),
+          month: z.coerce.number().int().min(1).max(12).default(now.getUTCMonth() + 1),
+        })
+        .parse(request.query);
+
+      const [schedule] = await sql<{
+        payFrequency: PayFrequency | null;
+        nextPayDate: string | null;
+        typicalPayCents: number | null;
+        currency: string;
+      }[]>`
+        SELECT
+          pay_frequency,
+          next_pay_date::text,
+          typical_pay_cents,
+          currency
+        FROM budgets
+        WHERE id = ${id}
+      `;
+
+      const categories = await sql<{ id: string; name: string }[]>`
+        SELECT id, name FROM budget_categories WHERE budget_id = ${id}
+      `;
+      const categoryNames = new Map(categories.map((row) => [row.id, row.name]));
+
+      const start = `${query.year}-${String(query.month).padStart(2, '0')}-01`;
+      const endDay = daysInMonth(query.year, query.month);
+      const end = `${query.year}-${String(query.month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+      const entries = await sql<
+        {
+          id: string;
+          kind: 'INCOME' | 'EXPENSE';
+          amountCents: number;
+          note: string;
+          occurredOn: string;
+          categoryId: string | null;
+        }[]
+      >`
+        SELECT
+          id, kind, amount_cents, note, occurred_on::text, category_id
+        FROM budget_entries
+        WHERE budget_id = ${id}
+          AND occurred_on >= ${start}::date
+          AND occurred_on <= ${end}::date
+        ORDER BY occurred_on ASC, created_at ASC
+      `;
+
+      const recurring = await listRecurring(sql, id);
+      const projected = projectRecurringForMonth(query.year, query.month, recurring).map(
+        (item) => ({
+          ...item,
+          categoryName: item.categoryId
+            ? (categoryNames.get(item.categoryId) ?? null)
+            : null,
+        }),
+      );
+
+      // Prefer actual expense entries over duplicate recurring projection on same day+amount+name
+      const entryItems: OutgoingItem[] = entries.map((entry) => ({
+        id: entry.id,
+        source: 'entry',
+        kind: entry.kind,
+        date: entry.occurredOn.slice(0, 10),
+        amountCents: Number(entry.amountCents),
+        title:
+          entry.kind === 'INCOME'
+            ? entry.note || 'Income'
+            : categoryNames.get(entry.categoryId ?? '') || entry.note || 'Expense',
+        note: entry.note,
+        categoryId: entry.categoryId,
+        categoryName: entry.categoryId
+          ? (categoryNames.get(entry.categoryId) ?? null)
+          : null,
+        recurringId: null,
+      }));
+
+      const covered = new Set(
+        entryItems
+          .filter((item) => item.kind === 'EXPENSE')
+          .map(
+            (item) =>
+              `${item.date}|${item.amountCents}|${(item.title || '').toLowerCase()}`,
+          ),
+      );
+      const recurringItems = projected.filter((item) => {
+        const key = `${item.date}|${item.amountCents}|${item.title.toLowerCase()}`;
+        return !covered.has(key);
+      });
+
+      const list = [...entryItems, ...recurringItems].sort((a, b) =>
+        a.date === b.date
+          ? b.amountCents - a.amountCents
+          : a.date.localeCompare(b.date),
+      );
+
+      const payDates = payDatesInMonth(
+        query.year,
+        query.month,
+        schedule?.payFrequency,
+        schedule?.nextPayDate,
+      );
+      const paySet = new Set(payDates);
+
+      const days = [];
+      for (let day = 1; day <= endDay; day += 1) {
+        const date = `${query.year}-${String(query.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const items = list.filter((item) => item.date === date);
+        days.push({
+          date,
+          isPayDay: paySet.has(date),
+          totalCents: items
+            .filter((item) => item.kind === 'EXPENSE')
+            .reduce((sum, item) => sum + item.amountCents, 0),
+          incomeCents: items
+            .filter((item) => item.kind === 'INCOME')
+            .reduce((sum, item) => sum + item.amountCents, 0),
+          items,
+        });
+      }
+
+      const expenseCents = list
+        .filter((item) => item.kind === 'EXPENSE')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const incomeCents = list
+        .filter((item) => item.kind === 'INCOME')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const recurringCents = list
+        .filter((item) => item.kind === 'EXPENSE' && item.source === 'recurring')
+        .reduce((sum, item) => sum + item.amountCents, 0);
+
+      const recommendations = buildRecommendations({
+        currency: schedule?.currency ?? budget.currency,
+        payFrequency: schedule?.payFrequency ?? null,
+        typicalPayCents: schedule?.typicalPayCents ?? null,
+        payDates,
+        list,
+        recurring,
+      });
+
+      return {
+        budgetId: id,
+        year: query.year,
+        month: query.month,
+        currency: schedule?.currency ?? budget.currency,
+        paySchedule: {
+          frequency: schedule?.payFrequency ?? null,
+          nextPayDate: schedule?.nextPayDate ?? null,
+          typicalPayCents: schedule?.typicalPayCents ?? null,
+          payDates,
+        },
+        days,
+        list: list.filter((item) => item.kind === 'EXPENSE'),
+        totals: {
+          expenseCents,
+          incomeCents,
+          recurringCents,
+          oneOffCents: expenseCents - recurringCents,
+        },
+        recommendations,
+        generatedOn: toDateString(new Date()),
+      };
     },
   );
 }

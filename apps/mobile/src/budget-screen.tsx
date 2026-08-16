@@ -17,6 +17,7 @@ import {
   type Account,
   type Budget,
 } from './api';
+import { OutgoingsView } from './outgoings-view';
 
 const colors = {
   ink: '#14241F',
@@ -43,6 +44,7 @@ export function BudgetScreen({ account, notify }: Props) {
   const [kind, setKind] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState<'outgoings' | 'ledger'>('outgoings');
   const canShare = (account.members?.length ?? 0) >= 2;
 
   const reload = useCallback(async () => {
@@ -196,6 +198,45 @@ export function BudgetScreen({ account, notify }: Props) {
 
       {detail ? (
         <>
+          <View style={styles.row}>
+            <Pressable
+              style={[styles.chip, section === 'outgoings' && styles.chipActive]}
+              onPress={() => setSection('outgoings')}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  section === 'outgoings' && styles.chipTextActive,
+                ]}
+              >
+                Outgoings
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, section === 'ledger' && styles.chipActive]}
+              onPress={() => setSection('ledger')}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  section === 'ledger' && styles.chipTextActive,
+                ]}
+              >
+                Ledger
+              </Text>
+            </Pressable>
+          </View>
+
+          {section === 'outgoings' ? (
+            <OutgoingsView
+              budget={detail}
+              notify={notify}
+              onChanged={() => void reload()}
+            />
+          ) : null}
+
+          {section === 'ledger' ? (
+            <>
           <View style={styles.card}>
             <Text style={styles.eyebrow}>This period</Text>
             <Text style={styles.cardTitle}>
@@ -317,6 +358,8 @@ export function BudgetScreen({ account, notify }: Props) {
               </View>
             ))}
           </View>
+            </>
+          ) : null}
         </>
       ) : null}
     </ScrollView>

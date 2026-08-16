@@ -13,6 +13,12 @@ const migrations = [
       new URL('../migrations/002_onboarding_budgets.sql', import.meta.url),
     ),
   },
+  {
+    version: '003_pay_schedule_outgoings',
+    path: fileURLToPath(
+      new URL('../migrations/003_pay_schedule_outgoings.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

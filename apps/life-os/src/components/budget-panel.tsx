@@ -11,6 +11,7 @@ import {
   type Account,
   type Budget,
 } from "../lib/api";
+import { OutgoingsPanel } from "./outgoings-panel";
 
 type Props = {
   account: Account;
@@ -26,6 +27,7 @@ export function BudgetPanel({ account, onError }: Props) {
   const [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState<"ledger" | "outgoings">("outgoings");
   const canShare = (account.members?.length ?? 0) >= 2;
 
   const reload = useCallback(async () => {
@@ -172,6 +174,41 @@ export function BudgetPanel({ account, onError }: Props) {
 
       {detail ? (
         <>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                section === "outgoings"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] bg-white text-[#14241f]"
+              }`}
+              onClick={() => setSection("outgoings")}
+            >
+              Outgoings
+            </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                section === "ledger"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] bg-white text-[#14241f]"
+              }`}
+              onClick={() => setSection("ledger")}
+            >
+              Ledger
+            </button>
+          </div>
+
+          {section === "outgoings" ? (
+            <OutgoingsPanel
+              budget={detail}
+              onError={onError}
+              onChanged={() => void reload()}
+            />
+          ) : null}
+
+          {section === "ledger" ? (
+            <>
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
               This period
@@ -298,6 +335,8 @@ export function BudgetPanel({ account, onError }: Props) {
               </div>
             ))}
           </article>
+            </>
+          ) : null}
         </>
       ) : null}
     </section>
