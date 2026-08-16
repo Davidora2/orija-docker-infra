@@ -268,7 +268,7 @@ export function BudgetPanel({ account, onError }: Props) {
               }`}
               onClick={() => setSection("ledger")}
             >
-              Ledger
+              Daily expenses
             </button>
             <button
               type="button"

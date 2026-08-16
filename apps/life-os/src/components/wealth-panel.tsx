@@ -73,6 +73,15 @@ export function WealthPanel({
   const [goalShared, setGoalShared] = useState(false);
   const [goalMonthly, setGoalMonthly] = useState("");
   const [goalDay, setGoalDay] = useState("1");
+  const [editingSavingId, setEditingSavingId] = useState<string | null>(null);
+  const [editGoalName, setEditGoalName] = useState("");
+  const [editGoalCategory, setEditGoalCategory] =
+    useState<SavingGoal["category"]>("emergency");
+  const [editGoalCustom, setEditGoalCustom] = useState("");
+  const [editGoalTarget, setEditGoalTarget] = useState("");
+  const [editGoalCurrent, setEditGoalCurrent] = useState("");
+  const [editGoalMonthly, setEditGoalMonthly] = useState("");
+  const [editGoalDay, setEditGoalDay] = useState("1");
 
   const [invName, setInvName] = useState("");
   const [invType, setInvType] =
@@ -81,6 +90,15 @@ export function WealthPanel({
   const [invGoal, setInvGoal] = useState("");
   const [invCurrent, setInvCurrent] = useState("");
   const [invShared, setInvShared] = useState(false);
+  const [editingInvestmentId, setEditingInvestmentId] = useState<string | null>(
+    null,
+  );
+  const [editInvName, setEditInvName] = useState("");
+  const [editInvType, setEditInvType] =
+    useState<InvestmentAccount["accountType"]>("tfsa");
+  const [editInvCustom, setEditInvCustom] = useState("");
+  const [editInvGoal, setEditInvGoal] = useState("");
+  const [editInvCurrent, setEditInvCurrent] = useState("");
 
   const [draftName, setDraftName] = useState("");
   const [draftAmount, setDraftAmount] = useState("");
@@ -140,6 +158,30 @@ export function WealthPanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  function startEditSaving(goal: SavingGoal) {
+    setEditingSavingId(goal.id);
+    setEditGoalName(goal.name);
+    setEditGoalCategory(goal.category);
+    setEditGoalCustom(goal.customLabel ?? "");
+    setEditGoalTarget((goal.targetCents / 100).toFixed(2));
+    setEditGoalCurrent((goal.currentCents / 100).toFixed(2));
+    setEditGoalMonthly(
+      goal.monthlyContributionCents
+        ? (goal.monthlyContributionCents / 100).toFixed(2)
+        : "",
+    );
+    setEditGoalDay(String(goal.contributionDay ?? 1));
+  }
+
+  function startEditInvestment(item: InvestmentAccount) {
+    setEditingInvestmentId(item.id);
+    setEditInvName(item.name);
+    setEditInvType(item.accountType);
+    setEditInvCustom(item.customLabel ?? "");
+    setEditInvGoal((item.goalCents / 100).toFixed(2));
+    setEditInvCurrent((item.currentCents / 100).toFixed(2));
   }
 
   return (
@@ -284,64 +326,190 @@ export function WealthPanel({
           Add saving goal
         </button>
         {savings.map((goal) => (
-          <div
-            key={goal.id}
-            className="border-t border-[#dde2dd] pt-3"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold">{goal.name}</p>
-                <p className="text-xs text-[#6c7771]">
-                  {goal.customLabel ??
-                    meta?.savingCategories.find((c) => c.id === goal.category)
-                      ?.label ??
-                    goal.category}
-                  {goal.visibility === "SHARED" ? " · Shared" : ""}
-                </p>
+          <div key={goal.id} className="border-t border-[#dde2dd] pt-3">
+            {editingSavingId === goal.id ? (
+              <div className="space-y-2">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    value={editGoalName}
+                    onChange={(e) => setEditGoalName(e.target.value)}
+                    aria-label="Edit goal name"
+                  />
+                  <select
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    value={editGoalCategory}
+                    onChange={(e) =>
+                      setEditGoalCategory(
+                        e.target.value as SavingGoal["category"],
+                      )
+                    }
+                  >
+                    {(meta?.savingCategories ?? []).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  {editGoalCategory === "custom" ? (
+                    <input
+                      className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                      placeholder="Custom category label"
+                      value={editGoalCustom}
+                      onChange={(e) => setEditGoalCustom(e.target.value)}
+                    />
+                  ) : null}
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    placeholder="Target amount"
+                    value={editGoalTarget}
+                    onChange={(e) => setEditGoalTarget(e.target.value)}
+                  />
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    placeholder="Current amount"
+                    value={editGoalCurrent}
+                    onChange={(e) => setEditGoalCurrent(e.target.value)}
+                  />
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    placeholder="Monthly contribution (optional)"
+                    value={editGoalMonthly}
+                    onChange={(e) => setEditGoalMonthly(e.target.value)}
+                  />
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    type="number"
+                    min={1}
+                    max={28}
+                    placeholder="Contribution day"
+                    value={editGoalDay}
+                    onChange={(e) => setEditGoalDay(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+                    onClick={() =>
+                      void run(async () => {
+                        if (!editGoalName.trim()) {
+                          throw new Error("Name the saving goal.");
+                        }
+                        const monthly = Number(editGoalMonthly);
+                        const hasMonthly =
+                          editGoalMonthly.trim() !== "" &&
+                          Number.isFinite(monthly) &&
+                          monthly > 0;
+                        await updateSavingGoal(goal.id, {
+                          name: editGoalName.trim(),
+                          category: editGoalCategory,
+                          customLabel:
+                            editGoalCategory === "custom"
+                              ? editGoalCustom.trim() || null
+                              : null,
+                          targetCents: Math.round(
+                            Number(editGoalTarget || 0) * 100,
+                          ),
+                          currentCents: Math.round(
+                            Number(editGoalCurrent || 0) * 100,
+                          ),
+                          monthlyContributionCents: hasMonthly
+                            ? Math.round(monthly * 100)
+                            : null,
+                          contributionDay: hasMonthly
+                            ? Number(editGoalDay || 1)
+                            : null,
+                        });
+                        setEditingSavingId(null);
+                      })
+                    }
+                  >
+                    Save changes
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold"
+                    disabled={busy}
+                    onClick={() => setEditingSavingId(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                className="text-xs font-bold text-[#c9634f]"
-                disabled={busy}
-                onClick={() => void run(async () => deleteSavingGoal(goal.id))}
-              >
-                Remove
-              </button>
-            </div>
-            <p className="mt-1 text-sm">
-              {money(goal.currentCents)} / {money(goal.targetCents)} (
-              {progress(goal.currentCents, goal.targetCents)}%)
-            </p>
-            {goal.monthlyContributionCents ? (
-              <p className="mt-1 text-xs text-[#6c7771]">
-                Monthly {money(goal.monthlyContributionCents)} on day{" "}
-                {goal.contributionDay} · tracked in Outgoings with email reminders
-              </p>
-            ) : null}
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2ea]">
-              <div
-                className="h-full bg-[#617a57]"
-                style={{
-                  width: `${progress(goal.currentCents, goal.targetCents)}%`,
-                }}
-              />
-            </div>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    await updateSavingGoal(goal.id, {
-                      currentCents: goal.currentCents + 10000,
-                    });
-                  })
-                }
-              >
-                +100
-              </button>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{goal.name}</p>
+                    <p className="text-xs text-[#6c7771]">
+                      {goal.customLabel ??
+                        meta?.savingCategories.find(
+                          (c) => c.id === goal.category,
+                        )?.label ??
+                        goal.category}
+                      {goal.visibility === "SHARED" ? " · Shared" : ""}
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-[#14241f]"
+                      disabled={busy}
+                      onClick={() => startEditSaving(goal)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-[#c9634f]"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => deleteSavingGoal(goal.id))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                <p className="mt-1 text-sm">
+                  {money(goal.currentCents)} / {money(goal.targetCents)} (
+                  {progress(goal.currentCents, goal.targetCents)}%)
+                </p>
+                {goal.monthlyContributionCents ? (
+                  <p className="mt-1 text-xs text-[#6c7771]">
+                    Monthly {money(goal.monthlyContributionCents)} on day{" "}
+                    {goal.contributionDay} · tracked in Outgoings with email
+                    reminders
+                  </p>
+                ) : null}
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2ea]">
+                  <div
+                    className="h-full bg-[#617a57]"
+                    style={{
+                      width: `${progress(goal.currentCents, goal.targetCents)}%`,
+                    }}
+                  />
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await updateSavingGoal(goal.id, {
+                          currentCents: goal.currentCents + 10000,
+                        });
+                      })
+                    }
+                  >
+                    +100
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ))}
       </article>
@@ -428,52 +596,153 @@ export function WealthPanel({
         </button>
         {investments.map((item) => (
           <div key={item.id} className="border-t border-[#dde2dd] pt-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold">{item.name}</p>
-                <p className="text-xs text-[#6c7771]">
-                  {item.customLabel ??
-                    meta?.investmentTypes.find((t) => t.id === item.accountType)
-                      ?.label ??
-                    item.accountType}
-                  {item.visibility === "SHARED" ? " · Shared" : ""}
-                </p>
+            {editingInvestmentId === item.id ? (
+              <div className="space-y-2">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    value={editInvName}
+                    onChange={(e) => setEditInvName(e.target.value)}
+                    aria-label="Edit portfolio name"
+                  />
+                  <select
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    value={editInvType}
+                    onChange={(e) =>
+                      setEditInvType(
+                        e.target.value as InvestmentAccount["accountType"],
+                      )
+                    }
+                  >
+                    {(meta?.investmentTypes ?? []).map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                  {editInvType === "other" ? (
+                    <input
+                      className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                      placeholder="Custom portfolio type"
+                      value={editInvCustom}
+                      onChange={(e) => setEditInvCustom(e.target.value)}
+                    />
+                  ) : null}
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    placeholder="Goal value"
+                    value={editInvGoal}
+                    onChange={(e) => setEditInvGoal(e.target.value)}
+                  />
+                  <input
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2"
+                    placeholder="Current value"
+                    value={editInvCurrent}
+                    onChange={(e) => setEditInvCurrent(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+                    onClick={() =>
+                      void run(async () => {
+                        if (!editInvName.trim()) {
+                          throw new Error("Name the portfolio.");
+                        }
+                        await updateInvestment(item.id, {
+                          name: editInvName.trim(),
+                          accountType: editInvType,
+                          customLabel:
+                            editInvType === "other"
+                              ? editInvCustom.trim() || null
+                              : null,
+                          goalCents: Math.round(Number(editInvGoal || 0) * 100),
+                          currentCents: Math.round(
+                            Number(editInvCurrent || 0) * 100,
+                          ),
+                        });
+                        setEditingInvestmentId(null);
+                      })
+                    }
+                  >
+                    Save changes
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold"
+                    disabled={busy}
+                    onClick={() => setEditingInvestmentId(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                className="text-xs font-bold text-[#c9634f]"
-                disabled={busy}
-                onClick={() => void run(async () => deleteInvestment(item.id))}
-              >
-                Remove
-              </button>
-            </div>
-            <p className="mt-1 text-sm">
-              Current {money(item.currentCents)} · Goal {money(item.goalCents)}{" "}
-              ({progress(item.currentCents, item.goalCents)}%)
-            </p>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2ea]">
-              <div
-                className="h-full bg-[#14241f]"
-                style={{
-                  width: `${progress(item.currentCents, item.goalCents)}%`,
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              className="mt-2 rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await updateInvestment(item.id, {
-                    currentCents: item.currentCents + 25000,
-                  });
-                })
-              }
-            >
-              +250 current
-            </button>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{item.name}</p>
+                    <p className="text-xs text-[#6c7771]">
+                      {item.customLabel ??
+                        meta?.investmentTypes.find(
+                          (t) => t.id === item.accountType,
+                        )?.label ??
+                        item.accountType}
+                      {item.visibility === "SHARED" ? " · Shared" : ""}
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-[#14241f]"
+                      disabled={busy}
+                      onClick={() => startEditInvestment(item)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-[#c9634f]"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => deleteInvestment(item.id))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                <p className="mt-1 text-sm">
+                  Current {money(item.currentCents)} · Goal{" "}
+                  {money(item.goalCents)} (
+                  {progress(item.currentCents, item.goalCents)}%)
+                </p>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2ea]">
+                  <div
+                    className="h-full bg-[#14241f]"
+                    style={{
+                      width: `${progress(item.currentCents, item.goalCents)}%`,
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="mt-2 rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await updateInvestment(item.id, {
+                        currentCents: item.currentCents + 25000,
+                      });
+                    })
+                  }
+                >
+                  +250 current
+                </button>
+              </>
+            )}
           </div>
         ))}
       </article>

@@ -295,7 +295,7 @@ export function BudgetScreen({ account, notify }: Props) {
                   section === 'ledger' && styles.chipTextActive,
                 ]}
               >
-                Ledger
+                Daily expenses
               </Text>
             </Pressable>
             <Pressable

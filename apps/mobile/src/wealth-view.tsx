@@ -14,6 +14,8 @@ import {
   createSavingGoal,
   deleteDebt,
   deleteDraftExpense,
+  deleteInvestment,
+  deleteSavingGoal,
   formatMoney,
   getDraftImpact,
   getNetWorth,
@@ -22,6 +24,8 @@ import {
   listDraftExpenses,
   listInvestments,
   listSavingGoals,
+  updateInvestment,
+  updateSavingGoal,
   type Account,
   type Debt,
   type DraftImpact,
@@ -68,6 +72,15 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [goalCustom, setGoalCustom] = useState('');
   const [goalMonthly, setGoalMonthly] = useState('');
   const [goalDay, setGoalDay] = useState('1');
+  const [editingSavingId, setEditingSavingId] = useState<string | null>(null);
+  const [editGoalName, setEditGoalName] = useState('');
+  const [editGoalCategory, setEditGoalCategory] =
+    useState<SavingGoal['category']>('emergency');
+  const [editGoalCustom, setEditGoalCustom] = useState('');
+  const [editGoalTarget, setEditGoalTarget] = useState('');
+  const [editGoalCurrent, setEditGoalCurrent] = useState('');
+  const [editGoalMonthly, setEditGoalMonthly] = useState('');
+  const [editGoalDay, setEditGoalDay] = useState('1');
 
   const [invName, setInvName] = useState('');
   const [invType, setInvType] =
@@ -75,6 +88,15 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [invGoal, setInvGoal] = useState('');
   const [invCurrent, setInvCurrent] = useState('');
   const [invCustom, setInvCustom] = useState('');
+  const [editingInvestmentId, setEditingInvestmentId] = useState<string | null>(
+    null,
+  );
+  const [editInvName, setEditInvName] = useState('');
+  const [editInvType, setEditInvType] =
+    useState<InvestmentAccount['accountType']>('tfsa');
+  const [editInvCustom, setEditInvCustom] = useState('');
+  const [editInvGoal, setEditInvGoal] = useState('');
+  const [editInvCurrent, setEditInvCurrent] = useState('');
 
   const [debtName, setDebtName] = useState('');
   const [debtType, setDebtType] = useState<Debt['debtType']>('credit_card');
@@ -130,6 +152,30 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function startEditSaving(goal: SavingGoal) {
+    setEditingSavingId(goal.id);
+    setEditGoalName(goal.name);
+    setEditGoalCategory(goal.category);
+    setEditGoalCustom(goal.customLabel ?? '');
+    setEditGoalTarget((goal.targetCents / 100).toFixed(2));
+    setEditGoalCurrent((goal.currentCents / 100).toFixed(2));
+    setEditGoalMonthly(
+      goal.monthlyContributionCents
+        ? (goal.monthlyContributionCents / 100).toFixed(2)
+        : '',
+    );
+    setEditGoalDay(String(goal.contributionDay ?? 1));
+  }
+
+  function startEditInvestment(item: InvestmentAccount) {
+    setEditingInvestmentId(item.id);
+    setEditInvName(item.name);
+    setEditInvType(item.accountType);
+    setEditInvCustom(item.customLabel ?? '');
+    setEditInvGoal((item.goalCents / 100).toFixed(2));
+    setEditInvCurrent((item.currentCents / 100).toFixed(2));
   }
 
   return (
@@ -256,16 +302,168 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
         </Pressable>
         {savings.map((goal) => (
           <View key={goal.id} style={styles.item}>
-            <Text style={styles.itemTitle}>{goal.name}</Text>
-            <Text style={styles.sub}>
-              {money(goal.currentCents)} / {money(goal.targetCents)}
-            </Text>
-            {goal.monthlyContributionCents ? (
-              <Text style={styles.sub}>
-                Monthly {money(goal.monthlyContributionCents)} on day{' '}
-                {goal.contributionDay}
-              </Text>
-            ) : null}
+            {editingSavingId === goal.id ? (
+              <View style={{ gap: 8 }}>
+                <TextInput
+                  style={styles.input}
+                  value={editGoalName}
+                  onChangeText={setEditGoalName}
+                  placeholder="Goal name"
+                  placeholderTextColor="#9BA49E"
+                />
+                <View style={styles.rowWrap}>
+                  {(meta?.savingCategories ?? []).map((item) => (
+                    <Pressable
+                      key={item.id}
+                      onPress={() =>
+                        setEditGoalCategory(item.id as SavingGoal['category'])
+                      }
+                      style={[
+                        styles.chip,
+                        editGoalCategory === item.id && styles.chipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          editGoalCategory === item.id && styles.chipTextActive,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {editGoalCategory === 'custom' ? (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Custom category"
+                    placeholderTextColor="#9BA49E"
+                    value={editGoalCustom}
+                    onChangeText={setEditGoalCustom}
+                  />
+                ) : null}
+                <View style={styles.row}>
+                  <TextInput
+                    style={[styles.input, styles.flex]}
+                    placeholder="Target"
+                    placeholderTextColor="#9BA49E"
+                    keyboardType="decimal-pad"
+                    value={editGoalTarget}
+                    onChangeText={setEditGoalTarget}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.flex]}
+                    placeholder="Current"
+                    placeholderTextColor="#9BA49E"
+                    keyboardType="decimal-pad"
+                    value={editGoalCurrent}
+                    onChangeText={setEditGoalCurrent}
+                  />
+                </View>
+                <View style={styles.row}>
+                  <TextInput
+                    style={[styles.input, styles.flex]}
+                    placeholder="Monthly contribution"
+                    placeholderTextColor="#9BA49E"
+                    keyboardType="decimal-pad"
+                    value={editGoalMonthly}
+                    onChangeText={setEditGoalMonthly}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.flex]}
+                    placeholder="Day (1-28)"
+                    placeholderTextColor="#9BA49E"
+                    keyboardType="number-pad"
+                    value={editGoalDay}
+                    onChangeText={setEditGoalDay}
+                  />
+                </View>
+                <View style={styles.row}>
+                  <Pressable
+                    disabled={busy}
+                    style={[styles.button, styles.flex]}
+                    onPress={() =>
+                      void run(async () => {
+                        if (!editGoalName.trim()) {
+                          throw new Error('Name the saving goal.');
+                        }
+                        const monthly = Number(editGoalMonthly);
+                        const hasMonthly =
+                          editGoalMonthly.trim() !== '' &&
+                          Number.isFinite(monthly) &&
+                          monthly > 0;
+                        await updateSavingGoal(goal.id, {
+                          name: editGoalName.trim(),
+                          category: editGoalCategory,
+                          customLabel:
+                            editGoalCategory === 'custom'
+                              ? editGoalCustom.trim() || null
+                              : null,
+                          targetCents: Math.round(
+                            Number(editGoalTarget || 0) * 100,
+                          ),
+                          currentCents: Math.round(
+                            Number(editGoalCurrent || 0) * 100,
+                          ),
+                          monthlyContributionCents: hasMonthly
+                            ? Math.round(monthly * 100)
+                            : null,
+                          contributionDay: hasMonthly
+                            ? Number(editGoalDay || 1)
+                            : null,
+                        });
+                        setEditingSavingId(null);
+                        notify('Saving goal updated.');
+                      })
+                    }
+                  >
+                    <Text style={styles.buttonText}>Save</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.buttonSecondary, styles.flex]}
+                    onPress={() => setEditingSavingId(null)}
+                  >
+                    <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.itemTitle}>{goal.name}</Text>
+                <Text style={styles.sub}>
+                  {money(goal.currentCents)} / {money(goal.targetCents)}
+                </Text>
+                {goal.monthlyContributionCents ? (
+                  <Text style={styles.sub}>
+                    Monthly {money(goal.monthlyContributionCents)} on day{' '}
+                    {goal.contributionDay}
+                  </Text>
+                ) : null}
+                <View style={styles.row}>
+                  <Pressable
+                    style={styles.chip}
+                    onPress={() => startEditSaving(goal)}
+                  >
+                    <Text style={styles.chipText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.chip}
+                    disabled={busy}
+                    onPress={() =>
+                      void run(async () => {
+                        await deleteSavingGoal(goal.id);
+                        notify('Saving goal removed.');
+                      })
+                    }
+                  >
+                    <Text style={[styles.chipText, { color: colors.danger }]}>
+                      Remove
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         ))}
       </View>
@@ -351,10 +549,134 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
         </Pressable>
         {investments.map((item) => (
           <View key={item.id} style={styles.item}>
-            <Text style={styles.itemTitle}>{item.name}</Text>
-            <Text style={styles.sub}>
-              Current {money(item.currentCents)} · Goal {money(item.goalCents)}
-            </Text>
+            {editingInvestmentId === item.id ? (
+              <View style={{ gap: 8 }}>
+                <TextInput
+                  style={styles.input}
+                  value={editInvName}
+                  onChangeText={setEditInvName}
+                  placeholder="Portfolio name"
+                  placeholderTextColor="#9BA49E"
+                />
+                <View style={styles.rowWrap}>
+                  {(meta?.investmentTypes ?? []).map((type) => (
+                    <Pressable
+                      key={type.id}
+                      onPress={() =>
+                        setEditInvType(
+                          type.id as InvestmentAccount['accountType'],
+                        )
+                      }
+                      style={[
+                        styles.chip,
+                        editInvType === type.id && styles.chipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          editInvType === type.id && styles.chipTextActive,
+                        ]}
+                      >
+                        {type.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {editInvType === 'other' ? (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Custom type"
+                    placeholderTextColor="#9BA49E"
+                    value={editInvCustom}
+                    onChangeText={setEditInvCustom}
+                  />
+                ) : null}
+                <View style={styles.row}>
+                  <TextInput
+                    style={[styles.input, styles.flex]}
+                    placeholder="Goal"
+                    placeholderTextColor="#9BA49E"
+                    keyboardType="decimal-pad"
+                    value={editInvGoal}
+                    onChangeText={setEditInvGoal}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.flex]}
+                    placeholder="Current"
+                    placeholderTextColor="#9BA49E"
+                    keyboardType="decimal-pad"
+                    value={editInvCurrent}
+                    onChangeText={setEditInvCurrent}
+                  />
+                </View>
+                <View style={styles.row}>
+                  <Pressable
+                    disabled={busy}
+                    style={[styles.button, styles.flex]}
+                    onPress={() =>
+                      void run(async () => {
+                        if (!editInvName.trim()) {
+                          throw new Error('Name the portfolio.');
+                        }
+                        await updateInvestment(item.id, {
+                          name: editInvName.trim(),
+                          accountType: editInvType,
+                          customLabel:
+                            editInvType === 'other'
+                              ? editInvCustom.trim() || null
+                              : null,
+                          goalCents: Math.round(Number(editInvGoal || 0) * 100),
+                          currentCents: Math.round(
+                            Number(editInvCurrent || 0) * 100,
+                          ),
+                        });
+                        setEditingInvestmentId(null);
+                        notify('Investment updated.');
+                      })
+                    }
+                  >
+                    <Text style={styles.buttonText}>Save</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.buttonSecondary, styles.flex]}
+                    onPress={() => setEditingInvestmentId(null)}
+                  >
+                    <Text style={styles.buttonSecondaryText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.itemTitle}>{item.name}</Text>
+                <Text style={styles.sub}>
+                  Current {money(item.currentCents)} · Goal{' '}
+                  {money(item.goalCents)}
+                </Text>
+                <View style={styles.row}>
+                  <Pressable
+                    style={styles.chip}
+                    onPress={() => startEditInvestment(item)}
+                  >
+                    <Text style={styles.chipText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.chip}
+                    disabled={busy}
+                    onPress={() =>
+                      void run(async () => {
+                        await deleteInvestment(item.id);
+                        notify('Investment removed.');
+                      })
+                    }
+                  >
+                    <Text style={[styles.chipText, { color: colors.danger }]}>
+                      Remove
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         ))}
       </View>
@@ -632,6 +954,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: '#F4F5F0', fontWeight: '700', fontSize: 12 },
+  buttonSecondary: {
+    backgroundColor: colors.paper,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  buttonSecondaryText: { color: colors.ink, fontWeight: '700', fontSize: 12 },
   item: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingTop: 10 },
   itemTitle: { fontWeight: '700', color: colors.ink },
   itemRow: {

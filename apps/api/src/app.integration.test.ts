@@ -679,6 +679,25 @@ suite('account and couple household API', () => {
       },
     });
     expect(saving.statusCode).toBe(201);
+    const savingId = saving.json<{ id: string }>().id;
+
+    const savingEdit = await app.inject({
+      method: 'PATCH',
+      url: `/v1/saving-goals/${savingId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Emergency fund',
+        targetCents: 600_000,
+        currentCents: 150_000,
+        monthlyContributionCents: 25_000,
+        contributionDay: 5,
+      },
+    });
+    expect(savingEdit.statusCode).toBe(200);
+    expect(savingEdit.json<{ name: string; currentCents: number }>().name).toBe(
+      'Emergency fund',
+    );
+    expect(savingEdit.json<{ currentCents: number }>().currentCents).toBe(150_000);
 
     const investment = await app.inject({
       method: 'POST',
@@ -692,6 +711,24 @@ suite('account and couple household API', () => {
       },
     });
     expect(investment.statusCode).toBe(201);
+    const investmentId = investment.json<{ id: string }>().id;
+
+    const investmentEdit = await app.inject({
+      method: 'PATCH',
+      url: `/v1/investments/${investmentId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'House FHSA',
+        accountType: 'fhsa',
+        goalCents: 600_000,
+        currentCents: 115_000,
+      },
+    });
+    expect(investmentEdit.statusCode).toBe(200);
+    expect(investmentEdit.json<{ name: string }>().name).toBe('House FHSA');
+    expect(investmentEdit.json<{ currentCents: number }>().currentCents).toBe(
+      115_000,
+    );
 
     const netWorth = await app.inject({
       method: 'GET',
@@ -704,9 +741,9 @@ suite('account and couple household API', () => {
       personal: { netWorthCents: number; savingsCents: number; investmentsCents: number };
     }>();
     expect(wealth.currency).toBe('CAD');
-    expect(wealth.personal.savingsCents).toBe(120_000);
-    expect(wealth.personal.investmentsCents).toBe(250_000);
-    expect(wealth.personal.netWorthCents).toBeGreaterThanOrEqual(370_000);
+    expect(wealth.personal.savingsCents).toBe(150_000);
+    expect(wealth.personal.investmentsCents).toBe(115_000);
+    expect(wealth.personal.netWorthCents).toBeGreaterThanOrEqual(265_000);
 
     const budget = await app.inject({
       method: 'POST',
