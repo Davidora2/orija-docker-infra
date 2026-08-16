@@ -71,7 +71,8 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [draftAmount, setDraftAmount] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const money = (cents: number) => formatMoney(cents, currency);
+  const money = (cents: number) =>
+    formatMoney(cents, account.user.preferredCurrency || currency);
 
   const reload = useCallback(async () => {
     const [s, i, n, m] = await Promise.all([

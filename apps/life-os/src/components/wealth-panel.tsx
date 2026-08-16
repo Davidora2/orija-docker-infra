@@ -75,7 +75,8 @@ export function WealthPanel({
   const [draftName, setDraftName] = useState("");
   const [draftAmount, setDraftAmount] = useState("");
 
-  const money = (cents: number) => formatMoney(cents, currency);
+  const money = (cents: number) =>
+    formatMoney(cents, account.user.preferredCurrency || currency);
 
   const reload = useCallback(async () => {
     const [s, i, n, m] = await Promise.all([
