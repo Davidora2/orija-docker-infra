@@ -740,12 +740,17 @@ export function LifeOSApp() {
               value={actionTitle}
               onChange={(e) => setActionTitle(e.target.value)}
             />
-            <input
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              placeholder="Hours"
-              value={actionHours}
-              onChange={(e) => setActionHours(e.target.value)}
-            />
+            <label className="block space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                Hours for first action
+              </span>
+              <input
+                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                placeholder="Hours"
+                value={actionHours}
+                onChange={(e) => setActionHours(e.target.value)}
+              />
+            </label>
             <button
               className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
               type="button"
