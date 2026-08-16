@@ -477,7 +477,7 @@ export type BudgetRecommendation = {
 
 export type OutgoingItem = {
   id: string;
-  source: "entry" | "recurring" | "saving";
+  source: "entry" | "recurring" | "saving" | "debt";
   kind: "INCOME" | "EXPENSE";
   date: string;
   amountCents: number;
@@ -487,6 +487,7 @@ export type OutgoingItem = {
   categoryName: string | null;
   recurringId: string | null;
   savingGoalId?: string | null;
+  debtId?: string | null;
   paid?: boolean;
   paidAt?: string | null;
   paymentId?: string | null;
@@ -768,7 +769,7 @@ export async function getMonthOutgoings(
 export async function markOutgoingPaid(
   budgetId: string,
   input: {
-    sourceType: "recurring_outgoing" | "saving_goal";
+    sourceType: "recurring_outgoing" | "saving_goal" | "debt";
     sourceId: string;
     dueDate: string;
     note?: string;
@@ -820,16 +821,42 @@ export type NetWorth = {
   personal: {
     savingsCents: number;
     investmentsCents: number;
+    debtsCents?: number;
     budgetBalanceCents: number;
     netWorthCents: number;
   };
   household: {
     savingsCents: number;
     investmentsCents: number;
+    debtsCents?: number;
     netWorthCents: number;
     householdId: string | null;
   };
   totalVisibleCents: number;
+};
+
+export type Debt = {
+  id: string;
+  ownerUserId: string;
+  householdId: string | null;
+  visibility: "PRIVATE" | "SHARED";
+  debtType:
+    | "credit_card"
+    | "personal_loan"
+    | "car"
+    | "mortgage"
+    | "student"
+    | "overdraft"
+    | "other";
+  customLabel: string | null;
+  name: string;
+  balanceCents: number;
+  interestAprPercent: number;
+  monthlyPaymentCents: number | null;
+  paymentDay: number | null;
+  note: string;
+  estimatedMonthlyInterestCents?: number;
+  estimatedPayoffMonths?: number | null;
 };
 
 export type DraftExpense = {
@@ -913,9 +940,99 @@ function mapDraft(raw: Record<string, unknown>): DraftExpense {
 export async function getWealthMeta(): Promise<{
   savingCategories: { id: string; label: string }[];
   investmentTypes: { id: string; label: string }[];
+  debtTypes: { id: string; label: string }[];
   currencies: string[];
 }> {
   return request("/v1/wealth/meta");
+}
+
+function mapDebt(raw: Record<string, unknown>): Debt {
+  return {
+    id: String(raw.id),
+    ownerUserId: String(raw.ownerUserId ?? raw.owner_user_id),
+    householdId: (raw.householdId ?? raw.household_id ?? null) as string | null,
+    visibility: raw.visibility as "PRIVATE" | "SHARED",
+    debtType: (raw.debtType ?? raw.debt_type) as Debt["debtType"],
+    customLabel: (raw.customLabel ?? raw.custom_label ?? null) as string | null,
+    name: String(raw.name),
+    balanceCents: Number(raw.balanceCents ?? raw.balance_cents ?? 0),
+    interestAprPercent: Number(
+      raw.interestAprPercent ?? raw.interest_apr_percent ?? 0,
+    ),
+    monthlyPaymentCents: (raw.monthlyPaymentCents ??
+      raw.monthly_payment_cents ??
+      null) as number | null,
+    paymentDay: (raw.paymentDay ?? raw.payment_day ?? null) as number | null,
+    note: String(raw.note ?? ""),
+    estimatedMonthlyInterestCents: Number(
+      raw.estimatedMonthlyInterestCents ??
+        raw.estimated_monthly_interest_cents ??
+        0,
+    ),
+    estimatedPayoffMonths: (raw.estimatedPayoffMonths ??
+      raw.estimated_payoff_months ??
+      null) as number | null,
+  };
+}
+
+export async function listDebts(): Promise<Debt[]> {
+  const rows = await request<Record<string, unknown>[]>("/v1/debts");
+  return rows.map(mapDebt);
+}
+
+export async function createDebt(input: {
+  name: string;
+  debtType: Debt["debtType"];
+  customLabel?: string;
+  balanceCents?: number;
+  interestAprPercent?: number;
+  monthlyPaymentCents?: number | null;
+  paymentDay?: number | null;
+  note?: string;
+  visibility?: "PRIVATE" | "SHARED";
+}): Promise<Debt> {
+  const raw = await request<Record<string, unknown>>("/v1/debts", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return mapDebt(raw);
+}
+
+export async function updateDebt(
+  id: string,
+  input: Partial<{
+    name: string;
+    debtType: Debt["debtType"];
+    customLabel: string | null;
+    balanceCents: number;
+    interestAprPercent: number;
+    monthlyPaymentCents: number | null;
+    paymentDay: number | null;
+    note: string;
+  }>,
+): Promise<Debt> {
+  const raw = await request<Record<string, unknown>>(`/v1/debts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return mapDebt(raw);
+}
+
+export async function accrueDebtInterest(
+  id: string,
+): Promise<{ debt: Debt; interestCents: number }> {
+  const raw = await request<{
+    debt: Record<string, unknown>;
+    interestCents: number;
+  }>(`/v1/debts/${id}/accrue-interest`, { method: "POST" });
+  return {
+    debt: mapDebt(raw.debt),
+    interestCents: Number(raw.interestCents ?? 0),
+  };
+}
+
+export async function deleteDebt(id: string): Promise<void> {
+  await request(`/v1/debts/${id}`, { method: "DELETE" });
 }
 
 export async function listSavingGoals(): Promise<SavingGoal[]> {

@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  accrueDebtInterest,
+  createDebt,
   createDraftExpense,
   createInvestment,
   createSavingGoal,
+  deleteDebt,
   deleteDraftExpense,
   deleteInvestment,
   deleteSavingGoal,
@@ -12,12 +15,15 @@ import {
   getDraftImpact,
   getNetWorth,
   getWealthMeta,
+  listDebts,
   listDraftExpenses,
   listInvestments,
   listSavingGoals,
+  updateDebt,
   updateInvestment,
   updateSavingGoal,
   type Account,
+  type Debt,
   type DraftExpense,
   type DraftImpact,
   type InvestmentAccount,
@@ -47,12 +53,14 @@ export function WealthPanel({
 }: Props) {
   const [savings, setSavings] = useState<SavingGoal[]>([]);
   const [investments, setInvestments] = useState<InvestmentAccount[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [netWorth, setNetWorth] = useState<NetWorth | null>(null);
   const [drafts, setDrafts] = useState<DraftExpense[]>([]);
   const [impact, setImpact] = useState<DraftImpact | null>(null);
   const [meta, setMeta] = useState<{
     savingCategories: { id: string; label: string }[];
     investmentTypes: { id: string; label: string }[];
+    debtTypes: { id: string; label: string }[];
   } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -77,18 +85,30 @@ export function WealthPanel({
   const [draftName, setDraftName] = useState("");
   const [draftAmount, setDraftAmount] = useState("");
 
+  const [debtName, setDebtName] = useState("");
+  const [debtType, setDebtType] = useState<Debt["debtType"]>("credit_card");
+  const [debtCustom, setDebtCustom] = useState("");
+  const [debtBalance, setDebtBalance] = useState("");
+  const [debtApr, setDebtApr] = useState("");
+  const [debtPayment, setDebtPayment] = useState("");
+  const [debtDay, setDebtDay] = useState("1");
+  const [debtNote, setDebtNote] = useState("");
+  const [debtShared, setDebtShared] = useState(false);
+
   const money = (cents: number) =>
     formatMoney(cents, account.user.preferredCurrency || currency);
 
   const reload = useCallback(async () => {
-    const [s, i, n, m] = await Promise.all([
+    const [s, i, d, n, m] = await Promise.all([
       listSavingGoals(),
       listInvestments(),
+      listDebts(),
       getNetWorth(),
       getWealthMeta(),
     ]);
     setSavings(s);
     setInvestments(i);
+    setDebts(d);
     setNetWorth(n);
     setMeta(m);
     if (budgetId) {
@@ -141,6 +161,9 @@ export function WealthPanel({
               <p className="mt-1 text-xs text-[#6c7771]">
                 Savings {money(netWorth.personal.savingsCents)} · Investments{" "}
                 {money(netWorth.personal.investmentsCents)}
+                {netWorth.personal.debtsCents
+                  ? ` · Debts ${money(netWorth.personal.debtsCents)}`
+                  : ""}
               </p>
             </div>
             <div className="rounded-xl bg-[#eef2ea] p-3">
@@ -451,6 +474,190 @@ export function WealthPanel({
             >
               +250 current
             </button>
+          </div>
+        ))}
+      </article>
+
+      <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+        <h3 className="font-serif text-2xl">Debts</h3>
+        <p className="text-sm text-[#6c7771]">
+          Track balance, interest rate, and monthly repayments. Payments appear
+          in Outgoings on the due day.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            placeholder="Debt name"
+            value={debtName}
+            onChange={(e) => setDebtName(e.target.value)}
+          />
+          <select
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            value={debtType}
+            onChange={(e) => setDebtType(e.target.value as Debt["debtType"])}
+          >
+            {(meta?.debtTypes ?? []).map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          {debtType === "other" ? (
+            <input
+              className="rounded-xl border border-[#dde2dd] px-3 py-2"
+              placeholder="Custom type label"
+              value={debtCustom}
+              onChange={(e) => setDebtCustom(e.target.value)}
+            />
+          ) : null}
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            placeholder="Balance owed"
+            value={debtBalance}
+            onChange={(e) => setDebtBalance(e.target.value)}
+          />
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            placeholder="Interest APR % (e.g. 19.9)"
+            value={debtApr}
+            onChange={(e) => setDebtApr(e.target.value)}
+          />
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            placeholder="Monthly payment"
+            value={debtPayment}
+            onChange={(e) => setDebtPayment(e.target.value)}
+          />
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            type="number"
+            min={1}
+            max={28}
+            placeholder="Payment day"
+            value={debtDay}
+            onChange={(e) => setDebtDay(e.target.value)}
+          />
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2 sm:col-span-2"
+            placeholder="Note (e.g. Paid from current account)"
+            value={debtNote}
+            onChange={(e) => setDebtNote(e.target.value)}
+          />
+        </div>
+        {canShare ? (
+          <label className="flex items-center gap-2 text-xs font-bold">
+            <input
+              type="checkbox"
+              checked={debtShared}
+              onChange={(e) => setDebtShared(e.target.checked)}
+            />
+            Share with household
+          </label>
+        ) : null}
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+          onClick={() =>
+            void run(async () => {
+              if (!debtName.trim()) throw new Error("Name the debt.");
+              const payment = Number(debtPayment);
+              const hasPayment =
+                debtPayment.trim() !== "" &&
+                Number.isFinite(payment) &&
+                payment > 0;
+              await createDebt({
+                name: debtName.trim(),
+                debtType,
+                customLabel:
+                  debtType === "other" ? debtCustom.trim() : undefined,
+                balanceCents: Math.round(Number(debtBalance || 0) * 100),
+                interestAprPercent: Number(debtApr || 0),
+                monthlyPaymentCents: hasPayment
+                  ? Math.round(payment * 100)
+                  : null,
+                paymentDay: hasPayment ? Number(debtDay || 1) : null,
+                note: debtNote.trim() || undefined,
+                visibility: debtShared ? "SHARED" : "PRIVATE",
+              });
+              setDebtName("");
+              setDebtBalance("");
+              setDebtApr("");
+              setDebtPayment("");
+              setDebtCustom("");
+              setDebtNote("");
+            })
+          }
+        >
+          Add debt
+        </button>
+        {debts.map((debt) => (
+          <div key={debt.id} className="border-t border-[#dde2dd] pt-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">{debt.name}</p>
+                <p className="text-xs text-[#6c7771]">
+                  {debt.customLabel ??
+                    meta?.debtTypes.find((t) => t.id === debt.debtType)?.label ??
+                    debt.debtType}
+                  {debt.visibility === "SHARED" ? " · Shared" : ""}
+                  {debt.note ? ` · ${debt.note}` : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-xs font-bold text-[#c9634f]"
+                disabled={busy}
+                onClick={() => void run(async () => deleteDebt(debt.id))}
+              >
+                Remove
+              </button>
+            </div>
+            <p className="mt-1 text-sm">
+              Balance {money(debt.balanceCents)} · APR {debt.interestAprPercent}%
+              · Est. interest {money(debt.estimatedMonthlyInterestCents ?? 0)}
+              /mo
+            </p>
+            {debt.monthlyPaymentCents ? (
+              <p className="mt-1 text-xs text-[#6c7771]">
+                Pays {money(debt.monthlyPaymentCents)} on day {debt.paymentDay}
+                {debt.estimatedPayoffMonths
+                  ? ` · ~${debt.estimatedPayoffMonths} months to clear`
+                  : ""}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-[#6c7771]">
+                Add a monthly payment to track it in Outgoings.
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await updateDebt(debt.id, {
+                      balanceCents: Math.max(0, debt.balanceCents - 5000),
+                    });
+                  })
+                }
+              >
+                −50 balance
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-[#dde2dd] px-3 py-1 text-xs font-bold"
+                disabled={busy || (debt.estimatedMonthlyInterestCents ?? 0) <= 0}
+                onClick={() =>
+                  void run(async () => {
+                    await accrueDebtInterest(debt.id);
+                  })
+                }
+              >
+                Add this month&apos;s interest
+              </button>
+            </div>
           </div>
         ))}
       </article>

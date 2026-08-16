@@ -49,6 +49,10 @@ const migrations = [
       new URL('../migrations/008_recurring_notes.sql', import.meta.url),
     ),
   },
+  {
+    version: '009_debts',
+    path: fileURLToPath(new URL('../migrations/009_debts.sql', import.meta.url)),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

@@ -7,18 +7,23 @@ import {
 } from 'react-native';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  accrueDebtInterest,
+  createDebt,
   createDraftExpense,
   createInvestment,
   createSavingGoal,
+  deleteDebt,
   deleteDraftExpense,
   formatMoney,
   getDraftImpact,
   getNetWorth,
   getWealthMeta,
+  listDebts,
   listDraftExpenses,
   listInvestments,
   listSavingGoals,
   type Account,
+  type Debt,
   type DraftImpact,
   type InvestmentAccount,
   type NetWorth,
@@ -46,11 +51,13 @@ type Props = {
 export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [savings, setSavings] = useState<SavingGoal[]>([]);
   const [investments, setInvestments] = useState<InvestmentAccount[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [netWorth, setNetWorth] = useState<NetWorth | null>(null);
   const [impact, setImpact] = useState<DraftImpact | null>(null);
   const [meta, setMeta] = useState<{
     savingCategories: { id: string; label: string }[];
     investmentTypes: { id: string; label: string }[];
+    debtTypes: { id: string; label: string }[];
   } | null>(null);
 
   const [goalName, setGoalName] = useState('');
@@ -69,6 +76,14 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [invCurrent, setInvCurrent] = useState('');
   const [invCustom, setInvCustom] = useState('');
 
+  const [debtName, setDebtName] = useState('');
+  const [debtType, setDebtType] = useState<Debt['debtType']>('credit_card');
+  const [debtBalance, setDebtBalance] = useState('');
+  const [debtApr, setDebtApr] = useState('');
+  const [debtPayment, setDebtPayment] = useState('');
+  const [debtDay, setDebtDay] = useState('1');
+  const [debtNote, setDebtNote] = useState('');
+
   const [draftName, setDraftName] = useState('');
   const [draftAmount, setDraftAmount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -77,14 +92,16 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
     formatMoney(cents, account.user.preferredCurrency || currency);
 
   const reload = useCallback(async () => {
-    const [s, i, n, m] = await Promise.all([
+    const [s, i, debtList, n, m] = await Promise.all([
       listSavingGoals(),
       listInvestments(),
+      listDebts(),
       getNetWorth(),
       getWealthMeta(),
     ]);
     setSavings(s);
     setInvestments(i);
+    setDebts(debtList);
     setNetWorth(n);
     setMeta(m);
     if (budgetId) {
@@ -338,6 +355,152 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
             <Text style={styles.sub}>
               Current {money(item.currentCents)} · Goal {money(item.goalCents)}
             </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.heading}>Debts</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Debt name"
+          placeholderTextColor="#9BA49E"
+          value={debtName}
+          onChangeText={setDebtName}
+        />
+        <View style={styles.rowWrap}>
+          {(meta?.debtTypes ?? []).map((item) => (
+            <Pressable
+              key={item.id}
+              onPress={() => setDebtType(item.id as Debt['debtType'])}
+              style={[styles.chip, debtType === item.id && styles.chipActive]}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  debtType === item.id && styles.chipTextActive,
+                ]}
+              >
+                {item.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, styles.flex]}
+            placeholder="Balance"
+            placeholderTextColor="#9BA49E"
+            keyboardType="decimal-pad"
+            value={debtBalance}
+            onChangeText={setDebtBalance}
+          />
+          <TextInput
+            style={[styles.input, styles.flex]}
+            placeholder="APR %"
+            placeholderTextColor="#9BA49E"
+            keyboardType="decimal-pad"
+            value={debtApr}
+            onChangeText={setDebtApr}
+          />
+        </View>
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, styles.flex]}
+            placeholder="Monthly payment"
+            placeholderTextColor="#9BA49E"
+            keyboardType="decimal-pad"
+            value={debtPayment}
+            onChangeText={setDebtPayment}
+          />
+          <TextInput
+            style={[styles.input, styles.flex]}
+            placeholder="Day 1-28"
+            placeholderTextColor="#9BA49E"
+            keyboardType="number-pad"
+            value={debtDay}
+            onChangeText={setDebtDay}
+          />
+        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Note (optional)"
+          placeholderTextColor="#9BA49E"
+          value={debtNote}
+          onChangeText={setDebtNote}
+        />
+        <Pressable
+          disabled={busy}
+          style={styles.button}
+          onPress={() =>
+            void run(async () => {
+              if (!debtName.trim()) throw new Error('Name the debt.');
+              const payment = Number(debtPayment);
+              const hasPayment =
+                debtPayment.trim() !== '' &&
+                Number.isFinite(payment) &&
+                payment > 0;
+              await createDebt({
+                name: debtName.trim(),
+                debtType,
+                balanceCents: Math.round(Number(debtBalance || 0) * 100),
+                interestAprPercent: Number(debtApr || 0),
+                monthlyPaymentCents: hasPayment
+                  ? Math.round(payment * 100)
+                  : null,
+                paymentDay: hasPayment ? Number(debtDay || 1) : null,
+                note: debtNote.trim() || undefined,
+              });
+              setDebtName('');
+              setDebtBalance('');
+              setDebtApr('');
+              setDebtPayment('');
+              setDebtNote('');
+              notify('Debt added.');
+            })
+          }
+        >
+          <Text style={styles.buttonText}>Add debt</Text>
+        </Pressable>
+        {debts.map((debt) => (
+          <View key={debt.id} style={styles.item}>
+            <Text style={styles.itemTitle}>{debt.name}</Text>
+            <Text style={styles.sub}>
+              {money(debt.balanceCents)} · {debt.interestAprPercent}% APR · est{' '}
+              {money(debt.estimatedMonthlyInterestCents ?? 0)}/mo interest
+            </Text>
+            {debt.monthlyPaymentCents ? (
+              <Text style={styles.sub}>
+                Pays {money(debt.monthlyPaymentCents)} on day {debt.paymentDay}
+              </Text>
+            ) : null}
+            <View style={styles.row}>
+              <Pressable
+                disabled={busy}
+                style={styles.chip}
+                onPress={() =>
+                  void run(async () => {
+                    await accrueDebtInterest(debt.id);
+                    notify('Interest added to balance.');
+                  })
+                }
+              >
+                <Text style={styles.chipText}>Add interest</Text>
+              </Pressable>
+              <Pressable
+                disabled={busy}
+                onPress={() =>
+                  void run(async () => {
+                    await deleteDebt(debt.id);
+                    notify('Debt removed.');
+                  })
+                }
+              >
+                <Text style={{ color: colors.danger, fontWeight: '700' }}>
+                  Remove
+                </Text>
+              </Pressable>
+            </View>
           </View>
         ))}
       </View>

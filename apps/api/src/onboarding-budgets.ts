@@ -840,6 +840,7 @@ export function registerOnboardingAndBudgetRoutes(
           : null,
         recurringId: null,
         savingGoalId: null,
+        debtId: null,
         paid: true,
         paidAt: entry.occurredOn.slice(0, 10),
         paymentId: null,
@@ -899,6 +900,56 @@ export function registerOnboardingAndBudgetRoutes(
           categoryName: 'Savings',
           recurringId: null,
           savingGoalId: goal.id,
+          debtId: null,
+          paid: false,
+          paidAt: null,
+          paymentId: null,
+        };
+      });
+
+      const debts = await sql<
+        {
+          id: string;
+          name: string;
+          monthlyPaymentCents: number;
+          paymentDay: number;
+          note: string;
+        }[]
+      >`
+        SELECT id, name, monthly_payment_cents, payment_day, note
+        FROM debts
+        WHERE monthly_payment_cents IS NOT NULL
+          AND payment_day IS NOT NULL
+          AND balance_cents > 0
+          AND (
+            owner_user_id = ${userId}
+            OR (
+              visibility = 'SHARED'
+              AND EXISTS (
+                SELECT 1 FROM household_members hm
+                WHERE hm.household_id = debts.household_id
+                  AND hm.user_id = ${userId}
+              )
+            )
+          )
+      `;
+
+      const debtItems: OutgoingItem[] = debts.map((debt) => {
+        const day = Math.min(debt.paymentDay, endDay);
+        const date = `${query.year}-${String(query.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return {
+          id: `debt:${debt.id}:${date}`,
+          source: 'debt' as const,
+          kind: 'EXPENSE' as const,
+          date,
+          amountCents: Number(debt.monthlyPaymentCents),
+          title: `Debt · ${debt.name}`,
+          note: debt.note?.trim() || 'monthly debt payment',
+          categoryId: null,
+          categoryName: 'Debt',
+          recurringId: null,
+          savingGoalId: null,
+          debtId: debt.id,
           paid: false,
           paidAt: null,
           paymentId: null,
@@ -908,7 +959,7 @@ export function registerOnboardingAndBudgetRoutes(
       const payments = await sql<
         {
           id: string;
-          sourceType: 'recurring_outgoing' | 'saving_goal';
+          sourceType: 'recurring_outgoing' | 'saving_goal' | 'debt';
           sourceId: string;
           dueDate: string;
           paidAt: string;
@@ -926,7 +977,7 @@ export function registerOnboardingAndBudgetRoutes(
           AND due_date <= ${end}::date
           AND (
             budget_id = ${id}
-            OR source_type = 'saving_goal'
+            OR source_type IN ('saving_goal', 'debt')
           )
       `;
       const paymentByKey = new Map(
@@ -943,7 +994,9 @@ export function registerOnboardingAndBudgetRoutes(
             ? `recurring_outgoing:${item.recurringId}:${item.date}`
             : item.source === 'saving' && item.savingGoalId
               ? `saving_goal:${item.savingGoalId}:${item.date}`
-              : null;
+              : item.source === 'debt' && item.debtId
+                ? `debt:${item.debtId}:${item.date}`
+                : null;
         if (!key) return item;
         const payment = paymentByKey.get(key);
         if (!payment) return item;
@@ -955,7 +1008,7 @@ export function registerOnboardingAndBudgetRoutes(
         };
       };
 
-      const list = [...entryItems, ...recurringItems, ...savingItems]
+      const list = [...entryItems, ...recurringItems, ...savingItems, ...debtItems]
         .map(withPaidStatus)
         .sort((a, b) =>
           a.date === b.date
@@ -1001,7 +1054,9 @@ export function registerOnboardingAndBudgetRoutes(
         .filter(
           (item) =>
             item.kind === 'EXPENSE' &&
-            (item.source === 'recurring' || item.source === 'saving') &&
+            (item.source === 'recurring' ||
+              item.source === 'saving' ||
+              item.source === 'debt') &&
             !item.paid,
         )
         .reduce((sum, item) => sum + item.amountCents, 0);
@@ -1009,7 +1064,9 @@ export function registerOnboardingAndBudgetRoutes(
         .filter(
           (item) =>
             item.kind === 'EXPENSE' &&
-            (item.source === 'recurring' || item.source === 'saving') &&
+            (item.source === 'recurring' ||
+              item.source === 'saving' ||
+              item.source === 'debt') &&
             item.paid,
         )
         .reduce((sum, item) => sum + item.amountCents, 0);
@@ -1060,7 +1117,7 @@ export function registerOnboardingAndBudgetRoutes(
       await assertBudgetAccess(sql, userId, id);
       const body = z
         .object({
-          sourceType: z.enum(['recurring_outgoing', 'saving_goal']),
+          sourceType: z.enum(['recurring_outgoing', 'saving_goal', 'debt']),
           sourceId: z.string().uuid(),
           dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           note: z.string().trim().max(500).optional(),
@@ -1087,7 +1144,7 @@ export function registerOnboardingAndBudgetRoutes(
         }
         amountCents = Number(row.amountCents);
         title = row.name;
-      } else {
+      } else if (body.sourceType === 'saving_goal') {
         const [row] = await sql<
           {
             id: string;
@@ -1119,6 +1176,39 @@ export function registerOnboardingAndBudgetRoutes(
         }
         amountCents = Number(row.monthlyContributionCents);
         title = `Savings · ${row.name}`;
+      } else {
+        const [row] = await sql<
+          {
+            id: string;
+            name: string;
+            monthlyPaymentCents: number | null;
+            balanceCents: number;
+          }[]
+        >`
+          SELECT id, name, monthly_payment_cents, balance_cents
+          FROM debts
+          WHERE id = ${body.sourceId}
+            AND (
+              owner_user_id = ${userId}
+              OR (
+                visibility = 'SHARED'
+                AND EXISTS (
+                  SELECT 1 FROM household_members hm
+                  WHERE hm.household_id = debts.household_id
+                    AND hm.user_id = ${userId}
+                )
+              )
+            )
+        `;
+        if (!row || row.monthlyPaymentCents == null) {
+          throw new ApiError(
+            404,
+            'debt_not_found',
+            'Debt with a monthly payment was not found.',
+          );
+        }
+        amountCents = Number(row.monthlyPaymentCents);
+        title = `Debt · ${row.name}`;
       }
 
       const [payment] = await sql`
@@ -1145,6 +1235,16 @@ export function registerOnboardingAndBudgetRoutes(
           budget_id = EXCLUDED.budget_id
         RETURNING *
       `;
+
+      if (body.sourceType === 'debt') {
+        await sql`
+          UPDATE debts SET
+            balance_cents = GREATEST(0, balance_cents - ${amountCents}),
+            updated_at = now()
+          WHERE id = ${body.sourceId}
+        `;
+      }
+
       return reply.code(201).send(payment);
     },
   );
@@ -1164,7 +1264,7 @@ export function registerOnboardingAndBudgetRoutes(
           AND owner_user_id = ${userId}
           AND (
             budget_id = ${params.id}
-            OR (budget_id IS NULL AND source_type = 'saving_goal')
+            OR (budget_id IS NULL AND source_type IN ('saving_goal', 'debt'))
           )
         RETURNING id
       `;

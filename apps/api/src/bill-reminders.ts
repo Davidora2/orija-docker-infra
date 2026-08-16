@@ -7,7 +7,7 @@ import {
 } from './budget-cashflow.js';
 
 export type OutstandingDueItem = {
-  sourceType: 'recurring_outgoing' | 'saving_goal';
+  sourceType: 'recurring_outgoing' | 'saving_goal' | 'debt';
   sourceId: string;
   budgetId: string | null;
   dueDate: string;
@@ -179,6 +179,50 @@ export async function listOutstandingDueOnDate(
     });
   }
 
+  const debts = await sql<
+    {
+      id: string;
+      name: string;
+      monthlyPaymentCents: number;
+      preferredCurrency: string;
+    }[]
+  >`
+    SELECT
+      d.id,
+      d.name,
+      d.monthly_payment_cents,
+      COALESCE(u.preferred_currency, 'GBP') AS preferred_currency
+    FROM debts d
+    INNER JOIN users u ON u.id = d.owner_user_id
+    WHERE d.monthly_payment_cents IS NOT NULL
+      AND d.payment_day IS NOT NULL
+      AND d.balance_cents > 0
+      AND LEAST(d.payment_day, ${dim}) = ${day}
+      AND (
+        d.owner_user_id = ${userId}
+        OR (
+          d.visibility = 'SHARED'
+          AND EXISTS (
+            SELECT 1 FROM household_members hm
+            WHERE hm.household_id = d.household_id
+              AND hm.user_id = ${userId}
+          )
+        )
+      )
+  `;
+
+  for (const row of debts) {
+    items.push({
+      sourceType: 'debt',
+      sourceId: row.id,
+      budgetId: null,
+      dueDate: due,
+      amountCents: Number(row.monthlyPaymentCents),
+      title: `Debt · ${row.name}`,
+      currency: row.preferredCurrency,
+    });
+  }
+
   if (items.length === 0) return [];
 
   const paid = await sql<
@@ -223,7 +267,7 @@ export function buildOutstandingReminderEmail(
     text: [
       `Hi ${displayName || 'there'},`,
       '',
-      `You have ${items.length} outstanding bill or monthly savings payment due on ${dueDate}:`,
+      `You have ${items.length} outstanding bill, savings, or debt payment due on ${dueDate}:`,
       '',
       ...lines,
       '',

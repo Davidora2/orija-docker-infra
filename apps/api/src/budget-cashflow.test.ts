@@ -76,6 +76,7 @@ describe('budget cashflow helpers', () => {
       categoryId: null as string | null,
       categoryName: null as string | null,
       savingGoalId: null as string | null,
+      debtId: null as string | null,
       paid: false,
       paidAt: null as string | null,
       paymentId: null as string | null,

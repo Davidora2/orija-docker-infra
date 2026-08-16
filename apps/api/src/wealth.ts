@@ -51,6 +51,34 @@ export const INVESTMENT_TYPE_LABELS: Record<
   other: 'Other',
 };
 
+const debtTypeSchema = z.enum([
+  'credit_card',
+  'personal_loan',
+  'car',
+  'mortgage',
+  'student',
+  'overdraft',
+  'other',
+]);
+
+export const DEBT_TYPE_LABELS: Record<z.infer<typeof debtTypeSchema>, string> = {
+  credit_card: 'Credit card',
+  personal_loan: 'Personal loan',
+  car: 'Car finance',
+  mortgage: 'Mortgage',
+  student: 'Student loan',
+  overdraft: 'Overdraft',
+  other: 'Other',
+};
+
+export function estimatedMonthlyInterestCents(
+  balanceCents: number,
+  aprPercent: number,
+): number {
+  if (balanceCents <= 0 || aprPercent <= 0) return 0;
+  return Math.round((balanceCents * (aprPercent / 100)) / 12);
+}
+
 export const SUPPORTED_CURRENCIES = [
   'GBP',
   'USD',
@@ -102,7 +130,7 @@ async function resolveHousehold(
 async function assertWealthAccess(
   sql: Database,
   userId: string,
-  table: 'saving_goals' | 'investment_accounts',
+  table: 'saving_goals' | 'investment_accounts' | 'debts',
   id: string,
 ): Promise<{ ownerUserId: string }> {
   if (table === 'saving_goals') {
@@ -117,6 +145,26 @@ async function assertWealthAccess(
             AND EXISTS (
               SELECT 1 FROM household_members hm
               WHERE hm.household_id = saving_goals.household_id
+                AND hm.user_id = ${userId}
+            )
+          )
+        )
+    `;
+    if (!row) throw new ApiError(404, 'not_found', 'Item not found.');
+    return row;
+  }
+  if (table === 'debts') {
+    const [row] = await sql<{ ownerUserId: string }[]>`
+      SELECT owner_user_id
+      FROM debts
+      WHERE id = ${id}
+        AND (
+          owner_user_id = ${userId}
+          OR (
+            visibility = 'SHARED'
+            AND EXISTS (
+              SELECT 1 FROM household_members hm
+              WHERE hm.household_id = debts.household_id
                 AND hm.user_id = ${userId}
             )
           )
@@ -170,6 +218,10 @@ export function registerWealthRoutes(
       label,
     })),
     investmentTypes: Object.entries(INVESTMENT_TYPE_LABELS).map(([id, label]) => ({
+      id,
+      label,
+    })),
+    debtTypes: Object.entries(DEBT_TYPE_LABELS).map(([id, label]) => ({
       id,
       label,
     })),
@@ -454,6 +506,229 @@ export function registerWealthRoutes(
     },
   );
 
+  app.get('/v1/debts', { preHandler: auth.authenticate }, async (request) => {
+    const userId = (request as { authUser: AuthUser }).authUser.id;
+    const rows = await sql<
+      {
+        id: string;
+        ownerUserId: string;
+        householdId: string | null;
+        visibility: 'PRIVATE' | 'SHARED';
+        debtType: string;
+        customLabel: string | null;
+        name: string;
+        balanceCents: number;
+        interestAprPercent: string | number;
+        monthlyPaymentCents: number | null;
+        paymentDay: number | null;
+        note: string;
+        sortOrder: number;
+      }[]
+    >`
+      SELECT *
+      FROM debts
+      WHERE
+        owner_user_id = ${userId}
+        OR (
+          visibility = 'SHARED'
+          AND EXISTS (
+            SELECT 1 FROM household_members hm
+            WHERE hm.household_id = debts.household_id
+              AND hm.user_id = ${userId}
+          )
+        )
+      ORDER BY sort_order ASC, updated_at DESC
+    `;
+    return rows.map((row) => {
+      const apr = Number(row.interestAprPercent);
+      const balance = Number(row.balanceCents);
+      const monthlyInterest = estimatedMonthlyInterestCents(balance, apr);
+      const payment = row.monthlyPaymentCents != null ? Number(row.monthlyPaymentCents) : null;
+      return {
+        ...row,
+        interestAprPercent: apr,
+        balanceCents: balance,
+        monthlyPaymentCents: payment,
+        estimatedMonthlyInterestCents: monthlyInterest,
+        estimatedPayoffMonths:
+          payment && payment > monthlyInterest && balance > 0
+            ? Math.ceil(balance / (payment - monthlyInterest))
+            : null,
+      };
+    });
+  });
+
+  app.post('/v1/debts', { preHandler: auth.authenticate }, async (request, reply) => {
+    const userId = (request as { authUser: AuthUser }).authUser.id;
+    const body = z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        debtType: debtTypeSchema,
+        customLabel: z.string().trim().min(1).max(80).optional(),
+        balanceCents: z.number().int().min(0).default(0),
+        interestAprPercent: z.number().min(0).max(100).default(0),
+        monthlyPaymentCents: z.number().int().positive().nullable().optional(),
+        paymentDay: z.number().int().min(1).max(28).nullable().optional(),
+        note: z.string().trim().max(500).optional(),
+        visibility: visibilitySchema.default('PRIVATE'),
+      })
+      .superRefine((value, ctx) => {
+        const hasPayment = value.monthlyPaymentCents != null;
+        const hasDay = value.paymentDay != null;
+        if (hasPayment !== hasDay) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Monthly payment amount and payment day must be set together.',
+          });
+        }
+      })
+      .parse(request.body);
+
+    if (body.debtType === 'other' && !body.customLabel) {
+      throw new ApiError(400, 'custom_label_required', 'Other debts need a label.');
+    }
+
+    const householdId = await resolveHousehold(
+      sql,
+      userId,
+      body.visibility,
+      helpers.getUser,
+    );
+    const [row] = await sql`
+      INSERT INTO debts (
+        owner_user_id, household_id, visibility, debt_type, custom_label,
+        name, balance_cents, interest_apr_percent,
+        monthly_payment_cents, payment_day, note
+      ) VALUES (
+        ${userId},
+        ${householdId},
+        ${body.visibility},
+        ${body.debtType},
+        ${body.debtType === 'other' ? body.customLabel! : null},
+        ${body.name},
+        ${body.balanceCents},
+        ${body.interestAprPercent},
+        ${body.monthlyPaymentCents ?? null},
+        ${body.paymentDay ?? null},
+        ${body.note ?? ''}
+      )
+      RETURNING *
+    `;
+    return reply.code(201).send(row);
+  });
+
+  app.patch('/v1/debts/:id', { preHandler: auth.authenticate }, async (request) => {
+    const userId = (request as { authUser: AuthUser }).authUser.id;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await assertWealthAccess(sql, userId, 'debts', id);
+    const body = z
+      .object({
+        name: z.string().trim().min(1).max(120).optional(),
+        debtType: debtTypeSchema.optional(),
+        customLabel: z.string().trim().min(1).max(80).nullable().optional(),
+        balanceCents: z.number().int().min(0).optional(),
+        interestAprPercent: z.number().min(0).max(100).optional(),
+        monthlyPaymentCents: z.number().int().positive().nullable().optional(),
+        paymentDay: z.number().int().min(1).max(28).nullable().optional(),
+        note: z.string().trim().max(500).optional(),
+        sortOrder: z.number().int().optional(),
+      })
+      .refine((value) => Object.keys(value).length > 0)
+      .parse(request.body);
+
+    const [existing] = await sql<
+      {
+        monthlyPaymentCents: number | null;
+        paymentDay: number | null;
+      }[]
+    >`
+      SELECT monthly_payment_cents, payment_day
+      FROM debts WHERE id = ${id}
+    `;
+    const nextPayment =
+      body.monthlyPaymentCents !== undefined
+        ? body.monthlyPaymentCents
+        : existing?.monthlyPaymentCents ?? null;
+    const nextDay =
+      body.paymentDay !== undefined ? body.paymentDay : existing?.paymentDay ?? null;
+    if ((nextPayment == null) !== (nextDay == null)) {
+      throw new ApiError(
+        400,
+        'payment_schedule_incomplete',
+        'Monthly payment amount and payment day must be set together.',
+      );
+    }
+
+    const [row] = await sql`
+      UPDATE debts SET
+        name = COALESCE(${body.name ?? null}, name),
+        debt_type = COALESCE(${body.debtType ?? null}, debt_type),
+        custom_label = CASE
+          WHEN ${body.customLabel !== undefined} THEN ${body.customLabel ?? null}
+          ELSE custom_label
+        END,
+        balance_cents = COALESCE(${body.balanceCents ?? null}, balance_cents),
+        interest_apr_percent = COALESCE(${body.interestAprPercent ?? null}, interest_apr_percent),
+        monthly_payment_cents = CASE
+          WHEN ${body.monthlyPaymentCents !== undefined}
+            THEN ${body.monthlyPaymentCents ?? null}
+          ELSE monthly_payment_cents
+        END,
+        payment_day = CASE
+          WHEN ${body.paymentDay !== undefined} THEN ${body.paymentDay ?? null}
+          ELSE payment_day
+        END,
+        note = CASE
+          WHEN ${body.note !== undefined} THEN ${body.note ?? ''}
+          ELSE note
+        END,
+        sort_order = COALESCE(${body.sortOrder ?? null}, sort_order),
+        updated_at = now()
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    return row;
+  });
+
+  app.post(
+    '/v1/debts/:id/accrue-interest',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertWealthAccess(sql, userId, 'debts', id);
+      const [existing] = await sql<
+        { balanceCents: number; interestAprPercent: string | number }[]
+      >`
+        SELECT balance_cents, interest_apr_percent FROM debts WHERE id = ${id}
+      `;
+      if (!existing) throw new ApiError(404, 'not_found', 'Debt not found.');
+      const interest = estimatedMonthlyInterestCents(
+        Number(existing.balanceCents),
+        Number(existing.interestAprPercent),
+      );
+      const [row] = await sql`
+        UPDATE debts SET
+          balance_cents = balance_cents + ${interest},
+          updated_at = now()
+        WHERE id = ${id}
+        RETURNING *
+      `;
+      return { debt: row, interestCents: interest };
+    },
+  );
+
+  app.delete('/v1/debts/:id', { preHandler: auth.authenticate }, async (request, reply) => {
+    const userId = (request as { authUser: AuthUser }).authUser.id;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const existing = await assertWealthAccess(sql, userId, 'debts', id);
+    if (existing.ownerUserId !== userId) {
+      throw new ApiError(403, 'not_owner', 'Only the owner can delete this debt.');
+    }
+    await sql`DELETE FROM debts WHERE id = ${id}`;
+    return reply.code(204).send();
+  });
+
   app.get('/v1/net-worth', { preHandler: auth.authenticate }, async (request) => {
     const userId = (request as { authUser: AuthUser }).authUser.id;
     const user = await helpers.getUser(sql, userId);
@@ -501,6 +776,27 @@ export function registerWealthRoutes(
       .filter((row) => row.visibility === 'SHARED')
       .reduce((sum, row) => sum + Number(row.currentCents), 0);
 
+    const debtRows = await sql<{ balanceCents: number; visibility: string }[]>`
+      SELECT balance_cents, visibility
+      FROM debts
+      WHERE
+        owner_user_id = ${userId}
+        OR (
+          visibility = 'SHARED'
+          AND EXISTS (
+            SELECT 1 FROM household_members hm
+            WHERE hm.household_id = debts.household_id
+              AND hm.user_id = ${userId}
+          )
+        )
+    `;
+    const personalDebts = debtRows
+      .filter((row) => row.visibility === 'PRIVATE')
+      .reduce((sum, row) => sum + Number(row.balanceCents), 0);
+    const sharedDebts = debtRows
+      .filter((row) => row.visibility === 'SHARED')
+      .reduce((sum, row) => sum + Number(row.balanceCents), 0);
+
     const [budgetCash] = await sql<{ balanceCents: number }[]>`
       SELECT COALESCE(
         SUM(CASE WHEN kind = 'INCOME' THEN amount_cents ELSE -amount_cents END),
@@ -513,8 +809,11 @@ export function registerWealthRoutes(
     `;
 
     const personalNetWorth =
-      personalSavings + personalInvestments + Number(budgetCash?.balanceCents ?? 0);
-    const householdNetWorth = sharedSavings + sharedInvestments;
+      personalSavings +
+      personalInvestments +
+      Number(budgetCash?.balanceCents ?? 0) -
+      personalDebts;
+    const householdNetWorth = sharedSavings + sharedInvestments - sharedDebts;
     const totalVisible = personalNetWorth + householdNetWorth;
 
     return {
@@ -522,12 +821,14 @@ export function registerWealthRoutes(
       personal: {
         savingsCents: personalSavings,
         investmentsCents: personalInvestments,
+        debtsCents: personalDebts,
         budgetBalanceCents: Number(budgetCash?.balanceCents ?? 0),
         netWorthCents: personalNetWorth,
       },
       household: {
         savingsCents: sharedSavings,
         investmentsCents: sharedInvestments,
+        debtsCents: sharedDebts,
         netWorthCents: householdNetWorth,
         householdId: user.activeHouseholdId,
       },

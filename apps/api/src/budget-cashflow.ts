@@ -19,7 +19,7 @@ export type RecurringOutgoing = {
 
 export type OutgoingItem = {
   id: string;
-  source: 'entry' | 'recurring' | 'saving';
+  source: 'entry' | 'recurring' | 'saving' | 'debt';
   kind: 'INCOME' | 'EXPENSE';
   date: string;
   amountCents: number;
@@ -29,6 +29,7 @@ export type OutgoingItem = {
   categoryName: string | null;
   recurringId: string | null;
   savingGoalId: string | null;
+  debtId: string | null;
   paid: boolean;
   paidAt: string | null;
   paymentId: string | null;
@@ -179,6 +180,7 @@ export function projectRecurringForMonth(
         categoryName: null,
         recurringId: row.id,
         savingGoalId: null,
+        debtId: null,
         paid: false,
         paidAt: null,
         paymentId: null,
@@ -203,6 +205,7 @@ export function projectRecurringForMonth(
           categoryName: null,
           recurringId: row.id,
           savingGoalId: null,
+          debtId: null,
           paid: false,
           paidAt: null,
           paymentId: null,
@@ -230,6 +233,7 @@ export function projectRecurringForMonth(
           categoryName: null,
           recurringId: row.id,
           savingGoalId: null,
+          debtId: null,
           paid: false,
           paidAt: null,
           paymentId: null,

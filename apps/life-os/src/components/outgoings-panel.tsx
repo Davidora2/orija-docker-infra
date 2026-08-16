@@ -200,18 +200,31 @@ export function OutgoingsPanel({
   }
 
   async function togglePaid(item: OutgoingItem) {
-    if (item.source !== "recurring" && item.source !== "saving") return;
+    if (
+      item.source !== "recurring" &&
+      item.source !== "saving" &&
+      item.source !== "debt"
+    )
+      return;
     setBusy(true);
     try {
       if (item.paid && item.paymentId) {
         await unmarkOutgoingPaid(budget.id, item.paymentId);
       } else {
         const sourceId =
-          item.source === "recurring" ? item.recurringId : item.savingGoalId;
+          item.source === "recurring"
+            ? item.recurringId
+            : item.source === "saving"
+              ? item.savingGoalId
+              : item.debtId;
         if (!sourceId) throw new Error("Missing payment source.");
         await markOutgoingPaid(budget.id, {
           sourceType:
-            item.source === "recurring" ? "recurring_outgoing" : "saving_goal",
+            item.source === "recurring"
+              ? "recurring_outgoing"
+              : item.source === "saving"
+                ? "saving_goal"
+                : "debt",
           sourceId,
           dueDate: item.date,
         });
@@ -227,11 +240,17 @@ export function OutgoingsPanel({
   function sourceLabel(item: OutgoingItem) {
     if (item.source === "recurring") return "Bill";
     if (item.source === "saving") return "Savings";
+    if (item.source === "debt") return "Debt";
     return "Logged";
   }
 
   function PaymentToggle({ item }: { item: OutgoingItem }) {
-    if (item.source !== "recurring" && item.source !== "saving") return null;
+    if (
+      item.source !== "recurring" &&
+      item.source !== "saving" &&
+      item.source !== "debt"
+    )
+      return null;
     return (
       <button
         type="button"
@@ -545,6 +564,7 @@ export function OutgoingsPanel({
                   <p className="text-xs text-[#6c7771]">
                     {item.date} · {sourceLabel(item)}
                     {item.paid ? " · paid" : item.source !== "entry" ? " · outstanding" : ""}
+                    {item.note ? ` · ${item.note}` : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

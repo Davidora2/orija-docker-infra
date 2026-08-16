@@ -284,18 +284,31 @@ export function OutgoingsView({
   }
 
   async function togglePaid(item: OutgoingItem) {
-    if (item.source !== 'recurring' && item.source !== 'saving') return;
+    if (
+      item.source !== 'recurring' &&
+      item.source !== 'saving' &&
+      item.source !== 'debt'
+    )
+      return;
     setBusy(true);
     try {
       if (item.paid && item.paymentId) {
         await unmarkOutgoingPaid(budget.id, item.paymentId);
       } else {
         const sourceId =
-          item.source === 'recurring' ? item.recurringId : item.savingGoalId;
+          item.source === 'recurring'
+            ? item.recurringId
+            : item.source === 'saving'
+              ? item.savingGoalId
+              : item.debtId;
         if (!sourceId) throw new Error('Missing payment source.');
         await markOutgoingPaid(budget.id, {
           sourceType:
-            item.source === 'recurring' ? 'recurring_outgoing' : 'saving_goal',
+            item.source === 'recurring'
+              ? 'recurring_outgoing'
+              : item.source === 'saving'
+                ? 'saving_goal'
+                : 'debt',
           sourceId,
           dueDate: item.date,
         });
@@ -311,6 +324,7 @@ export function OutgoingsView({
   function sourceLabel(item: OutgoingItem) {
     if (item.source === 'recurring') return 'Bill';
     if (item.source === 'saving') return 'Savings';
+    if (item.source === 'debt') return 'Debt';
     return 'Logged';
   }
 
@@ -461,7 +475,9 @@ export function OutgoingsView({
                             : ''}
                       </Text>
                     </View>
-                    {(item.source === 'recurring' || item.source === 'saving') && (
+                    {(item.source === 'recurring' ||
+                      item.source === 'saving' ||
+                      item.source === 'debt') && (
                       <Pressable
                         style={[styles.payChip, item.paid && styles.payChipPaid]}
                         disabled={busy}
@@ -506,7 +522,9 @@ export function OutgoingsView({
                         : ''}
                   </Text>
                 </View>
-                {(item.source === 'recurring' || item.source === 'saving') && (
+                {(item.source === 'recurring' ||
+                  item.source === 'saving' ||
+                  item.source === 'debt') && (
                   <Pressable
                     style={[styles.payChip, item.paid && styles.payChipPaid]}
                     disabled={busy}

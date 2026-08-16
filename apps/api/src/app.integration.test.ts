@@ -758,4 +758,104 @@ suite('account and couple household API', () => {
       profile.json<{ user: { preferredCurrency: string } }>().user.preferredCurrency,
     ).toBe('GBP');
   });
+
+  it('tracks debts with interest and monthly payments', async () => {
+    const user = await register('debts@example.com', 'Debt User');
+    await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Wealth', icon: 'wallet-outline' }],
+        preferredCurrency: 'GBP',
+      },
+    });
+
+    const create = await app.inject({
+      method: 'POST',
+      url: '/v1/debts',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Barclaycard',
+        debtType: 'credit_card',
+        balanceCents: 100_000,
+        interestAprPercent: 12,
+        monthlyPaymentCents: 20_000,
+        paymentDay: 15,
+        note: 'From current account',
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const debtId = create.json<{ id: string }>().id;
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/v1/debts',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(list.statusCode).toBe(200);
+    const debts = list.json<
+      {
+        id: string;
+        estimatedMonthlyInterestCents: number;
+        monthlyPaymentCents: number;
+      }[]
+    >();
+    expect(debts[0]?.estimatedMonthlyInterestCents).toBe(1_000);
+
+    const interest = await app.inject({
+      method: 'POST',
+      url: `/v1/debts/${debtId}/accrue-interest`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(interest.statusCode).toBe(200);
+    expect(interest.json<{ interestCents: number }>().interestCents).toBe(1_000);
+
+    const budget = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { name: 'Debt budget', visibility: 'PRIVATE' },
+    });
+    const budgetId = budget.json<{ id: string }>().id;
+    const outgoings = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budgetId}/outgoings?year=2026&month=8`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(outgoings.statusCode).toBe(200);
+    const debtItem = outgoings
+      .json<{ list: { title: string; date: string; debtId?: string }[] }>()
+      .list.find((item) => item.debtId === debtId);
+    expect(debtItem?.date).toBe('2026-08-15');
+
+    const paid = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budgetId}/payments`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        sourceType: 'debt',
+        sourceId: debtId,
+        dueDate: '2026-08-15',
+      },
+    });
+    expect(paid.statusCode).toBe(201);
+
+    const after = await app.inject({
+      method: 'GET',
+      url: '/v1/debts',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    // 100000 + 1000 interest - 20000 payment
+    expect(after.json<{ balanceCents: number }[]>()[0]?.balanceCents).toBe(81_000);
+
+    const netWorth = await app.inject({
+      method: 'GET',
+      url: '/v1/net-worth',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(
+      netWorth.json<{ personal: { debtsCents: number } }>().personal.debtsCents,
+    ).toBe(81_000);
+  });
 });
