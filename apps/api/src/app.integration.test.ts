@@ -35,6 +35,9 @@ suite('account and couple household API', () => {
   beforeEach(async () => {
     await sql`
       TRUNCATE TABLE
+        budget_entries,
+        budget_categories,
+        budgets,
         life_items,
         refresh_tokens,
         household_invites,
@@ -247,5 +250,113 @@ suite('account and couple household API', () => {
     });
     expect(replay.statusCode).toBe(401);
     expect(replay.json<{ error: string }>().error).toBe('invalid_refresh_token');
+  });
+
+  it('completes onboarding areas and supports personal + shared budgets', async () => {
+    const owner = await register('budget-owner@example.com', 'Budget Owner');
+    const partner = await register('budget-partner@example.com', 'Budget Partner');
+
+    const onboard = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        areas: [
+          { title: 'Health', icon: 'fitness-outline' },
+          { title: 'Wealth', icon: 'wallet-outline' },
+        ],
+      },
+    });
+    expect(onboard.statusCode).toBe(200);
+    expect(
+      onboard.json<{ user: { onboardingCompletedAt: string | null } }>().user
+        .onboardingCompletedAt,
+    ).toBeTruthy();
+
+    const pillars = await app.inject({
+      method: 'GET',
+      url: '/v1/items?kind=PILLAR',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+    });
+    expect(pillars.statusCode).toBe(200);
+    expect(pillars.json<unknown[]>().length).toBe(2);
+
+    const personal = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: 'My money', visibility: 'PRIVATE' },
+    });
+    expect(personal.statusCode).toBe(201);
+    const personalBudget = personal.json<{ id: string; categories: unknown[] }>();
+    expect(personalBudget.categories.length).toBeGreaterThan(0);
+
+    const invite = await app.inject({
+      method: 'POST',
+      url: '/v1/households/invites',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {},
+    });
+    const token = invite.json<{ token: string }>().token;
+    await app.inject({
+      method: 'POST',
+      url: '/v1/households/invites/accept',
+      headers: { authorization: `Bearer ${partner.accessToken}` },
+      payload: { token },
+    });
+
+    // Owner must use couple household for shared budget
+    const ownerAccount = await app.inject({
+      method: 'GET',
+      url: '/v1/me',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+    });
+    const coupleId = ownerAccount
+      .json<{ households: { id: string; role: string }[] }>()
+      .households.find((household) => household.role === 'OWNER')?.id;
+    expect(coupleId).toBeTruthy();
+    await app.inject({
+      method: 'PATCH',
+      url: '/v1/households/active',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { householdId: coupleId },
+    });
+
+    const shared = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: { name: 'Ours', visibility: 'SHARED' },
+    });
+    expect(shared.statusCode).toBe(201);
+    const sharedBudget = shared.json<{ id: string }>();
+
+    const partnerList = await app.inject({
+      method: 'GET',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${partner.accessToken}` },
+    });
+    expect(partnerList.statusCode).toBe(200);
+    const partnerBudgets = partnerList.json<{ id: string; visibility: string }[]>();
+    expect(partnerBudgets.some((budget) => budget.id === sharedBudget.id)).toBe(true);
+    expect(partnerBudgets.some((budget) => budget.id === personalBudget.id)).toBe(
+      false,
+    );
+
+    const categoryId = personalBudget.categories[0]
+      ? (personalBudget.categories[0] as { id: string }).id
+      : null;
+    const entry = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${personalBudget.id}/entries`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        kind: 'EXPENSE',
+        amountCents: 1250,
+        categoryId,
+        note: 'Coffee',
+      },
+    });
+    expect(entry.statusCode).toBe(201);
   });
 });

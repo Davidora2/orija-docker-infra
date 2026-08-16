@@ -10,6 +10,7 @@ export type AccountUser = {
   avatarUrl: string | null;
   timezone: string;
   activeHouseholdId: string | null;
+  onboardingCompletedAt: string | null;
 };
 
 export type Account = {
@@ -242,4 +243,183 @@ export async function updateLifeItem(
     body: JSON.stringify(input),
   });
   return mapItem(raw);
+}
+
+export type AreaSuggestion = { title: string; icon: string };
+
+export const SUGGESTED_LIFE_AREAS: AreaSuggestion[] = [
+  { title: "Health", icon: "fitness-outline" },
+  { title: "Career", icon: "trending-up-outline" },
+  { title: "Wealth", icon: "wallet-outline" },
+  { title: "Relationships", icon: "heart-outline" },
+  { title: "Family", icon: "home-outline" },
+  { title: "Personal growth", icon: "sparkles-outline" },
+  { title: "Creative", icon: "color-palette-outline" },
+  { title: "Product", icon: "layers-outline" },
+  { title: "Business", icon: "briefcase-outline" },
+  { title: "Faith", icon: "leaf-outline" },
+  { title: "Community", icon: "people-outline" },
+  { title: "Adventure", icon: "airplane-outline" },
+];
+
+export async function listAreaSuggestions(): Promise<AreaSuggestion[]> {
+  const payload = await request<{ suggestions: AreaSuggestion[] }>(
+    "/v1/areas/suggestions",
+  );
+  return payload.suggestions;
+}
+
+export async function completeOnboarding(
+  areas: { title: string; icon?: string }[],
+): Promise<Account> {
+  return request<Account>("/v1/onboarding/complete", {
+    method: "POST",
+    body: JSON.stringify({ areas }),
+  });
+}
+
+export type BudgetSummary = {
+  incomeCents: number;
+  expenseCents: number;
+  plannedCents: number;
+  balanceCents: number;
+};
+
+export type BudgetCategory = {
+  id: string;
+  budgetId: string;
+  name: string;
+  plannedCents: number;
+  sortOrder: number;
+  spentCents?: number;
+};
+
+export type BudgetEntry = {
+  id: string;
+  budgetId: string;
+  categoryId: string | null;
+  createdBy: string;
+  kind: "INCOME" | "EXPENSE";
+  amountCents: number;
+  note: string;
+  occurredOn: string;
+};
+
+export type Budget = {
+  id: string;
+  ownerUserId: string;
+  householdId: string | null;
+  visibility: "PRIVATE" | "SHARED";
+  name: string;
+  currency: string;
+  period: "weekly" | "monthly";
+  categories?: BudgetCategory[];
+  entries?: BudgetEntry[];
+  summary?: BudgetSummary;
+};
+
+function mapBudget(raw: Record<string, unknown>): Budget {
+  return {
+    id: String(raw.id),
+    ownerUserId: String(raw.ownerUserId ?? raw.owner_user_id),
+    householdId: (raw.householdId ?? raw.household_id ?? null) as string | null,
+    visibility: raw.visibility as "PRIVATE" | "SHARED",
+    name: String(raw.name),
+    currency: String(raw.currency ?? "GBP"),
+    period: (raw.period as "weekly" | "monthly") ?? "monthly",
+    categories: Array.isArray(raw.categories)
+      ? (raw.categories as Record<string, unknown>[]).map((category) => ({
+          id: String(category.id),
+          budgetId: String(category.budgetId ?? category.budget_id ?? raw.id),
+          name: String(category.name),
+          plannedCents: Number(category.plannedCents ?? category.planned_cents ?? 0),
+          sortOrder: Number(category.sortOrder ?? category.sort_order ?? 0),
+          spentCents: Number(category.spentCents ?? category.spent_cents ?? 0),
+        }))
+      : undefined,
+    entries: Array.isArray(raw.entries)
+      ? (raw.entries as Record<string, unknown>[]).map((entry) => ({
+          id: String(entry.id),
+          budgetId: String(entry.budgetId ?? entry.budget_id ?? raw.id),
+          categoryId: (entry.categoryId ?? entry.category_id ?? null) as
+            | string
+            | null,
+          createdBy: String(entry.createdBy ?? entry.created_by),
+          kind: entry.kind as "INCOME" | "EXPENSE",
+          amountCents: Number(entry.amountCents ?? entry.amount_cents),
+          note: String(entry.note ?? ""),
+          occurredOn: String(entry.occurredOn ?? entry.occurred_on),
+        }))
+      : undefined,
+    summary: raw.summary
+      ? {
+          incomeCents: Number((raw.summary as BudgetSummary).incomeCents),
+          expenseCents: Number((raw.summary as BudgetSummary).expenseCents),
+          plannedCents: Number((raw.summary as BudgetSummary).plannedCents),
+          balanceCents: Number((raw.summary as BudgetSummary).balanceCents),
+        }
+      : undefined,
+  };
+}
+
+export async function listBudgets(): Promise<Budget[]> {
+  const rows = await request<Record<string, unknown>[]>("/v1/budgets");
+  return rows.map(mapBudget);
+}
+
+export async function getBudget(id: string): Promise<Budget> {
+  const raw = await request<Record<string, unknown>>(`/v1/budgets/${id}`);
+  return mapBudget(raw);
+}
+
+export async function createBudget(input: {
+  name: string;
+  visibility?: "PRIVATE" | "SHARED";
+  currency?: string;
+  period?: "weekly" | "monthly";
+}): Promise<Budget> {
+  const raw = await request<Record<string, unknown>>("/v1/budgets", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      visibility: input.visibility ?? "PRIVATE",
+      currency: input.currency ?? "GBP",
+      period: input.period ?? "monthly",
+      seedCategories: true,
+    }),
+  });
+  return mapBudget(raw);
+}
+
+export async function updateBudgetCategory(
+  budgetId: string,
+  categoryId: string,
+  input: { name?: string; plannedCents?: number },
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/categories/${categoryId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function addBudgetEntry(
+  budgetId: string,
+  input: {
+    kind: "INCOME" | "EXPENSE";
+    amountCents: number;
+    categoryId?: string | null;
+    note?: string;
+  },
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/entries`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function formatMoney(cents: number, currency = "GBP"): string {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency,
+  }).format(cents / 100);
 }

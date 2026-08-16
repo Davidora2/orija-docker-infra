@@ -25,6 +25,8 @@ import {
 } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountSheet } from './src/account-sheet';
+import { BudgetScreen } from './src/budget-screen';
+import { OnboardingSheet } from './src/onboarding-sheet';
 import {
   ApiError,
   createLifeItem,
@@ -71,7 +73,7 @@ const serif = Platform.select({
   default: 'Georgia',
 });
 
-type Tab = 'command' | 'portfolio' | 'ideas' | 'capacity' | 'review';
+type Tab = 'command' | 'portfolio' | 'ideas' | 'capacity' | 'budget' | 'review';
 
 function tap(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== 'web') void Haptics.impactAsync(style);
@@ -295,6 +297,10 @@ function AppContent() {
   const [timing, setTiming] = useState(3);
 
   const [availableHoursInput, setAvailableHoursInput] = useState('11');
+  const [areaTitle, setAreaTitle] = useState('');
+  const needsOnboarding = Boolean(
+    account && !account.user.onboardingCompletedAt,
+  );
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -577,6 +583,33 @@ function AppContent() {
     });
   }
 
+  async function addLifeArea() {
+    const title = areaTitle.trim();
+    if (!title) {
+      notify('Name the life area.');
+      return;
+    }
+    await run('Add area', async () => {
+      await createLifeItem({
+        kind: 'PILLAR',
+        title,
+        body: { icon: 'compass-outline' },
+        sortOrder: pillars.length,
+      });
+      setAreaTitle('');
+      await reloadItems();
+      notify('Life area added.');
+    });
+  }
+
+  async function removeLifeArea(area: LifeItem) {
+    await run('Remove area', async () => {
+      await updateLifeItem(area.id, { status: 'ARCHIVED' });
+      await reloadItems();
+      notify(`${area.title} removed.`);
+    });
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.boot}>
@@ -814,7 +847,7 @@ function AppContent() {
         {tab === 'portfolio' ? (
           <View style={styles.stack}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Pillars & Projects</Text>
+              <Text style={styles.sectionTitle}>Life areas & projects</Text>
               <Button
                 onPress={() => {
                   setSourceIdeaId(null);
@@ -829,6 +862,35 @@ function AppContent() {
                 New project
               </Button>
             </View>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Your life areas</Text>
+              <Text style={styles.cardBody}>
+                Add or remove the areas you want Life OS to track.
+              </Text>
+              <Field
+                label="New area"
+                value={areaTitle}
+                onChangeText={setAreaTitle}
+                placeholder="e.g. Fitness, Side project"
+              />
+              <Button disabled={busy} onPress={() => void addLifeArea()}>
+                Add area
+              </Button>
+              {pillars.length === 0 ? (
+                <Text style={styles.listMeta}>No areas yet — add one above.</Text>
+              ) : (
+                pillars.map((pillar) => (
+                  <View key={pillar.id} style={styles.listRow}>
+                    <Text style={[styles.listTitle, { flex: 1 }]}>{pillar.title}</Text>
+                    <Button variant="ghost" onPress={() => void removeLifeArea(pillar)}>
+                      Remove
+                    </Button>
+                  </View>
+                ))
+              )}
+            </Card>
+
             {pillars.map((pillar) => {
               const pillarProjects = projects.filter(
                 (project) => project.parentId === pillar.id,
@@ -836,13 +898,13 @@ function AppContent() {
               const openCount = pillarProjects.length;
               return (
                 <Card key={pillar.id}>
-                  <Text style={styles.cardEyebrow}>Pillar</Text>
+                  <Text style={styles.cardEyebrow}>Area</Text>
                   <Text style={styles.cardTitle}>{pillar.title}</Text>
                   <Text style={styles.cardBody}>
                     {openCount} open project{openCount === 1 ? '' : 's'}
                   </Text>
                   {pillarProjects.length === 0 ? (
-                    <Text style={styles.listMeta}>No projects under this pillar yet.</Text>
+                    <Text style={styles.listMeta}>No projects under this area yet.</Text>
                   ) : (
                     pillarProjects.map((project) => {
                       const next = childrenOf(items, project.id).find(
@@ -878,6 +940,10 @@ function AppContent() {
               );
             })}
           </View>
+        ) : null}
+
+        {tab === 'budget' ? (
+          <BudgetScreen account={account!} notify={notify} />
         ) : null}
 
         {tab === 'capacity' ? (
@@ -1007,8 +1073,9 @@ function AppContent() {
           [
             ['command', 'Command', 'grid-outline'],
             ['ideas', 'Ideas', 'bulb-outline'],
-            ['portfolio', 'Portfolio', 'layers-outline'],
+            ['portfolio', 'Areas', 'layers-outline'],
             ['capacity', 'Capacity', 'speedometer-outline'],
+            ['budget', 'Budget', 'wallet-outline'],
             ['review', 'Review', 'stats-chart-outline'],
           ] as const
         ).map(([id, label, icon]) => (
@@ -1333,6 +1400,16 @@ function AppContent() {
             setItems([]);
             setAccountOpen(true);
           }
+        }}
+      />
+
+      <OnboardingSheet
+        visible={needsOnboarding}
+        notify={notify}
+        onComplete={(next) => {
+          setAccount(next);
+          void load('refresh');
+          notify('Your life areas are set.');
         }}
       />
     </SafeAreaView>

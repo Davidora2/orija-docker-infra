@@ -7,6 +7,12 @@ const migrations = [
     version: '001_init',
     path: fileURLToPath(new URL('../migrations/001_init.sql', import.meta.url)),
   },
+  {
+    version: '002_onboarding_budgets',
+    path: fileURLToPath(
+      new URL('../migrations/002_onboarding_budgets.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

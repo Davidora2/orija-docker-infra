@@ -4,13 +4,20 @@ import {
   type LifeItem,
 } from './api';
 
-export const DEFAULT_PILLARS = [
-  { title: 'Product', icon: 'layers-outline', sortOrder: 0 },
-  { title: 'Business', icon: 'briefcase-outline', sortOrder: 1 },
-  { title: 'Wealth', icon: 'wallet-outline', sortOrder: 2 },
-  { title: 'Career', icon: 'trending-up-outline', sortOrder: 3 },
-  { title: 'Personal', icon: 'heart-outline', sortOrder: 4 },
-  { title: 'Creative', icon: 'sparkles-outline', sortOrder: 5 },
+/** Suggested life areas for onboarding (icons match Ionicons names). */
+export const SUGGESTED_LIFE_AREAS = [
+  { title: 'Health', icon: 'fitness-outline' },
+  { title: 'Career', icon: 'trending-up-outline' },
+  { title: 'Wealth', icon: 'wallet-outline' },
+  { title: 'Relationships', icon: 'heart-outline' },
+  { title: 'Family', icon: 'home-outline' },
+  { title: 'Personal growth', icon: 'sparkles-outline' },
+  { title: 'Creative', icon: 'color-palette-outline' },
+  { title: 'Product', icon: 'layers-outline' },
+  { title: 'Business', icon: 'briefcase-outline' },
+  { title: 'Faith', icon: 'leaf-outline' },
+  { title: 'Community', icon: 'people-outline' },
+  { title: 'Adventure', icon: 'airplane-outline' },
 ] as const;
 
 export const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
@@ -42,18 +49,10 @@ export function weeklyCapacityHours(items: LifeItem[]): {
   available: number;
   openActions: LifeItem[];
 } {
-  const available =
-    ofKind(items, 'VISION').find((item) => bodyNumber(item, 'availableHours')) !=
-    null
-      ? bodyNumber(
-          ofKind(items, 'VISION').find((item) =>
-            Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
-          )!,
-          'availableHours',
-          11,
-        )
-      : 11;
-
+  const vision = ofKind(items, 'VISION').find((item) =>
+    Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
+  );
+  const available = vision ? bodyNumber(vision, 'availableHours', 11) : 11;
   const openActions = ofKind(items, 'ACTION').filter(isOpen);
   const planned = openActions.reduce(
     (sum, action) => sum + bodyNumber(action, 'hours', 1),
@@ -110,32 +109,22 @@ export function ideaScore(item: LifeItem): number {
   return impact + alignment + timing - effort;
 }
 
-export async function ensureStarterPillars(items: LifeItem[]): Promise<LifeItem[]> {
-  if (ofKind(items, 'PILLAR').length > 0) return items;
-  const created: LifeItem[] = [];
-  for (const pillar of DEFAULT_PILLARS) {
-    created.push(
-      await createLifeItem({
-        kind: 'PILLAR',
-        title: pillar.title,
-        body: { icon: pillar.icon },
-        sortOrder: pillar.sortOrder,
-      }),
-    );
-  }
-  // Capacity preference as a VISION settings record
-  created.push(
-    await createLifeItem({
-      kind: 'VISION',
-      title: 'Weekly capacity',
-      body: { availableHours: 11 },
-      sortOrder: 100,
-    }),
+/** Ensure capacity preference exists; do not auto-create life areas. */
+export async function ensureCapacityPreference(items: LifeItem[]): Promise<LifeItem[]> {
+  const hasCapacity = ofKind(items, 'VISION').some((item) =>
+    Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
   );
-  return [...items, ...created];
+  if (hasCapacity) return items;
+  const created = await createLifeItem({
+    kind: 'VISION',
+    title: 'Weekly capacity',
+    body: { availableHours: 11 },
+    sortOrder: 100,
+  });
+  return [...items, created];
 }
 
 export async function refreshAllItems(): Promise<LifeItem[]> {
   const items = await listLifeItems();
-  return ensureStarterPillars(items);
+  return ensureCapacityPreference(items);
 }

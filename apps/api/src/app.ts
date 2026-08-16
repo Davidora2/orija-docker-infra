@@ -6,23 +6,15 @@ import { z, ZodError } from 'zod';
 import { createAuth } from './auth.js';
 import type { AppConfig } from './config.js';
 import { createDatabase, type Database } from './db.js';
+import { ApiError } from './errors.js';
 import { runMigrations } from './migrations.js';
+import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
 import {
   createOpaqueToken,
   hashPassword,
   hashToken,
   verifyPassword,
 } from './security.js';
-
-class ApiError extends Error {
-  constructor(
-    public readonly statusCode: number,
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 const credentialsSchema = z.object({
   email: z.string().email().max(320).transform((value) => value.toLowerCase()),
@@ -123,6 +115,7 @@ type UserRow = {
   avatarUrl: string | null;
   timezone: string;
   activeHouseholdId: string | null;
+  onboardingCompletedAt: Date | null;
   createdAt: Date;
 };
 
@@ -147,6 +140,7 @@ function publicUser(user: UserRow) {
     avatarUrl: user.avatarUrl,
     timezone: user.timezone,
     activeHouseholdId: user.activeHouseholdId,
+    onboardingCompletedAt: user.onboardingCompletedAt,
     createdAt: user.createdAt,
   };
 }
@@ -155,7 +149,7 @@ async function getUser(sql: Database, userId: string): Promise<UserRow> {
   const [user] = await sql<UserRow[]>`
     SELECT
       id, email, password_hash, display_name, avatar_url, timezone,
-      active_household_id, created_at
+      active_household_id, onboarding_completed_at, created_at
     FROM users
     WHERE id = ${userId}
   `;
@@ -321,7 +315,14 @@ export async function buildApp(
 
   app.post(
     '/v1/auth/register',
-    { config: { rateLimit: { max: 8, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: {
+          max: config.nodeEnv === 'test' ? 1000 : 8,
+          timeWindow: '1 minute',
+        },
+      },
+    },
     async (request, reply) => {
       const body = registerSchema.parse(request.body);
       const passwordHash = await hashPassword(body.password);
@@ -335,7 +336,7 @@ export async function buildApp(
           )
           RETURNING
             id, email, password_hash, display_name, avatar_url, timezone,
-            active_household_id, created_at
+            active_household_id, onboarding_completed_at, created_at
         `;
         if (!createdUser) throw new Error('Failed to create user.');
 
@@ -375,7 +376,7 @@ export async function buildApp(
       const [user] = await sql<UserRow[]>`
         SELECT
           id, email, password_hash, display_name, avatar_url, timezone,
-          active_household_id, created_at
+          active_household_id, onboarding_completed_at, created_at
         FROM users
         WHERE email = ${body.email}
       `;
@@ -770,6 +771,11 @@ export async function buildApp(
       throw new ApiError(404, 'item_not_found', 'The item does not exist or is not yours.');
     }
     return reply.code(204).send();
+  });
+
+  registerOnboardingAndBudgetRoutes(app, sql, auth, {
+    getUser,
+    getAccountPayload,
   });
 
   app.addHook('onClose', async () => {

@@ -13,15 +13,8 @@ import {
   type Account,
   type LifeItem,
 } from "../lib/api";
-
-const DEFAULT_PILLARS = [
-  "Product",
-  "Business",
-  "Wealth",
-  "Career",
-  "Personal",
-  "Creative",
-];
+import { BudgetPanel } from "./budget-panel";
+import { OnboardingPanel } from "./onboarding-panel";
 
 function num(item: LifeItem, key: string, fallback = 0) {
   const value = item.body[key];
@@ -37,28 +30,18 @@ function open(item: LifeItem) {
   return item.status !== "DONE" && item.status !== "ARCHIVED" && item.status !== "CONVERTED";
 }
 
-async function ensurePillars(items: LifeItem[]) {
-  if (items.some((item) => item.kind === "PILLAR")) return items;
-  const created: LifeItem[] = [];
-  for (const [index, title] of DEFAULT_PILLARS.entries()) {
-    created.push(
-      await createLifeItem({
-        kind: "PILLAR",
-        title,
-        sortOrder: index,
-        body: {},
-      }),
-    );
-  }
-  created.push(
-    await createLifeItem({
-      kind: "VISION",
-      title: "Weekly capacity",
-      body: { availableHours: 11 },
-      sortOrder: 100,
-    }),
+async function ensureCapacity(items: LifeItem[]) {
+  const hasCapacity = items.some(
+    (item) => item.kind === "VISION" && "availableHours" in item.body,
   );
-  return [...items, ...created];
+  if (hasCapacity) return items;
+  const vision = await createLifeItem({
+    kind: "VISION",
+    title: "Weekly capacity",
+    body: { availableHours: 11 },
+    sortOrder: 100,
+  });
+  return [...items, vision];
 }
 
 export function LifeOSApp() {
@@ -67,7 +50,9 @@ export function LifeOSApp() {
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"command" | "ideas" | "portfolio" | "capacity" | "review">("command");
+  const [tab, setTab] = useState<
+    "command" | "ideas" | "portfolio" | "capacity" | "budget" | "review"
+  >("command");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -79,6 +64,7 @@ export function LifeOSApp() {
   const [projectPillarId, setProjectPillarId] = useState("");
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
+  const [areaTitle, setAreaTitle] = useState("");
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -91,7 +77,7 @@ export function LifeOSApp() {
       setItems([]);
       return;
     }
-    const nextItems = await ensurePillars(await listLifeItems());
+    const nextItems = await ensureCapacity(await listLifeItems());
     setItems(nextItems);
   }, []);
 
@@ -123,6 +109,7 @@ export function LifeOSApp() {
       : 11;
   const planned = openActions.reduce((sum, action) => sum + num(action, "hours", 1), 0);
   const primary = openActions[0] ?? null;
+  const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
 
   async function run(work: () => Promise<void>) {
     setBusy(true);
@@ -217,6 +204,16 @@ export function LifeOSApp() {
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl bg-[#f4f5f0] px-4 py-6 text-[#14241f]">
+      {needsOnboarding ? (
+        <OnboardingPanel
+          onComplete={(next) => {
+            setAccount(next);
+            void refresh();
+          }}
+          onError={setError}
+        />
+      ) : null}
+
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="font-serif text-3xl">Life OS</p>
@@ -244,8 +241,9 @@ export function LifeOSApp() {
           [
             ["command", "Command"],
             ["ideas", "Ideas"],
-            ["portfolio", "Portfolio"],
+            ["portfolio", "Areas"],
             ["capacity", "Capacity"],
+            ["budget", "Budget"],
             ["review", "Review"],
           ] as const
         ).map(([id, label]) => (
@@ -372,6 +370,64 @@ export function LifeOSApp() {
       {tab === "portfolio" ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+            <h2 className="font-serif text-2xl">Life areas</h2>
+            <p className="text-sm text-[#6c7771]">
+              Add or remove the areas you want Life OS to track.
+            </p>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-xl border border-[#dde2dd] px-3 py-3"
+                placeholder="e.g. Fitness, Side project"
+                value={areaTitle}
+                onChange={(e) => setAreaTitle(e.target.value)}
+              />
+              <button
+                className="rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    if (!areaTitle.trim()) throw new Error("Name the life area.");
+                    await createLifeItem({
+                      kind: "PILLAR",
+                      title: areaTitle.trim(),
+                      body: { icon: "compass-outline" },
+                      sortOrder: pillars.length,
+                    });
+                    setAreaTitle("");
+                  })
+                }
+              >
+                Add
+              </button>
+            </div>
+            {pillars.length === 0 ? (
+              <p className="text-sm text-[#6c7771]">No areas yet — add one above.</p>
+            ) : (
+              pillars.map((pillar) => (
+                <div
+                  key={pillar.id}
+                  className="flex items-center justify-between border-t border-[#dde2dd] pt-3"
+                >
+                  <p className="font-semibold">{pillar.title}</p>
+                  <button
+                    type="button"
+                    className="text-xs font-bold text-[#c9634f]"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await updateLifeItem(pillar.id, { status: "ARCHIVED" });
+                      })
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+          </article>
+
+          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">New project</h2>
             <input
               className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
@@ -390,7 +446,7 @@ export function LifeOSApp() {
               value={projectPillarId}
               onChange={(e) => setProjectPillarId(e.target.value)}
             >
-              <option value="">Select pillar</option>
+              <option value="">Select life area</option>
               {pillars.map((pillar) => (
                 <option key={pillar.id} value={pillar.id}>
                   {pillar.title}
@@ -447,7 +503,7 @@ export function LifeOSApp() {
             const pillarProjects = projects.filter((project) => project.parentId === pillar.id);
             return (
               <article key={pillar.id} className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Pillar</p>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Area</p>
                 <h3 className="font-serif text-xl">{pillar.title}</h3>
                 {pillarProjects.length === 0 ? (
                   <p className="mt-2 text-sm text-[#6c7771]">No projects yet.</p>
@@ -522,6 +578,10 @@ export function LifeOSApp() {
             </article>
           ))}
         </section>
+      ) : null}
+
+      {tab === "budget" ? (
+        <BudgetPanel account={account} onError={setError} />
       ) : null}
 
       {tab === "review" ? (
