@@ -112,7 +112,7 @@ function asDateOnly(value: unknown): string | null {
   return match?.[1] ?? null;
 }
 
-function enrichSavingGoal(row: Record<string, unknown>) {
+function enrichSavingGoal(row: Record<string, unknown>): Record<string, unknown> {
   const targetCents = Number(row.targetCents ?? row.target_cents ?? 0);
   const currentCents = Number(row.currentCents ?? row.current_cents ?? 0);
   const targetDate = asDateOnly(row.targetDate ?? row.target_date ?? null);
@@ -136,6 +136,7 @@ function enrichSavingGoal(row: Record<string, unknown>) {
     remainingCents: timeline.remainingCents,
     requiredMonthlyCents: timeline.requiredMonthlyCents,
     shortfallCents,
+    monthlyContributionCents,
   };
 }
 
