@@ -475,7 +475,7 @@ export type BudgetRecommendation = {
 
 export type OutgoingItem = {
   id: string;
-  source: "entry" | "recurring";
+  source: "entry" | "recurring" | "saving";
   kind: "INCOME" | "EXPENSE";
   date: string;
   amountCents: number;
@@ -484,6 +484,10 @@ export type OutgoingItem = {
   categoryId: string | null;
   categoryName: string | null;
   recurringId: string | null;
+  savingGoalId?: string | null;
+  paid?: boolean;
+  paidAt?: string | null;
+  paymentId?: string | null;
 };
 
 export type MonthOutgoings = {
@@ -510,6 +514,8 @@ export type MonthOutgoings = {
     incomeCents: number;
     recurringCents: number;
     oneOffCents: number;
+    outstandingCents?: number;
+    paidTrackedCents?: number;
   };
   recommendations: BudgetRecommendation[];
   flags?: BudgetRecommendation[];
@@ -708,6 +714,30 @@ export async function getMonthOutgoings(
   );
 }
 
+export async function markOutgoingPaid(
+  budgetId: string,
+  input: {
+    sourceType: "recurring_outgoing" | "saving_goal";
+    sourceId: string;
+    dueDate: string;
+    note?: string;
+  },
+): Promise<Record<string, unknown>> {
+  return request(`/v1/budgets/${budgetId}/payments`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function unmarkOutgoingPaid(
+  budgetId: string,
+  paymentId: string,
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/payments/${paymentId}`, {
+    method: "DELETE",
+  });
+}
+
 export type SavingGoal = {
   id: string;
   ownerUserId: string;
@@ -718,6 +748,8 @@ export type SavingGoal = {
   name: string;
   targetCents: number;
   currentCents: number;
+  monthlyContributionCents?: number | null;
+  contributionDay?: number | null;
 };
 
 export type InvestmentAccount = {
@@ -788,6 +820,12 @@ function mapSaving(raw: Record<string, unknown>): SavingGoal {
     name: String(raw.name),
     targetCents: Number(raw.targetCents ?? raw.target_cents ?? 0),
     currentCents: Number(raw.currentCents ?? raw.current_cents ?? 0),
+    monthlyContributionCents: (raw.monthlyContributionCents ??
+      raw.monthly_contribution_cents ??
+      null) as number | null,
+    contributionDay: (raw.contributionDay ?? raw.contribution_day ?? null) as
+      | number
+      | null,
   };
 }
 
@@ -841,6 +879,8 @@ export async function createSavingGoal(input: {
   targetCents?: number;
   currentCents?: number;
   visibility?: "PRIVATE" | "SHARED";
+  monthlyContributionCents?: number | null;
+  contributionDay?: number | null;
 }): Promise<SavingGoal> {
   const raw = await request<Record<string, unknown>>("/v1/saving-goals", {
     method: "POST",
@@ -857,6 +897,8 @@ export async function updateSavingGoal(
     customLabel: string | null;
     targetCents: number;
     currentCents: number;
+    monthlyContributionCents: number | null;
+    contributionDay: number | null;
   }>,
 ): Promise<SavingGoal> {
   const raw = await request<Record<string, unknown>>(`/v1/saving-goals/${id}`, {

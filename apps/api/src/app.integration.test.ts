@@ -411,6 +411,147 @@ suite('account and couple household API', () => {
     expect(month.recommendations.length).toBeGreaterThan(0);
   });
 
+  it('tracks bill payments and sends outstanding reminders', async () => {
+    const user = await register('bills@example.com', 'Bills User');
+    const onboard = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Wealth', icon: 'wallet-outline' }],
+        preferredCurrency: 'GBP',
+      },
+    });
+    expect(onboard.statusCode).toBe(200);
+
+    const budget = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { name: 'Bills budget', visibility: 'PRIVATE' },
+    });
+    expect(budget.statusCode).toBe(201);
+    const budgetId = budget.json<{ id: string }>().id;
+
+    const today = new Date();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth() + 1;
+    const day = Math.min(today.getUTCDate(), 28);
+
+    const recurring = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budgetId}/recurring`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Council tax',
+        amountCents: 15_000,
+        cadence: 'monthly',
+        dayOfMonth: day,
+      },
+    });
+    expect(recurring.statusCode).toBe(201);
+    const recurringId = recurring.json<{ id: string }>().id;
+
+    const goal = await app.inject({
+      method: 'POST',
+      url: '/v1/saving-goals',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Emergency',
+        category: 'emergency',
+        targetCents: 300_000,
+        currentCents: 0,
+        monthlyContributionCents: 25_000,
+        contributionDay: day,
+      },
+    });
+    expect(goal.statusCode).toBe(201);
+    const goalId = goal.json<{ id: string }>().id;
+
+    const dueDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    const outgoings = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budgetId}/outgoings?year=${year}&month=${month}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(outgoings.statusCode).toBe(200);
+    const monthData = outgoings.json<{
+      list: {
+        source: string;
+        paid: boolean;
+        recurringId: string | null;
+        savingGoalId: string | null;
+        date: string;
+      }[];
+      totals: { outstandingCents: number };
+    }>();
+    expect(monthData.totals.outstandingCents).toBeGreaterThanOrEqual(40_000);
+    const bill = monthData.list.find(
+      (item) => item.recurringId === recurringId && item.date === dueDate,
+    );
+    const savings = monthData.list.find(
+      (item) => item.savingGoalId === goalId && item.date === dueDate,
+    );
+    expect(bill?.paid).toBe(false);
+    expect(savings?.paid).toBe(false);
+
+    const markBill = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budgetId}/payments`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        sourceType: 'recurring_outgoing',
+        sourceId: recurringId,
+        dueDate,
+      },
+    });
+    expect(markBill.statusCode).toBe(201);
+
+    const afterPay = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budgetId}/outgoings?year=${year}&month=${month}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    const paidBill = afterPay
+      .json<{ list: { recurringId: string | null; paid: boolean; paymentId: string | null }[] }>()
+      .list.find((item) => item.recurringId === recurringId);
+    expect(paidBill?.paid).toBe(true);
+    expect(paidBill?.paymentId).toBeTruthy();
+
+    const reminder = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/reminders/run',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(reminder.statusCode).toBe(200);
+    const reminderBody = reminder.json<{
+      sent: boolean;
+      itemCount: number;
+      dueDate: string;
+    }>();
+    // Savings still outstanding for today in Europe/London (may differ from UTC day)
+    expect(reminderBody.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    if (reminderBody.dueDate === dueDate) {
+      expect(reminderBody.sent).toBe(true);
+      expect(reminderBody.itemCount).toBeGreaterThanOrEqual(1);
+    }
+
+    const reminderAgain = await app.inject({
+      method: 'POST',
+      url: '/v1/payments/reminders/run',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(reminderAgain.json<{ sent: boolean }>().sent).toBe(false);
+
+    const unmark = await app.inject({
+      method: 'DELETE',
+      url: `/v1/budgets/${budgetId}/payments/${paidBill!.paymentId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(unmark.statusCode).toBe(204);
+  });
+
   it('sends a password reset code and resets the password', async () => {
     const user = await register('reset@example.com', 'Reset User');
 

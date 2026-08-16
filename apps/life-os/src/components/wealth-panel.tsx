@@ -63,6 +63,8 @@ export function WealthPanel({
   const [goalTarget, setGoalTarget] = useState("");
   const [goalCurrent, setGoalCurrent] = useState("");
   const [goalShared, setGoalShared] = useState(false);
+  const [goalMonthly, setGoalMonthly] = useState("");
+  const [goalDay, setGoalDay] = useState("1");
 
   const [invName, setInvName] = useState("");
   const [invType, setInvType] =
@@ -200,6 +202,21 @@ export function WealthPanel({
             value={goalCurrent}
             onChange={(e) => setGoalCurrent(e.target.value)}
           />
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            placeholder="Monthly contribution (optional)"
+            value={goalMonthly}
+            onChange={(e) => setGoalMonthly(e.target.value)}
+          />
+          <input
+            className="rounded-xl border border-[#dde2dd] px-3 py-2"
+            type="number"
+            min={1}
+            max={28}
+            placeholder="Contribution day"
+            value={goalDay}
+            onChange={(e) => setGoalDay(e.target.value)}
+          />
         </div>
         {canShare ? (
           <label className="flex items-center gap-2 text-xs font-bold">
@@ -218,6 +235,8 @@ export function WealthPanel({
           onClick={() =>
             void run(async () => {
               if (!goalName.trim()) throw new Error("Name the saving goal.");
+              const monthly = Number(goalMonthly);
+              const hasMonthly = goalMonthly.trim() !== "" && Number.isFinite(monthly) && monthly > 0;
               await createSavingGoal({
                 name: goalName.trim(),
                 category: goalCategory,
@@ -226,11 +245,16 @@ export function WealthPanel({
                 targetCents: Math.round(Number(goalTarget || 0) * 100),
                 currentCents: Math.round(Number(goalCurrent || 0) * 100),
                 visibility: goalShared ? "SHARED" : "PRIVATE",
+                monthlyContributionCents: hasMonthly
+                  ? Math.round(monthly * 100)
+                  : null,
+                contributionDay: hasMonthly ? Number(goalDay || 1) : null,
               });
               setGoalName("");
               setGoalTarget("");
               setGoalCurrent("");
               setGoalCustom("");
+              setGoalMonthly("");
             })
           }
         >
@@ -265,6 +289,12 @@ export function WealthPanel({
               {money(goal.currentCents)} / {money(goal.targetCents)} (
               {progress(goal.currentCents, goal.targetCents)}%)
             </p>
+            {goal.monthlyContributionCents ? (
+              <p className="mt-1 text-xs text-[#6c7771]">
+                Monthly {money(goal.monthlyContributionCents)} on day{" "}
+                {goal.contributionDay} · tracked in Outgoings with email reminders
+              </p>
+            ) : null}
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2ea]">
               <div
                 className="h-full bg-[#617a57]"

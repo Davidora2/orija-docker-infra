@@ -46,20 +46,28 @@ describe('budget cashflow helpers', () => {
   });
 
   it('recommends moving bills that land before payday', () => {
+    const base = {
+      note: '',
+      categoryId: null as string | null,
+      categoryName: null as string | null,
+      savingGoalId: null as string | null,
+      paid: false,
+      paidAt: null as string | null,
+      paymentId: null as string | null,
+    };
     const list: OutgoingItem[] = [
       {
+        ...base,
         id: '1',
         source: 'recurring',
         kind: 'EXPENSE',
         date: '2026-08-20',
         amountCents: 80_000,
         title: 'Rent',
-        note: '',
-        categoryId: null,
-        categoryName: null,
         recurringId: 'r1',
       },
       {
+        ...base,
         id: '2',
         source: 'entry',
         kind: 'EXPENSE',
@@ -67,11 +75,11 @@ describe('budget cashflow helpers', () => {
         amountCents: 4_000,
         title: 'Food',
         note: 'food',
-        categoryId: null,
         categoryName: 'Food',
         recurringId: null,
       },
       {
+        ...base,
         id: '3',
         source: 'entry',
         kind: 'EXPENSE',
@@ -79,11 +87,11 @@ describe('budget cashflow helpers', () => {
         amountCents: 3_500,
         title: 'Food',
         note: 'food',
-        categoryId: null,
         categoryName: 'Food',
         recurringId: null,
       },
       {
+        ...base,
         id: '4',
         source: 'entry',
         kind: 'EXPENSE',
@@ -91,11 +99,11 @@ describe('budget cashflow helpers', () => {
         amountCents: 2_000,
         title: 'Food',
         note: 'food',
-        categoryId: null,
         categoryName: 'Food',
         recurringId: null,
       },
       {
+        ...base,
         id: '5',
         source: 'entry',
         kind: 'EXPENSE',
@@ -103,7 +111,6 @@ describe('budget cashflow helpers', () => {
         amountCents: 2_500,
         title: 'Food',
         note: 'food',
-        categoryId: null,
         categoryName: 'Food',
         recurringId: null,
       },

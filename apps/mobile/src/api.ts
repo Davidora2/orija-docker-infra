@@ -574,7 +574,7 @@ export type BudgetRecommendation = {
 
 export type OutgoingItem = {
   id: string;
-  source: 'entry' | 'recurring';
+  source: 'entry' | 'recurring' | 'saving';
   kind: 'INCOME' | 'EXPENSE';
   date: string;
   amountCents: number;
@@ -583,6 +583,10 @@ export type OutgoingItem = {
   categoryId: string | null;
   categoryName: string | null;
   recurringId: string | null;
+  savingGoalId?: string | null;
+  paid?: boolean;
+  paidAt?: string | null;
+  paymentId?: string | null;
 };
 
 export type MonthOutgoings = {
@@ -609,6 +613,8 @@ export type MonthOutgoings = {
     incomeCents: number;
     recurringCents: number;
     oneOffCents: number;
+    outstandingCents?: number;
+    paidTrackedCents?: number;
   };
   recommendations: BudgetRecommendation[];
   flags?: BudgetRecommendation[];
@@ -808,16 +814,42 @@ export async function getMonthOutgoings(
   );
 }
 
+export async function markOutgoingPaid(
+  budgetId: string,
+  input: {
+    sourceType: 'recurring_outgoing' | 'saving_goal';
+    sourceId: string;
+    dueDate: string;
+    note?: string;
+  },
+): Promise<Record<string, unknown>> {
+  return request(`/v1/budgets/${budgetId}/payments`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function unmarkOutgoingPaid(
+  budgetId: string,
+  paymentId: string,
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/payments/${paymentId}`, {
+    method: 'DELETE',
+  });
+}
+
 export type SavingGoal = {
   id: string;
   ownerUserId: string;
   householdId: string | null;
-  visibility: "PRIVATE" | "SHARED";
-  category: "emergency" | "six_month_salary" | "holiday" | "house_deposit" | "custom";
+  visibility: 'PRIVATE' | 'SHARED';
+  category: 'emergency' | 'six_month_salary' | 'holiday' | 'house_deposit' | 'custom';
   customLabel: string | null;
   name: string;
   targetCents: number;
   currentCents: number;
+  monthlyContributionCents?: number | null;
+  contributionDay?: number | null;
 };
 
 export type InvestmentAccount = {
@@ -882,12 +914,18 @@ function mapSaving(raw: Record<string, unknown>): SavingGoal {
     id: String(raw.id),
     ownerUserId: String(raw.ownerUserId ?? raw.owner_user_id),
     householdId: (raw.householdId ?? raw.household_id ?? null) as string | null,
-    visibility: raw.visibility as "PRIVATE" | "SHARED",
-    category: raw.category as SavingGoal["category"],
+    visibility: raw.visibility as 'PRIVATE' | 'SHARED',
+    category: raw.category as SavingGoal['category'],
     customLabel: (raw.customLabel ?? raw.custom_label ?? null) as string | null,
     name: String(raw.name),
     targetCents: Number(raw.targetCents ?? raw.target_cents ?? 0),
     currentCents: Number(raw.currentCents ?? raw.current_cents ?? 0),
+    monthlyContributionCents: (raw.monthlyContributionCents ??
+      raw.monthly_contribution_cents ??
+      null) as number | null,
+    contributionDay: (raw.contributionDay ?? raw.contribution_day ?? null) as
+      | number
+      | null,
   };
 }
 
@@ -936,14 +974,16 @@ export async function listSavingGoals(): Promise<SavingGoal[]> {
 
 export async function createSavingGoal(input: {
   name: string;
-  category: SavingGoal["category"];
+  category: SavingGoal['category'];
   customLabel?: string;
   targetCents?: number;
   currentCents?: number;
-  visibility?: "PRIVATE" | "SHARED";
+  visibility?: 'PRIVATE' | 'SHARED';
+  monthlyContributionCents?: number | null;
+  contributionDay?: number | null;
 }): Promise<SavingGoal> {
-  const raw = await request<Record<string, unknown>>("/v1/saving-goals", {
-    method: "POST",
+  const raw = await request<Record<string, unknown>>('/v1/saving-goals', {
+    method: 'POST',
     body: JSON.stringify(input),
   });
   return mapSaving(raw);
@@ -953,14 +993,16 @@ export async function updateSavingGoal(
   id: string,
   input: Partial<{
     name: string;
-    category: SavingGoal["category"];
+    category: SavingGoal['category'];
     customLabel: string | null;
     targetCents: number;
     currentCents: number;
+    monthlyContributionCents: number | null;
+    contributionDay: number | null;
   }>,
 ): Promise<SavingGoal> {
   const raw = await request<Record<string, unknown>>(`/v1/saving-goals/${id}`, {
-    method: "PATCH",
+    method: 'PATCH',
     body: JSON.stringify(input),
   });
   return mapSaving(raw);

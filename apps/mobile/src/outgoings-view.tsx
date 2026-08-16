@@ -12,9 +12,12 @@ import {
   currencySymbol,
   formatMoney,
   getMonthOutgoings,
+  markOutgoingPaid,
+  unmarkOutgoingPaid,
   updateBudget,
   type Budget,
   type MonthOutgoings,
+  type OutgoingItem,
 } from './api';
 
 const colors = {
@@ -155,6 +158,37 @@ export function OutgoingsView({
     }
   }
 
+  async function togglePaid(item: OutgoingItem) {
+    if (item.source !== 'recurring' && item.source !== 'saving') return;
+    setBusy(true);
+    try {
+      if (item.paid && item.paymentId) {
+        await unmarkOutgoingPaid(budget.id, item.paymentId);
+      } else {
+        const sourceId =
+          item.source === 'recurring' ? item.recurringId : item.savingGoalId;
+        if (!sourceId) throw new Error('Missing payment source.');
+        await markOutgoingPaid(budget.id, {
+          sourceType:
+            item.source === 'recurring' ? 'recurring_outgoing' : 'saving_goal',
+          sourceId,
+          dueDate: item.date,
+        });
+      }
+      await load();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not update payment.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function sourceLabel(item: OutgoingItem) {
+    if (item.source === 'recurring') return 'Bill';
+    if (item.source === 'saving') return 'Savings';
+    return 'Logged';
+  }
+
   return (
     <View style={styles.stack}>
       <View style={styles.card}>
@@ -189,6 +223,9 @@ export function OutgoingsView({
         {data ? (
           <Text style={styles.meta}>
             {formatMoney(data.totals.expenseCents, displayCurrency)} out this month
+            {data.totals.outstandingCents != null
+              ? ` · ${formatMoney(data.totals.outstandingCents, displayCurrency)} outstanding`
+              : ''}
           </Text>
         ) : null}
       </View>
@@ -291,9 +328,30 @@ export function OutgoingsView({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemTitle}>{item.title}</Text>
                       <Text style={styles.meta}>
-                        {item.source === 'recurring' ? 'Recurring' : 'Logged'}
+                        {sourceLabel(item)}
+                        {item.paid
+                          ? ' · paid'
+                          : item.source !== 'entry'
+                            ? ' · outstanding'
+                            : ''}
                       </Text>
                     </View>
+                    {(item.source === 'recurring' || item.source === 'saving') && (
+                      <Pressable
+                        style={[styles.payChip, item.paid && styles.payChipPaid]}
+                        disabled={busy}
+                        onPress={() => void togglePaid(item)}
+                      >
+                        <Text
+                          style={[
+                            styles.payChipText,
+                            item.paid && styles.payChipTextPaid,
+                          ]}
+                        >
+                          {item.paid ? 'Paid' : 'Mark paid'}
+                        </Text>
+                      </Pressable>
+                    )}
                     <Text style={styles.expense}>
                       -{formatMoney(item.amountCents, displayCurrency)}
                     </Text>
@@ -315,9 +373,30 @@ export function OutgoingsView({
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
                   <Text style={styles.meta}>
-                    {item.date} · {item.source === 'recurring' ? 'Recurring' : 'Logged'}
+                    {item.date} · {sourceLabel(item)}
+                    {item.paid
+                      ? ' · paid'
+                      : item.source !== 'entry'
+                        ? ' · outstanding'
+                        : ''}
                   </Text>
                 </View>
+                {(item.source === 'recurring' || item.source === 'saving') && (
+                  <Pressable
+                    style={[styles.payChip, item.paid && styles.payChipPaid]}
+                    disabled={busy}
+                    onPress={() => void togglePaid(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.payChipText,
+                        item.paid && styles.payChipTextPaid,
+                      ]}
+                    >
+                      {item.paid ? 'Paid' : 'Mark paid'}
+                    </Text>
+                  </Pressable>
+                )}
                 <Text style={styles.expense}>
                   -{formatMoney(item.amountCents, displayCurrency)}
                 </Text>
@@ -469,6 +548,15 @@ const styles = StyleSheet.create({
   },
   itemTitle: { color: colors.ink, fontWeight: '600' },
   expense: { color: colors.danger, fontWeight: '700' },
+  payChip: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: '#F4E4DF',
+  },
+  payChipPaid: { backgroundColor: colors.sage },
+  payChipText: { color: colors.danger, fontSize: 11, fontWeight: '700' },
+  payChipTextPaid: { color: colors.sageDeep },
   reco: {
     borderWidth: 1,
     borderColor: colors.line,

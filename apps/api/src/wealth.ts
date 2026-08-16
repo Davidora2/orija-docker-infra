@@ -205,6 +205,19 @@ export function registerWealthRoutes(
         targetCents: z.number().int().min(0).default(0),
         currentCents: z.number().int().min(0).default(0),
         visibility: visibilitySchema.default('PRIVATE'),
+        monthlyContributionCents: z.number().int().positive().nullable().optional(),
+        contributionDay: z.number().int().min(1).max(28).nullable().optional(),
+      })
+      .superRefine((value, ctx) => {
+        const hasAmount = value.monthlyContributionCents != null;
+        const hasDay = value.contributionDay != null;
+        if (hasAmount !== hasDay) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'Monthly contribution amount and contribution day must be set together.',
+          });
+        }
       })
       .parse(request.body);
 
@@ -221,7 +234,8 @@ export function registerWealthRoutes(
     const [row] = await sql`
       INSERT INTO saving_goals (
         owner_user_id, household_id, visibility, category, custom_label,
-        name, target_cents, current_cents
+        name, target_cents, current_cents,
+        monthly_contribution_cents, contribution_day
       ) VALUES (
         ${userId},
         ${householdId},
@@ -230,7 +244,9 @@ export function registerWealthRoutes(
         ${body.category === 'custom' ? body.customLabel! : null},
         ${body.name},
         ${body.targetCents},
-        ${body.currentCents}
+        ${body.currentCents},
+        ${body.monthlyContributionCents ?? null},
+        ${body.contributionDay ?? null}
       )
       RETURNING *
     `;
@@ -249,9 +265,37 @@ export function registerWealthRoutes(
         targetCents: z.number().int().min(0).optional(),
         currentCents: z.number().int().min(0).optional(),
         sortOrder: z.number().int().optional(),
+        monthlyContributionCents: z.number().int().positive().nullable().optional(),
+        contributionDay: z.number().int().min(1).max(28).nullable().optional(),
       })
       .refine((value) => Object.keys(value).length > 0)
       .parse(request.body);
+
+    const [existing] = await sql<
+      {
+        monthlyContributionCents: number | null;
+        contributionDay: number | null;
+      }[]
+    >`
+      SELECT monthly_contribution_cents, contribution_day
+      FROM saving_goals
+      WHERE id = ${id}
+    `;
+    const nextAmount =
+      body.monthlyContributionCents !== undefined
+        ? body.monthlyContributionCents
+        : existing?.monthlyContributionCents ?? null;
+    const nextDay =
+      body.contributionDay !== undefined
+        ? body.contributionDay
+        : existing?.contributionDay ?? null;
+    if ((nextAmount == null) !== (nextDay == null)) {
+      throw new ApiError(
+        400,
+        'contribution_schedule_incomplete',
+        'Monthly contribution amount and contribution day must be set together.',
+      );
+    }
 
     const [row] = await sql`
       UPDATE saving_goals SET
@@ -264,6 +308,16 @@ export function registerWealthRoutes(
         target_cents = COALESCE(${body.targetCents ?? null}, target_cents),
         current_cents = COALESCE(${body.currentCents ?? null}, current_cents),
         sort_order = COALESCE(${body.sortOrder ?? null}, sort_order),
+        monthly_contribution_cents = CASE
+          WHEN ${body.monthlyContributionCents !== undefined}
+            THEN ${body.monthlyContributionCents ?? null}
+          ELSE monthly_contribution_cents
+        END,
+        contribution_day = CASE
+          WHEN ${body.contributionDay !== undefined}
+            THEN ${body.contributionDay ?? null}
+          ELSE contribution_day
+        END,
         updated_at = now()
       WHERE id = ${id}
       RETURNING *

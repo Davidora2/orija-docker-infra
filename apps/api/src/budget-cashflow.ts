@@ -17,7 +17,7 @@ export type RecurringOutgoing = {
 
 export type OutgoingItem = {
   id: string;
-  source: 'entry' | 'recurring';
+  source: 'entry' | 'recurring' | 'saving';
   kind: 'INCOME' | 'EXPENSE';
   date: string;
   amountCents: number;
@@ -26,6 +26,10 @@ export type OutgoingItem = {
   categoryId: string | null;
   categoryName: string | null;
   recurringId: string | null;
+  savingGoalId: string | null;
+  paid: boolean;
+  paidAt: string | null;
+  paymentId: string | null;
 };
 
 export type Recommendation = {
@@ -46,7 +50,7 @@ export type Recommendation = {
     | 'other';
 };
 
-function pad(n: number) {
+export function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
@@ -155,6 +159,10 @@ export function projectRecurringForMonth(
         categoryId: row.categoryId,
         categoryName: null,
         recurringId: row.id,
+        savingGoalId: null,
+        paid: false,
+        paidAt: null,
+        paymentId: null,
       });
       continue;
     }
@@ -175,6 +183,10 @@ export function projectRecurringForMonth(
           categoryId: row.categoryId,
           categoryName: null,
           recurringId: row.id,
+          savingGoalId: null,
+          paid: false,
+          paidAt: null,
+          paymentId: null,
         });
       }
     }

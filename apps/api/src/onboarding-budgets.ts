@@ -799,6 +799,10 @@ export function registerOnboardingAndBudgetRoutes(
           ? (categoryNames.get(entry.categoryId) ?? null)
           : null,
         recurringId: null,
+        savingGoalId: null,
+        paid: true,
+        paidAt: entry.occurredOn.slice(0, 10),
+        paymentId: null,
       }));
 
       const covered = new Set(
@@ -814,11 +818,110 @@ export function registerOnboardingAndBudgetRoutes(
         return !covered.has(key);
       });
 
-      const list = [...entryItems, ...recurringItems].sort((a, b) =>
-        a.date === b.date
-          ? b.amountCents - a.amountCents
-          : a.date.localeCompare(b.date),
+      const savingsGoals = await sql<
+        {
+          id: string;
+          name: string;
+          monthlyContributionCents: number;
+          contributionDay: number;
+        }[]
+      >`
+        SELECT
+          id, name, monthly_contribution_cents, contribution_day
+        FROM saving_goals
+        WHERE monthly_contribution_cents IS NOT NULL
+          AND contribution_day IS NOT NULL
+          AND (
+            owner_user_id = ${userId}
+            OR (
+              visibility = 'SHARED'
+              AND EXISTS (
+                SELECT 1 FROM household_members hm
+                WHERE hm.household_id = saving_goals.household_id
+                  AND hm.user_id = ${userId}
+              )
+            )
+          )
+      `;
+
+      const savingItems: OutgoingItem[] = savingsGoals.map((goal) => {
+        const day = Math.min(goal.contributionDay, endDay);
+        const date = `${query.year}-${String(query.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return {
+          id: `saving:${goal.id}:${date}`,
+          source: 'saving' as const,
+          kind: 'EXPENSE' as const,
+          date,
+          amountCents: Number(goal.monthlyContributionCents),
+          title: `Savings · ${goal.name}`,
+          note: 'monthly savings contribution',
+          categoryId: null,
+          categoryName: 'Savings',
+          recurringId: null,
+          savingGoalId: goal.id,
+          paid: false,
+          paidAt: null,
+          paymentId: null,
+        };
+      });
+
+      const payments = await sql<
+        {
+          id: string;
+          sourceType: 'recurring_outgoing' | 'saving_goal';
+          sourceId: string;
+          dueDate: string;
+          paidAt: string;
+        }[]
+      >`
+        SELECT
+          id,
+          source_type,
+          source_id,
+          due_date::text,
+          paid_at::text
+        FROM payment_occurrences
+        WHERE owner_user_id = ${userId}
+          AND due_date >= ${start}::date
+          AND due_date <= ${end}::date
+          AND (
+            budget_id = ${id}
+            OR source_type = 'saving_goal'
+          )
+      `;
+      const paymentByKey = new Map(
+        payments.map((row) => [
+          `${row.sourceType}:${row.sourceId}:${row.dueDate.slice(0, 10)}`,
+          row,
+        ]),
       );
+
+      const withPaidStatus = (item: OutgoingItem): OutgoingItem => {
+        if (item.source === 'entry') return item;
+        const key =
+          item.source === 'recurring' && item.recurringId
+            ? `recurring_outgoing:${item.recurringId}:${item.date}`
+            : item.source === 'saving' && item.savingGoalId
+              ? `saving_goal:${item.savingGoalId}:${item.date}`
+              : null;
+        if (!key) return item;
+        const payment = paymentByKey.get(key);
+        if (!payment) return item;
+        return {
+          ...item,
+          paid: true,
+          paidAt: payment.paidAt,
+          paymentId: payment.id,
+        };
+      };
+
+      const list = [...entryItems, ...recurringItems, ...savingItems]
+        .map(withPaidStatus)
+        .sort((a, b) =>
+          a.date === b.date
+            ? b.amountCents - a.amountCents
+            : a.date.localeCompare(b.date),
+        );
 
       const payDates = payDatesInMonth(
         query.year,
@@ -854,6 +957,22 @@ export function registerOnboardingAndBudgetRoutes(
       const recurringCents = list
         .filter((item) => item.kind === 'EXPENSE' && item.source === 'recurring')
         .reduce((sum, item) => sum + item.amountCents, 0);
+      const outstandingCents = list
+        .filter(
+          (item) =>
+            item.kind === 'EXPENSE' &&
+            (item.source === 'recurring' || item.source === 'saving') &&
+            !item.paid,
+        )
+        .reduce((sum, item) => sum + item.amountCents, 0);
+      const paidTrackedCents = list
+        .filter(
+          (item) =>
+            item.kind === 'EXPENSE' &&
+            (item.source === 'recurring' || item.source === 'saving') &&
+            item.paid,
+        )
+        .reduce((sum, item) => sum + item.amountCents, 0);
 
       const recommendations = buildRecommendations({
         currency: schedule?.currency ?? budget.currency,
@@ -882,11 +1001,137 @@ export function registerOnboardingAndBudgetRoutes(
           incomeCents,
           recurringCents,
           oneOffCents: expenseCents - recurringCents,
+          outstandingCents,
+          paidTrackedCents,
         },
         recommendations,
         flags: recommendations.filter((item) => item.flagged),
         generatedOn: toDateString(new Date()),
       };
+    },
+  );
+
+  app.post(
+    '/v1/budgets/:id/payments',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      await assertBudgetAccess(sql, userId, id);
+      const body = z
+        .object({
+          sourceType: z.enum(['recurring_outgoing', 'saving_goal']),
+          sourceId: z.string().uuid(),
+          dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          note: z.string().trim().max(500).optional(),
+        })
+        .parse(request.body);
+
+      let amountCents = 0;
+      let title = '';
+
+      if (body.sourceType === 'recurring_outgoing') {
+        const [row] = await sql<
+          { id: string; name: string; amountCents: number }[]
+        >`
+          SELECT id, name, amount_cents
+          FROM budget_recurring_outgoings
+          WHERE id = ${body.sourceId} AND budget_id = ${id} AND active = true
+        `;
+        if (!row) {
+          throw new ApiError(
+            404,
+            'recurring_not_found',
+            'Recurring outgoing not found on this budget.',
+          );
+        }
+        amountCents = Number(row.amountCents);
+        title = row.name;
+      } else {
+        const [row] = await sql<
+          {
+            id: string;
+            name: string;
+            monthlyContributionCents: number | null;
+          }[]
+        >`
+          SELECT id, name, monthly_contribution_cents
+          FROM saving_goals
+          WHERE id = ${body.sourceId}
+            AND (
+              owner_user_id = ${userId}
+              OR (
+                visibility = 'SHARED'
+                AND EXISTS (
+                  SELECT 1 FROM household_members hm
+                  WHERE hm.household_id = saving_goals.household_id
+                    AND hm.user_id = ${userId}
+                )
+              )
+            )
+        `;
+        if (!row || row.monthlyContributionCents == null) {
+          throw new ApiError(
+            404,
+            'saving_goal_not_found',
+            'Saving goal with a monthly contribution was not found.',
+          );
+        }
+        amountCents = Number(row.monthlyContributionCents);
+        title = `Savings · ${row.name}`;
+      }
+
+      const [payment] = await sql`
+        INSERT INTO payment_occurrences (
+          owner_user_id, budget_id, source_type, source_id,
+          due_date, amount_cents, title, paid_by, note
+        ) VALUES (
+          ${userId},
+          ${body.sourceType === 'recurring_outgoing' ? id : null},
+          ${body.sourceType},
+          ${body.sourceId},
+          ${body.dueDate}::date,
+          ${amountCents},
+          ${title},
+          ${userId},
+          ${body.note ?? ''}
+        )
+        ON CONFLICT (source_type, source_id, due_date) DO UPDATE SET
+          paid_at = now(),
+          paid_by = EXCLUDED.paid_by,
+          amount_cents = EXCLUDED.amount_cents,
+          title = EXCLUDED.title,
+          note = EXCLUDED.note,
+          budget_id = EXCLUDED.budget_id
+        RETURNING *
+      `;
+      return reply.code(201).send(payment);
+    },
+  );
+
+  app.delete(
+    '/v1/budgets/:id/payments/:paymentId',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const params = z
+        .object({ id: z.string().uuid(), paymentId: z.string().uuid() })
+        .parse(request.params);
+      await assertBudgetAccess(sql, userId, params.id);
+      const result = await sql`
+        DELETE FROM payment_occurrences
+        WHERE id = ${params.paymentId}
+          AND owner_user_id = ${userId}
+          AND (
+            budget_id = ${params.id}
+            OR (budget_id IS NULL AND source_type = 'saving_goal')
+          )
+        RETURNING id
+      `;
+      if (result.count === 0) {
+        throw new ApiError(404, 'payment_not_found', 'Payment record not found.');
+      }
+      return reply.code(204).send();
     },
   );
 }

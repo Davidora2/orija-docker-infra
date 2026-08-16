@@ -6,9 +6,12 @@ import {
   currencySymbol,
   formatMoney,
   getMonthOutgoings,
+  markOutgoingPaid,
+  unmarkOutgoingPaid,
   updateBudget,
   type Budget,
   type MonthOutgoings,
+  type OutgoingItem,
 } from "../lib/api";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -147,6 +150,55 @@ export function OutgoingsPanel({
     }
   }
 
+  async function togglePaid(item: OutgoingItem) {
+    if (item.source !== "recurring" && item.source !== "saving") return;
+    setBusy(true);
+    try {
+      if (item.paid && item.paymentId) {
+        await unmarkOutgoingPaid(budget.id, item.paymentId);
+      } else {
+        const sourceId =
+          item.source === "recurring" ? item.recurringId : item.savingGoalId;
+        if (!sourceId) throw new Error("Missing payment source.");
+        await markOutgoingPaid(budget.id, {
+          sourceType:
+            item.source === "recurring" ? "recurring_outgoing" : "saving_goal",
+          sourceId,
+          dueDate: item.date,
+        });
+      }
+      await load();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not update payment.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function sourceLabel(item: OutgoingItem) {
+    if (item.source === "recurring") return "Bill";
+    if (item.source === "saving") return "Savings";
+    return "Logged";
+  }
+
+  function PaymentToggle({ item }: { item: OutgoingItem }) {
+    if (item.source !== "recurring" && item.source !== "saving") return null;
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void togglePaid(item)}
+        className={`rounded-lg px-2.5 py-1 text-[11px] font-bold disabled:opacity-50 ${
+          item.paid
+            ? "bg-[#dbe8d7] text-[#617a57]"
+            : "bg-[#f4e4df] text-[#c9634f]"
+        }`}
+      >
+        {item.paid ? "Paid" : "Mark paid"}
+      </button>
+    );
+  }
+
   return (
     <section className="space-y-4">
       <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
@@ -203,6 +255,15 @@ export function OutgoingsPanel({
             {formatMoney(data.totals.expenseCents, displayCurrency)} out ·{" "}
             {formatMoney(data.totals.recurringCents, displayCurrency)} recurring ·{" "}
             {formatMoney(data.totals.oneOffCents, displayCurrency)} one-off
+            {data.totals.outstandingCents != null ? (
+              <>
+                {" "}
+                ·{" "}
+                <span className="font-semibold text-[#c9634f]">
+                  {formatMoney(data.totals.outstandingCents, displayCurrency)} outstanding
+                </span>
+              </>
+            ) : null}
           </p>
         ) : null}
       </article>
@@ -306,18 +367,22 @@ export function OutgoingsPanel({
                     <div>
                       <p className="font-semibold">{item.title}</p>
                       <p className="text-xs text-[#6c7771]">
-                        {item.source === "recurring" ? "Recurring" : "Logged"}
+                        {sourceLabel(item)}
+                        {item.paid ? " · paid" : item.source !== "entry" ? " · outstanding" : ""}
                         {item.note ? ` · ${item.note}` : ""}
                       </p>
                     </div>
-                    <p
-                      className={`font-bold ${
-                        item.kind === "INCOME" ? "text-[#617a57]" : "text-[#c9634f]"
-                      }`}
-                    >
-                      {item.kind === "INCOME" ? "+" : "-"}
-                      {formatMoney(item.amountCents, displayCurrency)}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <PaymentToggle item={item} />
+                      <p
+                        className={`font-bold ${
+                          item.kind === "INCOME" ? "text-[#617a57]" : "text-[#c9634f]"
+                        }`}
+                      >
+                        {item.kind === "INCOME" ? "+" : "-"}
+                        {formatMoney(item.amountCents, displayCurrency)}
+                      </p>
+                    </div>
                   </div>
                 ))
               )}
@@ -339,12 +404,16 @@ export function OutgoingsPanel({
                 <div>
                   <p className="font-semibold">{item.title}</p>
                   <p className="text-xs text-[#6c7771]">
-                    {item.date} · {item.source === "recurring" ? "Recurring" : "Logged"}
+                    {item.date} · {sourceLabel(item)}
+                    {item.paid ? " · paid" : item.source !== "entry" ? " · outstanding" : ""}
                   </p>
                 </div>
-                <p className="font-bold text-[#c9634f]">
-                  -{formatMoney(item.amountCents, displayCurrency)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <PaymentToggle item={item} />
+                  <p className="font-bold text-[#c9634f]">
+                    -{formatMoney(item.amountCents, displayCurrency)}
+                  </p>
+                </div>
               </div>
             ))
           )}

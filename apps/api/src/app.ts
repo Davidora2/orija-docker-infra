@@ -6,9 +6,14 @@ import { z, ZodError } from 'zod';
 import { createAuth } from './auth.js';
 import { registerAuthExtras } from './auth-extras.js';
 import { registerCalendarRoutes } from './calendar.js';
+import {
+  sendBillRemindersForUser,
+  startBillReminderScheduler,
+} from './bill-reminders.js';
 import type { AppConfig } from './config.js';
 import { createDatabase, type Database } from './db.js';
 import { ApiError } from './errors.js';
+import { createMailer } from './mailer.js';
 import { runMigrations } from './migrations.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
 import { registerWealthRoutes } from './wealth.js';
@@ -141,6 +146,7 @@ type AppDependencies = {
   sql?: Database;
   logger?: boolean;
   runSchemaMigrations?: boolean;
+  enableBillReminders?: boolean;
 };
 
 function publicUser(user: {
@@ -821,7 +827,43 @@ export async function buildApp(
   });
   registerCalendarRoutes(app, sql, auth);
 
+  const mailer = createMailer(config);
+
+  app.post(
+    '/v1/payments/reminders/run',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = request.authUser.id;
+      const [user] = await sql<
+        {
+          id: string;
+          email: string;
+          displayName: string;
+          timezone: string;
+        }[]
+      >`
+        SELECT id, email, display_name, timezone
+        FROM users
+        WHERE id = ${userId}
+      `;
+      if (!user) {
+        throw new ApiError(404, 'user_not_found', 'User not found.');
+      }
+      return sendBillRemindersForUser(sql, mailer, user);
+    },
+  );
+
+  const remindersEnabled =
+    dependencies.enableBillReminders ?? config.nodeEnv !== 'test';
+  const reminderTimer = remindersEnabled
+    ? startBillReminderScheduler(sql, mailer, app.log, {
+        enabled: true,
+        intervalMs: 60 * 60 * 1000,
+      })
+    : null;
+
   app.addHook('onClose', async () => {
+    if (reminderTimer) clearInterval(reminderTimer);
     if (ownsDatabase) await sql.end();
   });
 

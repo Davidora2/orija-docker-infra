@@ -59,6 +59,8 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [goalTarget, setGoalTarget] = useState('');
   const [goalCurrent, setGoalCurrent] = useState('');
   const [goalCustom, setGoalCustom] = useState('');
+  const [goalMonthly, setGoalMonthly] = useState('');
+  const [goalDay, setGoalDay] = useState('1');
 
   const [invName, setInvName] = useState('');
   const [invType, setInvType] =
@@ -183,12 +185,35 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
             onChangeText={setGoalCurrent}
           />
         </View>
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, styles.flex]}
+            placeholder="Monthly contribution"
+            placeholderTextColor="#9BA49E"
+            keyboardType="decimal-pad"
+            value={goalMonthly}
+            onChangeText={setGoalMonthly}
+          />
+          <TextInput
+            style={[styles.input, styles.flex]}
+            placeholder="Day (1-28)"
+            placeholderTextColor="#9BA49E"
+            keyboardType="number-pad"
+            value={goalDay}
+            onChangeText={setGoalDay}
+          />
+        </View>
         <Pressable
           disabled={busy}
           style={styles.button}
           onPress={() =>
             void run(async () => {
               if (!goalName.trim()) throw new Error('Name the saving goal.');
+              const monthly = Number(goalMonthly);
+              const hasMonthly =
+                goalMonthly.trim() !== '' &&
+                Number.isFinite(monthly) &&
+                monthly > 0;
               await createSavingGoal({
                 name: goalName.trim(),
                 category: goalCategory,
@@ -196,11 +221,16 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
                   goalCategory === 'custom' ? goalCustom.trim() : undefined,
                 targetCents: Math.round(Number(goalTarget || 0) * 100),
                 currentCents: Math.round(Number(goalCurrent || 0) * 100),
+                monthlyContributionCents: hasMonthly
+                  ? Math.round(monthly * 100)
+                  : null,
+                contributionDay: hasMonthly ? Number(goalDay || 1) : null,
               });
               setGoalName('');
               setGoalTarget('');
               setGoalCurrent('');
               setGoalCustom('');
+              setGoalMonthly('');
               notify('Saving goal added.');
             })
           }
@@ -213,6 +243,12 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
             <Text style={styles.sub}>
               {money(goal.currentCents)} / {money(goal.targetCents)}
             </Text>
+            {goal.monthlyContributionCents ? (
+              <Text style={styles.sub}>
+                Monthly {money(goal.monthlyContributionCents)} on day{' '}
+                {goal.contributionDay}
+              </Text>
+            ) : null}
           </View>
         ))}
       </View>

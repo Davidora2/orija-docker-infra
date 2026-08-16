@@ -31,6 +31,12 @@ const migrations = [
       new URL('../migrations/005_wealth_currency.sql', import.meta.url),
     ),
   },
+  {
+    version: '006_bill_payments',
+    path: fileURLToPath(
+      new URL('../migrations/006_bill_payments.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {
