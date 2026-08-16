@@ -13,6 +13,7 @@ export type RecurringOutgoing = {
   dayOfMonth: number | null;
   weekday: number | null;
   anchorDate: string | null;
+  note: string;
   active: boolean;
 };
 
@@ -115,6 +116,23 @@ export function payDatesInMonth(
   return dates;
 }
 
+function cadenceLabel(
+  cadence: RecurringOutgoing['cadence'],
+): string {
+  if (cadence === 'biweekly') return 'every 2 weeks';
+  if (cadence === 'four_weekly') return 'every 4 weeks';
+  return `${cadence} outgoing`;
+}
+
+function recurringDisplayNote(
+  row: RecurringOutgoing,
+  fallback: string,
+): string {
+  const userNote = row.note?.trim();
+  if (!userNote) return fallback;
+  return userNote;
+}
+
 export function intervalDatesInMonth(
   year: number,
   month: number,
@@ -156,7 +174,7 @@ export function projectRecurringForMonth(
         date,
         amountCents: row.amountCents,
         title: row.name,
-        note: `${row.cadence} outgoing`,
+        note: recurringDisplayNote(row, cadenceLabel(row.cadence)),
         categoryId: row.categoryId,
         categoryName: null,
         recurringId: row.id,
@@ -180,7 +198,7 @@ export function projectRecurringForMonth(
           date: iso,
           amountCents: row.amountCents,
           title: row.name,
-          note: 'weekly outgoing',
+          note: recurringDisplayNote(row, 'weekly outgoing'),
           categoryId: row.categoryId,
           categoryName: null,
           recurringId: row.id,
@@ -198,8 +216,7 @@ export function projectRecurringForMonth(
       row.anchorDate
     ) {
       const interval = row.cadence === 'biweekly' ? 14 : 28;
-      const note =
-        row.cadence === 'biweekly' ? 'every 2 weeks' : 'every 4 weeks';
+      const fallback = cadenceLabel(row.cadence);
       for (const iso of intervalDatesInMonth(year, month, interval, row.anchorDate)) {
         items.push({
           id: `recurring:${row.id}:${iso}`,
@@ -208,7 +225,7 @@ export function projectRecurringForMonth(
           date: iso,
           amountCents: row.amountCents,
           title: row.name,
-          note,
+          note: recurringDisplayNote(row, fallback),
           categoryId: row.categoryId,
           categoryName: null,
           recurringId: row.id,
@@ -423,6 +440,7 @@ export async function listRecurring(
       day_of_month,
       weekday,
       anchor_date::text AS anchor_date,
+      note,
       active
     FROM budget_recurring_outgoings
     WHERE budget_id = ${budgetId}
@@ -430,6 +448,7 @@ export async function listRecurring(
   `;
   return rows.map((row) => ({
     ...row,
+    note: row.note ?? '',
     anchorDate: row.anchorDate ? String(row.anchorDate).slice(0, 10) : null,
   }));
 }

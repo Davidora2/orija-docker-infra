@@ -20,6 +20,7 @@ describe('budget cashflow helpers', () => {
         dayOfMonth: 1,
         weekday: null,
         anchorDate: null,
+        note: '',
         active: true,
       },
       {
@@ -32,6 +33,7 @@ describe('budget cashflow helpers', () => {
         dayOfMonth: null,
         weekday: 1,
         anchorDate: null,
+        note: '',
         active: true,
       },
     ];
@@ -55,11 +57,13 @@ describe('budget cashflow helpers', () => {
         dayOfMonth: null,
         weekday: null,
         anchorDate: '2026-08-07',
+        note: 'From current account',
         active: true,
       },
     ];
     const items = projectRecurringForMonth(2026, 8, recurring);
     expect(items.map((item) => item.date)).toEqual(['2026-08-07', '2026-08-21']);
+    expect(items[0]?.note).toBe('From current account');
   });
 
   it('lists monthly payday from next pay date', () => {
@@ -154,6 +158,7 @@ describe('budget cashflow helpers', () => {
           dayOfMonth: 20,
           weekday: null,
           anchorDate: null,
+          note: '',
           active: true,
         },
       ],

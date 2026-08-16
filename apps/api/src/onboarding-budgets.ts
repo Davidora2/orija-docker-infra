@@ -591,6 +591,7 @@ export function registerOnboardingAndBudgetRoutes(
             .nullable()
             .optional(),
           categoryId: z.string().uuid().nullable().optional(),
+          note: z.string().trim().max(500).optional(),
           active: z.boolean().default(true),
         })
         .parse(request.body);
@@ -609,7 +610,7 @@ export function registerOnboardingAndBudgetRoutes(
       const [row] = await sql`
         INSERT INTO budget_recurring_outgoings (
           budget_id, category_id, name, amount_cents, cadence,
-          day_of_month, weekday, anchor_date, active
+          day_of_month, weekday, anchor_date, note, active
         ) VALUES (
           ${id},
           ${body.categoryId ?? null},
@@ -627,6 +628,7 @@ export function registerOnboardingAndBudgetRoutes(
               ? (body.anchorDate ?? null)
               : null
           },
+          ${body.note ?? ''},
           ${body.active}
         )
         RETURNING *
@@ -660,6 +662,7 @@ export function registerOnboardingAndBudgetRoutes(
             .nullable()
             .optional(),
           categoryId: z.string().uuid().nullable().optional(),
+          note: z.string().trim().max(500).optional(),
           active: z.boolean().optional(),
         })
         .refine((value) => Object.keys(value).length > 0)
@@ -715,6 +718,10 @@ export function registerOnboardingAndBudgetRoutes(
           category_id = CASE
             WHEN ${body.categoryId !== undefined} THEN ${body.categoryId ?? null}
             ELSE category_id
+          END,
+          note = CASE
+            WHEN ${body.note !== undefined} THEN ${body.note ?? ''}
+            ELSE note
           END,
           active = COALESCE(${body.active ?? null}, active),
           updated_at = now()

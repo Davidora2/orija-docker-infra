@@ -27,6 +27,9 @@ export function BudgetPanel({ account, onError }: Props) {
   const [note, setNote] = useState("");
   const [kind, setKind] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [occurredOn, setOccurredOn] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<"ledger" | "outgoings" | "wealth">(
     "outgoings",
@@ -89,6 +92,7 @@ export function BudgetPanel({ account, onError }: Props) {
         amountCents: Math.round(pounds * 100),
         categoryId: kind === "EXPENSE" ? categoryId : null,
         note: note.trim(),
+        occurredOn: occurredOn || undefined,
       });
       setAmount("");
       setNote("");
@@ -319,6 +323,17 @@ export function BudgetPanel({ account, onError }: Props) {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
+            <label className="block space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                Date
+              </span>
+              <input
+                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                type="date"
+                value={occurredOn}
+                onChange={(e) => setOccurredOn(e.target.value)}
+              />
+            </label>
             <input
               className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
               placeholder="Note"

@@ -10,14 +10,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createRecurringOutgoing,
   currencySymbol,
+  deleteRecurringOutgoing,
   formatMoney,
   getMonthOutgoings,
+  listRecurringOutgoings,
   markOutgoingPaid,
   unmarkOutgoingPaid,
   updateBudget,
+  updateRecurringOutgoing,
   type Budget,
   type MonthOutgoings,
   type OutgoingItem,
+  type RecurringOutgoing,
 } from './api';
 
 const colors = {
@@ -81,6 +85,17 @@ export function OutgoingsView({
   >('monthly');
   const [recWeekday, setRecWeekday] = useState('1');
   const [recAnchor, setRecAnchor] = useState('');
+  const [recNote, setRecNote] = useState('');
+  const [recDueDate, setRecDueDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [recurringRows, setRecurringRows] = useState<RecurringOutgoing[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editWeekday, setEditWeekday] = useState('1');
+  const [editDate, setEditDate] = useState('');
   const displayCurrency =
     preferredCurrency || data?.currency || budget.currency || 'GBP';
   const symbol = currencySymbol(displayCurrency);
@@ -94,8 +109,12 @@ export function OutgoingsView({
   }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents]);
 
   const load = useCallback(async () => {
-    const next = await getMonthOutgoings(budget.id, year, month);
+    const [next, recurring] = await Promise.all([
+      getMonthOutgoings(budget.id, year, month),
+      listRecurringOutgoings(budget.id),
+    ]);
     setData(next);
+    setRecurringRows(recurring);
   }, [budget.id, year, month]);
 
   useEffect(() => {
@@ -145,35 +164,120 @@ export function OutgoingsView({
     }
     if (
       (recCadence === 'biweekly' || recCadence === 'four_weekly') &&
-      !recAnchor
+      !(recAnchor || recDueDate)
     ) {
-      notify('Pick the next due date for every 2 / 4 week outgoings.');
+      notify('Pick the next payment date for every 2 / 4 week outgoings.');
+      return;
+    }
+    if ((recCadence === 'monthly' || recCadence === 'yearly') && !recDueDate) {
+      notify('Pick a payment due date.');
       return;
     }
     setBusy(true);
     try {
+      const dueDay = Number((recDueDate || recAnchor).slice(8, 10));
       await createRecurringOutgoing(budget.id, {
         name: recName.trim(),
         amountCents: Math.round(pounds * 100),
         cadence: recCadence,
         dayOfMonth:
           recCadence === 'monthly' || recCadence === 'yearly'
-            ? Number(recDay) || 1
+            ? Math.min(Math.max(dueDay || Number(recDay) || 1, 1), 28)
             : null,
         weekday: recCadence === 'weekly' ? Number(recWeekday) : null,
         anchorDate:
           recCadence === 'biweekly' || recCadence === 'four_weekly'
-            ? recAnchor
+            ? recAnchor || recDueDate
             : null,
+        note: recNote.trim() || undefined,
       });
       setRecName('');
       setRecAmount('');
       setRecAnchor('');
+      setRecNote('');
       await load();
       onChanged();
       notify('Recurring outgoing added.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not add recurring.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEdit(row: RecurringOutgoing) {
+    setEditingId(row.id);
+    setEditName(row.name);
+    setEditAmount(String(row.amountCents / 100));
+    setEditNote(row.note ?? '');
+    setEditWeekday(String(row.weekday ?? 1));
+    if (row.cadence === 'biweekly' || row.cadence === 'four_weekly') {
+      setEditDate(row.anchorDate ?? '');
+    } else if (row.dayOfMonth) {
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      setEditDate(`${y}-${m}-${String(row.dayOfMonth).padStart(2, '0')}`);
+    } else {
+      setEditDate('');
+    }
+  }
+
+  async function saveEdit(row: RecurringOutgoing) {
+    const pounds = Number(editAmount);
+    if (!editName.trim() || !Number.isFinite(pounds) || pounds <= 0) {
+      notify('Name and positive amount are required.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const patch: Parameters<typeof updateRecurringOutgoing>[2] = {
+        name: editName.trim(),
+        amountCents: Math.round(pounds * 100),
+        note: editNote.trim(),
+      };
+      if (row.cadence === 'weekly') {
+        patch.weekday = Number(editWeekday);
+      } else if (row.cadence === 'biweekly' || row.cadence === 'four_weekly') {
+        if (!editDate) {
+          notify('Pick the next payment date.');
+          setBusy(false);
+          return;
+        }
+        patch.anchorDate = editDate;
+      } else {
+        if (!editDate) {
+          notify('Pick a payment due date.');
+          setBusy(false);
+          return;
+        }
+        patch.dayOfMonth = Math.min(
+          Math.max(Number(editDate.slice(8, 10)) || 1, 1),
+          28,
+        );
+      }
+      await updateRecurringOutgoing(budget.id, row.id, patch);
+      setEditingId(null);
+      await load();
+      onChanged();
+      notify('Recurring bill updated.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not update bill.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeRecurring(row: RecurringOutgoing) {
+    setBusy(true);
+    try {
+      await deleteRecurringOutgoing(budget.id, row.id);
+      if (editingId === row.id) setEditingId(null);
+      await load();
+      onChanged();
+      notify('Recurring bill removed.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not remove bill.');
     } finally {
       setBusy(false);
     }
@@ -428,6 +532,111 @@ export function OutgoingsView({
       ) : null}
 
       <View style={styles.card}>
+        <Text style={styles.eyebrow}>Your recurring bills</Text>
+        {recurringRows.length === 0 ? (
+          <Text style={styles.meta}>No recurring bills yet.</Text>
+        ) : (
+          recurringRows.map((row) => (
+            <View key={row.id} style={styles.listRow}>
+              {editingId === row.id ? (
+                <View style={{ flex: 1, gap: 8 }}>
+                  <TextInput
+                    style={styles.input}
+                    value={editName}
+                    onChangeText={setEditName}
+                    placeholderTextColor="#9BA49E"
+                  />
+                  <TextInput
+                    style={styles.input}
+                    value={editAmount}
+                    onChangeText={setEditAmount}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor="#9BA49E"
+                  />
+                  {row.cadence === 'weekly' ? (
+                    <View style={styles.rowWrap}>
+                      {WEEKDAYS.map((label, index) => (
+                        <Pressable
+                          key={`${row.id}-${label}-${index}`}
+                          style={[
+                            styles.chip,
+                            editWeekday === String(index) && styles.chipActive,
+                          ]}
+                          onPress={() => setEditWeekday(String(index))}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editWeekday === String(index) &&
+                                styles.chipTextActive,
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={styles.input}
+                      value={editDate}
+                      onChangeText={setEditDate}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#9BA49E"
+                      autoCapitalize="none"
+                    />
+                  )}
+                  <TextInput
+                    style={styles.input}
+                    value={editNote}
+                    onChangeText={setEditNote}
+                    placeholder="Note — e.g. from joint account"
+                    placeholderTextColor="#9BA49E"
+                  />
+                  <View style={styles.row}>
+                    <Pressable
+                      style={styles.button}
+                      disabled={busy}
+                      onPress={() => void saveEdit(row)}
+                    >
+                      <Text style={styles.buttonText}>Save</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.chip}
+                      onPress={() => setEditingId(null)}
+                    >
+                      <Text style={styles.chipText}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemTitle}>{row.name}</Text>
+                    <Text style={styles.meta}>
+                      {formatMoney(row.amountCents, displayCurrency)} · {row.cadence}
+                      {row.dayOfMonth != null ? ` · day ${row.dayOfMonth}` : ''}
+                      {row.anchorDate ? ` · ${row.anchorDate}` : ''}
+                      {row.note ? ` · ${row.note}` : ''}
+                    </Text>
+                  </View>
+                  <Pressable style={styles.chip} onPress={() => startEdit(row)}>
+                    <Text style={styles.chipText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={busy}
+                    onPress={() => void removeRecurring(row)}
+                  >
+                    <Text style={styles.payChipText}>Remove</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.eyebrow}>Add recurring</Text>
         <TextInput
           style={styles.input}
@@ -471,46 +680,70 @@ export function OutgoingsView({
           ))}
         </View>
         {recCadence === 'weekly' ? (
-          <View style={styles.rowWrap}>
-            {WEEKDAYS.map((label, index) => (
-              <Pressable
-                key={`${label}-${index}`}
-                style={[
-                  styles.chip,
-                  recWeekday === String(index) && styles.chipActive,
-                ]}
-                onPress={() => setRecWeekday(String(index))}
-              >
-                <Text
+          <>
+            <Text style={styles.meta}>Due every</Text>
+            <View style={styles.rowWrap}>
+              {WEEKDAYS.map((label, index) => (
+                <Pressable
+                  key={`${label}-${index}`}
                   style={[
-                    styles.chipText,
-                    recWeekday === String(index) && styles.chipTextActive,
+                    styles.chip,
+                    recWeekday === String(index) && styles.chipActive,
                   ]}
+                  onPress={() => setRecWeekday(String(index))}
                 >
-                  {label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                  <Text
+                    style={[
+                      styles.chipText,
+                      recWeekday === String(index) && styles.chipTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
         ) : recCadence === 'biweekly' || recCadence === 'four_weekly' ? (
-          <TextInput
-            style={styles.input}
-            placeholder="Next due date (YYYY-MM-DD)"
-            placeholderTextColor="#9BA49E"
-            value={recAnchor}
-            onChangeText={setRecAnchor}
-            autoCapitalize="none"
-          />
+          <>
+            <Text style={styles.meta}>Next payment date (YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9BA49E"
+              value={recAnchor || recDueDate}
+              onChangeText={(value) => {
+                setRecAnchor(value);
+                setRecDueDate(value);
+              }}
+              autoCapitalize="none"
+            />
+          </>
         ) : (
-          <TextInput
-            style={styles.input}
-            placeholder="Day of month (1-28)"
-            placeholderTextColor="#9BA49E"
-            keyboardType="number-pad"
-            value={recDay}
-            onChangeText={setRecDay}
-          />
+          <>
+            <Text style={styles.meta}>Payment due date (YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9BA49E"
+              value={recDueDate}
+              onChangeText={(value) => {
+                setRecDueDate(value);
+                const day = Number(value.slice(8, 10));
+                if (day >= 1 && day <= 28) setRecDay(String(day));
+              }}
+              autoCapitalize="none"
+            />
+          </>
         )}
+        <Text style={styles.meta}>Note (optional)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Paid from joint account"
+          placeholderTextColor="#9BA49E"
+          value={recNote}
+          onChangeText={setRecNote}
+        />
         <Pressable
           style={[styles.button, busy && styles.disabled]}
           disabled={busy}

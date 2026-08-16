@@ -560,6 +560,7 @@ export type RecurringOutgoing = {
   dayOfMonth: number | null;
   weekday: number | null;
   anchorDate: string | null;
+  note: string;
   active: boolean;
 };
 
@@ -689,6 +690,7 @@ function mapRecurring(raw: Record<string, unknown>): RecurringOutgoing {
       const value = (raw.anchorDate ?? raw.anchor_date ?? null) as string | null;
       return value ? String(value).slice(0, 10) : null;
     })(),
+    note: String(raw.note ?? ''),
     active: Boolean(raw.active ?? true),
   };
 }
@@ -740,6 +742,7 @@ export async function addBudgetEntry(
     amountCents: number;
     categoryId?: string | null;
     note?: string;
+    occurredOn?: string;
   },
 ): Promise<void> {
   await request(`/v1/budgets/${budgetId}/entries`, {
@@ -797,6 +800,7 @@ export async function createRecurringOutgoing(
     dayOfMonth?: number | null;
     weekday?: number | null;
     anchorDate?: string | null;
+    note?: string;
     categoryId?: string | null;
   },
 ): Promise<RecurringOutgoing> {
@@ -808,6 +812,48 @@ export async function createRecurringOutgoing(
     },
   );
   return mapRecurring(raw);
+}
+
+export async function listRecurringOutgoings(
+  budgetId: string,
+): Promise<RecurringOutgoing[]> {
+  const rows = await request<Record<string, unknown>[]>(
+    `/v1/budgets/${budgetId}/recurring`,
+  );
+  return rows.map(mapRecurring);
+}
+
+export async function updateRecurringOutgoing(
+  budgetId: string,
+  recurringId: string,
+  input: Partial<{
+    name: string;
+    amountCents: number;
+    cadence: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | 'yearly';
+    dayOfMonth: number | null;
+    weekday: number | null;
+    anchorDate: string | null;
+    note: string;
+    active: boolean;
+  }>,
+): Promise<RecurringOutgoing> {
+  const raw = await request<Record<string, unknown>>(
+    `/v1/budgets/${budgetId}/recurring/${recurringId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    },
+  );
+  return mapRecurring(raw);
+}
+
+export async function deleteRecurringOutgoing(
+  budgetId: string,
+  recurringId: string,
+): Promise<void> {
+  await request(`/v1/budgets/${budgetId}/recurring/${recurringId}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function getMonthOutgoings(

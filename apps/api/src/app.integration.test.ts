@@ -425,6 +425,32 @@ suite('account and couple household API', () => {
     expect(
       month.list.filter((item) => item.title === 'Car finance').map((item) => item.date),
     ).toEqual(['2026-08-07', '2026-08-21']);
+
+    const moved = await app.inject({
+      method: 'PATCH',
+      url: `/v1/budgets/${personalBudget.id}/recurring/${biweekly.json<{ id: string }>().id}`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+      payload: {
+        anchorDate: '2026-08-14',
+        note: 'From current account',
+      },
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json<{ note: string; anchorDate?: string }>().note).toBe(
+      'From current account',
+    );
+
+    const afterMove = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${personalBudget.id}/outgoings?year=2026&month=8`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+    });
+    expect(
+      afterMove
+        .json<{ list: { title: string; date: string; note: string }[] }>()
+        .list.filter((item) => item.title === 'Car finance')
+        .map((item) => item.date),
+    ).toEqual(['2026-08-14', '2026-08-28']);
   });
 
   it('tracks bill payments and sends outstanding reminders', async () => {

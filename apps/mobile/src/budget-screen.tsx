@@ -44,6 +44,9 @@ export function BudgetScreen({ account, notify }: Props) {
   const [note, setNote] = useState('');
   const [kind, setKind] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [occurredOn, setOccurredOn] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<'outgoings' | 'ledger' | 'wealth'>('outgoings');
   const canShare = (account.members?.length ?? 0) >= 2;
@@ -111,6 +114,7 @@ export function BudgetScreen({ account, notify }: Props) {
         amountCents: Math.round(pounds * 100),
         categoryId: kind === 'EXPENSE' ? categoryId : null,
         note: note.trim(),
+        occurredOn: occurredOn || undefined,
       });
       setAmount('');
       setNote('');
@@ -345,6 +349,15 @@ export function BudgetScreen({ account, notify }: Props) {
               keyboardType="decimal-pad"
               value={amount}
               onChangeText={setAmount}
+            />
+            <Text style={styles.meta}>Date (YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9BA49E"
+              value={occurredOn}
+              onChangeText={setOccurredOn}
+              autoCapitalize="none"
             />
             <TextInput
               style={styles.input}
