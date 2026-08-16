@@ -480,6 +480,16 @@ export async function buildApp(
         updated_at = now()
       WHERE id = ${request.authUser.id}
     `;
+
+    // Keep owned budgets in sync when the user changes preferred currency
+    if (body.preferredCurrency) {
+      await sql`
+        UPDATE budgets
+        SET currency = ${body.preferredCurrency}, updated_at = now()
+        WHERE owner_user_id = ${request.authUser.id}
+      `;
+    }
+
     return getAccountPayload(sql, request.authUser.id);
   });
 

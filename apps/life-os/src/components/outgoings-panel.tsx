@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createRecurringOutgoing,
+  currencySymbol,
   formatMoney,
   getMonthOutgoings,
   updateBudget,
@@ -54,6 +55,17 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
     "monthly",
   );
   const [recWeekday, setRecWeekday] = useState("1");
+
+  const displayCurrency = data?.currency || budget.currency || "GBP";
+  const symbol = currencySymbol(displayCurrency);
+
+  useEffect(() => {
+    setPayFrequency(budget.payFrequency ?? "monthly");
+    setNextPayDate(budget.nextPayDate ?? "");
+    setTypicalPay(
+      budget.typicalPayCents != null ? String(budget.typicalPayCents / 100) : "",
+    );
+  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents, budget.currency]);
 
   const load = useCallback(async () => {
     const next = await getMonthOutgoings(budget.id, year, month);
@@ -216,7 +228,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
           />
           <input
             className="rounded-xl border border-[#dde2dd] px-3 py-3"
-            placeholder="Typical pay (£)"
+            placeholder={`Typical pay (${symbol})`}
             value={typicalPay}
             onChange={(e) => setTypicalPay(e.target.value)}
           />
@@ -343,7 +355,7 @@ export function OutgoingsPanel({ budget, onError, onChanged }: Props) {
           />
           <input
             className="rounded-xl border border-[#dde2dd] px-3 py-3"
-            placeholder="Amount (£)"
+            placeholder={`Amount (${symbol})`}
             value={recAmount}
             onChange={(e) => setRecAmount(e.target.value)}
           />

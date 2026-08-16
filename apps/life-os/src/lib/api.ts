@@ -648,6 +648,19 @@ export function formatMoney(cents: number, currency = "GBP"): string {
   }).format(cents / 100);
 }
 
+export function currencySymbol(currency = "GBP"): string {
+  try {
+    const parts = new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+    }).formatToParts(0);
+    return parts.find((part) => part.type === "currency")?.value ?? currency;
+  } catch {
+    return currency;
+  }
+}
+
 export async function updateBudget(
   id: string,
   input: {

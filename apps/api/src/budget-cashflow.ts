@@ -192,6 +192,7 @@ export function buildRecommendations(input: {
   recurring: RecurringOutgoing[];
 }): Recommendation[] {
   const recommendations: Recommendation[] = [];
+  const money = (cents: number) => formatMoneyAmount(cents, input.currency);
   const expenses = input.list.filter((item) => item.kind === 'EXPENSE');
   const totalExpense = expenses.reduce((sum, item) => sum + item.amountCents, 0);
   const pay = input.typicalPayCents ?? 0;
@@ -218,7 +219,7 @@ export function buildRecommendations(input: {
         id: 'bills-before-payday',
         severity: 'high',
         title: 'Heavy outgoings land before payday',
-        detail: `${formatPounds(beforeTotal)} is due before ${firstPay}. That often forces overdraft or card use.`,
+        detail: `${money(beforeTotal)} is due before ${firstPay}. That often forces overdraft or card use.`,
         action:
           'Move flexible bills (subscriptions, gym, insurance) to the day after payday, or ask providers for a later collection date.',
         flagged: true,
@@ -238,7 +239,7 @@ export function buildRecommendations(input: {
           id: `pre-pay-cluster-${payDate}`,
           severity: 'medium',
           title: `Bills cluster in the 3 days before ${payDate}`,
-          detail: `${cluster.length} outgoings totaling ${formatPounds(clusterTotal)} hit just before pay clears.`,
+          detail: `${cluster.length} outgoings totaling ${money(clusterTotal)} hit just before pay clears.`,
           action:
             'Shift at least one larger bill to payday or the day after so the account isn’t empty overnight.',
           flagged: true,
@@ -268,7 +269,7 @@ export function buildRecommendations(input: {
       id: 'frequent-spend-envelope',
       severity: 'medium',
       title: `${frequent.title} is a frequent spend`,
-      detail: `${frequent.count} charges this month totaling ${formatPounds(frequent.total)}.`,
+      detail: `${frequent.count} charges this month totaling ${money(frequent.total)}.`,
       action: input.payFrequency === 'weekly' || input.payFrequency === 'biweekly'
         ? 'Create a per-pay envelope for this category and top it up on payday so the rest of the balance stays untouched.'
         : 'Set a weekly cap for this category and check it every payday weekend.',
@@ -290,7 +291,7 @@ export function buildRecommendations(input: {
       id: 'recurring-vs-pay',
       severity: 'high',
       title: 'Recurring bills eat most of a pay cheque',
-      detail: `Estimated recurring load ${formatPounds(recurringMonthly)} vs typical pay ${formatPounds(pay)}.`,
+      detail: `Estimated recurring load ${money(recurringMonthly)} vs typical pay ${money(pay)}.`,
       action:
         'List cancelable subscriptions, renegotiate broadband/mobile, or move one large bill onto a longer cycle.',
       flagged: true,
@@ -301,7 +302,7 @@ export function buildRecommendations(input: {
       id: 'month-vs-pay',
       severity: 'high',
       title: 'This month’s outgoings nearly match a full pay',
-      detail: `${formatPounds(totalExpense)} out vs typical ${formatPounds(pay)} in.`,
+      detail: `${money(totalExpense)} out vs typical ${money(pay)} in.`,
       action:
         'Delay non-essential purchases until after the next payday and park a fixed savings transfer on payday morning.',
       flagged: true,
@@ -350,11 +351,18 @@ export function buildRecommendations(input: {
   return deduped;
 }
 
-function formatPounds(cents: number): string {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: 'GBP',
-  }).format(cents / 100);
+function formatMoneyAmount(cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: currency || 'GBP',
+    }).format(cents / 100);
+  } catch {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP',
+    }).format(cents / 100);
+  }
 }
 
 export async function listRecurring(

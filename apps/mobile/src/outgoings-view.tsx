@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createRecurringOutgoing,
+  currencySymbol,
   formatMoney,
   getMonthOutgoings,
   updateBudget,
@@ -66,6 +67,16 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
   const [recName, setRecName] = useState('');
   const [recAmount, setRecAmount] = useState('');
   const [recDay, setRecDay] = useState('1');
+  const displayCurrency = data?.currency || budget.currency || 'GBP';
+  const symbol = currencySymbol(displayCurrency);
+
+  useEffect(() => {
+    setPayFrequency(budget.payFrequency ?? 'monthly');
+    setNextPayDate(budget.nextPayDate ?? '');
+    setTypicalPay(
+      budget.typicalPayCents != null ? String(budget.typicalPayCents / 100) : '',
+    );
+  }, [budget.id, budget.payFrequency, budget.nextPayDate, budget.typicalPayCents, budget.currency]);
 
   const load = useCallback(async () => {
     const next = await getMonthOutgoings(budget.id, year, month);
@@ -204,7 +215,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Typical pay (£)"
+          placeholder={`Typical pay (${symbol})`}
           placeholderTextColor="#9BA49E"
           keyboardType="decimal-pad"
           value={typicalPay}
@@ -249,7 +260,10 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
                   </Text>
                   {day.totalCents > 0 ? (
                     <Text style={[styles.dayAmount, active && styles.dayAmountActive]}>
-                      £{(day.totalCents / 100).toFixed(0)}
+                      {formatMoney(day.totalCents, displayCurrency).replace(
+                        /\.00$/,
+                        '',
+                      )}
                     </Text>
                   ) : null}
                 </Pressable>
@@ -317,7 +331,7 @@ export function OutgoingsView({ budget, notify, onChanged }: Props) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Amount (£)"
+          placeholder={`Amount (${symbol})`}
           placeholderTextColor="#9BA49E"
           keyboardType="decimal-pad"
           value={recAmount}

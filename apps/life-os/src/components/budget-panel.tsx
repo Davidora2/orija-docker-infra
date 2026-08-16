@@ -50,7 +50,7 @@ export function BudgetPanel({ account, onError }: Props) {
     void reload().catch((error) =>
       onError(error instanceof Error ? error.message : "Could not load budgets."),
     );
-  }, [reload, onError]);
+  }, [reload, onError, account.user.preferredCurrency]);
 
   useEffect(() => {
     if (detail?.categories?.[0] && !categoryId) {
