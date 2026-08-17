@@ -1,0 +1,171 @@
+# Portainer / Cloudflare Tunnel stack.
+# Tunnel origin: http://localhost:18088  (hostname lifeos.orija.store)
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lifeos
+      POSTGRES_USER: lifeos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - life-os-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifeos -d lifeos"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [life-os]
+
+  api:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /opt/life-os
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgres://lifeos:${POSTGRES_PASSWORD}@postgres:5432/lifeos
+      JWT_SECRET: ${JWT_SECRET}
+      APP_ORIGINS: https://${LIFE_OS_DOMAIN}
+      PUBLIC_APP_URL: https://${LIFE_OS_DOMAIN}
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_DAYS: 30
+      AUTO_MIGRATE: "true"
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      CALENDAR_TOKEN_ENCRYPTION_KEY: ${CALENDAR_TOKEN_ENCRYPTION_KEY:-}
+      LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
+      LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
+    volumes:
+      - life-os-api-src:/opt/life-os
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        REPO_URL="$${LIFE_OS_REPO_URL}"
+        BRANCH="$${LIFE_OS_REPO_REF#refs/heads/}"
+        ROOT=/opt/life-os
+        mkdir -p "$$ROOT"
+        echo "Syncing Life OS API from $$BRANCH..."
+        apk add --no-cache git
+        if [ ! -d "$$ROOT/repo/.git" ]; then
+          rm -rf "$$ROOT/repo"
+          git clone --depth 1 --branch "$$BRANCH" "$$REPO_URL" "$$ROOT/repo"
+        else
+          cd "$$ROOT/repo"
+          git fetch --depth 1 origin "$$BRANCH"
+          git checkout -f "$$BRANCH"
+          git reset --hard "origin/$$BRANCH"
+        fi
+        cd "$$ROOT/repo"
+        corepack enable
+        corepack prepare pnpm@10.33.3 --activate
+        pnpm install --frozen-lockfile --filter life-os-api...
+        pnpm --filter life-os-api build
+        cd "$$ROOT/repo/apps/api"
+        exec node dist/server.js
+    depends_on:
+      - postgres
+    networks: [life-os]
+
+  web:
+    image: node:22-alpine
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
+      LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
+      NEXT_PUBLIC_API_URL: https://lifeos.orija.store/api
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_IDS:-}
+      NEXT_PUBLIC_MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      NEXT_PUBLIC_MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+    volumes:
+      - life-os-web-src:/opt/life-os
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        REPO_URL="$${LIFE_OS_REPO_URL}"
+        BRANCH="$${LIFE_OS_REPO_REF#refs/heads/}"
+        ROOT=/opt/life-os
+        mkdir -p "$$ROOT"
+        echo "Syncing Life OS web from $$BRANCH..."
+        apk add --no-cache git
+        if [ ! -d "$$ROOT/repo/.git" ]; then
+          rm -rf "$$ROOT/repo"
+          git clone --depth 1 --branch "$$BRANCH" "$$REPO_URL" "$$ROOT/repo"
+        else
+          cd "$$ROOT/repo"
+          git fetch --depth 1 origin "$$BRANCH"
+          git checkout -f "$$BRANCH"
+          git reset --hard "origin/$$BRANCH"
+        fi
+        cd "$$ROOT/repo"
+        corepack enable
+        corepack prepare pnpm@10.33.3 --activate
+        pnpm install --frozen-lockfile --filter life-os...
+        NEXT_PUBLIC_API_URL="$${NEXT_PUBLIC_API_URL:-https://lifeos.orija.store/api}" \
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID="$${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}" \
+        NEXT_PUBLIC_MICROSOFT_CLIENT_ID="$${NEXT_PUBLIC_MICROSOFT_CLIENT_ID:-}" \
+        NEXT_PUBLIC_MICROSOFT_TENANT_ID="$${NEXT_PUBLIC_MICROSOFT_TENANT_ID:-common}" \
+        pnpm --filter life-os build
+        mkdir -p "$$ROOT/runtime"
+        rm -rf "$$ROOT/runtime"/*
+        cp -a "$$ROOT/repo/apps/life-os/.next/standalone/." "$$ROOT/runtime/"
+        mkdir -p "$$ROOT/runtime/apps/life-os/.next"
+        cp -a "$$ROOT/repo/apps/life-os/.next/static" "$$ROOT/runtime/apps/life-os/.next/static"
+        cd "$$ROOT/runtime"
+        exec node apps/life-os/server.js
+    depends_on:
+      - api
+    networks: [life-os]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "18088:80"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/Caddyfile <<'EOF'
+        :80 {
+        	encode zstd gzip
+        	@api path /api/*
+        	handle @api {
+        		uri strip_prefix /api
+        		reverse_proxy api:4000
+        	}
+        	handle {
+        		reverse_proxy web:3000
+        	}
+        	header {
+        		X-Content-Type-Options "nosniff"
+        		Referrer-Policy "strict-origin-when-cross-origin"
+        		-Server
+        	}
+        }
+        EOF
+        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
+    depends_on:
+      - web
+      - api
+    networks: [life-os]
+
+networks:
+  life-os:
+    name: life-os
+
+volumes:
+  life-os-postgres:
+  life-os-api-src:
+  life-os-web-src:
