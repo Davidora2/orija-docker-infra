@@ -96,6 +96,7 @@ export function LifeOSApp() {
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
   const [areaTitle, setAreaTitle] = useState("");
+  const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileCurrency, setProfileCurrency] = useState("GBP");
@@ -178,6 +179,10 @@ export function LifeOSApp() {
       setProfileCurrency(account.user.preferredCurrency);
     }
   }, [account?.user.preferredCurrency]);
+
+  useEffect(() => {
+    setCapacityHoursInput(String(available));
+  }, [available]);
 
   async function run(work: () => Promise<void>) {
     setBusy(true);
@@ -853,50 +858,162 @@ export function LifeOSApp() {
 
       {tab === "capacity" ? (
         <section className="space-y-4">
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
+          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">
               {planned.toFixed(1)}h planned / {available}h available
             </h2>
             {planned > available ? (
-              <p className="mt-2 text-sm text-[#c9634f]">Overcommitted — reduce hours below.</p>
+              <p className="text-sm text-[#c9634f]">
+                Overcommitted — raise available hours or reduce action hours below.
+              </p>
             ) : (
-              <p className="mt-2 text-sm text-[#6c7771]">Healthy load.</p>
+              <p className="text-sm text-[#6c7771]">Healthy load.</p>
             )}
-          </article>
-          {openActions.map((action) => (
-            <article key={action.id} className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-              <p className="font-semibold">{action.title}</p>
-              <p className="text-sm text-[#6c7771]">{num(action, "hours", 1)}h</p>
-              <div className="mt-3 flex gap-2">
+            <label className="block space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                Available hours / week
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  className="w-full max-w-[160px] rounded-xl border border-[#dde2dd] px-3 py-3"
+                  type="number"
+                  min={0.5}
+                  step={0.5}
+                  value={capacityHoursInput}
+                  onChange={(e) => setCapacityHoursInput(e.target.value)}
+                />
                 <button
-                  className="rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold"
                   type="button"
+                  className="rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold"
                   disabled={busy}
                   onClick={() =>
-                    void run(async () => {
-                      await updateLifeItem(action.id, {
-                        body: { ...action.body, hours: Math.max(0.5, num(action, "hours", 1) - 1) },
-                      });
-                    })
+                    setCapacityHoursInput((prev) =>
+                      String(Math.max(0.5, (Number(prev) || 0) - 1)),
+                    )
                   }
                 >
                   −1h
                 </button>
                 <button
-                  className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-[#f4f5f0]"
                   type="button"
+                  className="rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold"
+                  disabled={busy}
+                  onClick={() =>
+                    setCapacityHoursInput((prev) =>
+                      String((Number(prev) || 0) + 1),
+                    )
+                  }
+                >
+                  +1h
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      await updateLifeItem(action.id, { status: "DONE" });
+                      const hours = Number(capacityHoursInput);
+                      if (!Number.isFinite(hours) || hours <= 0) {
+                        throw new Error(
+                          "Available hours must be a positive number.",
+                        );
+                      }
+                      const vision = items.find(
+                        (item) =>
+                          item.kind === "VISION" &&
+                          "availableHours" in item.body,
+                      );
+                      if (vision) {
+                        await updateLifeItem(vision.id, {
+                          body: { ...vision.body, availableHours: hours },
+                        });
+                      } else {
+                        await createLifeItem({
+                          kind: "VISION",
+                          title: "Weekly capacity",
+                          body: { availableHours: hours },
+                        });
+                      }
                     })
                   }
                 >
-                  Done
+                  Save capacity
                 </button>
               </div>
+              <span className="block text-sm text-[#6c7771]">
+                This is your weekly time budget for planned actions.
+              </span>
+            </label>
+          </article>
+          {openActions.length === 0 ? (
+            <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
+              <p className="text-sm text-[#6c7771]">
+                No open actions yet. Create a project with a next action to plan
+                the week.
+              </p>
             </article>
-          ))}
+          ) : (
+            openActions.map((action) => (
+              <article
+                key={action.id}
+                className="rounded-2xl border border-[#dde2dd] bg-white p-5"
+              >
+                <p className="font-semibold">{action.title}</p>
+                <p className="text-sm text-[#6c7771]">
+                  {num(action, "hours", 1)}h
+                  {str(action, "day") ? ` · ${str(action, "day")}` : ""}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold"
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await updateLifeItem(action.id, {
+                          body: {
+                            ...action.body,
+                            hours: Math.max(0.5, num(action, "hours", 1) - 1),
+                          },
+                        });
+                      })
+                    }
+                  >
+                    −1h
+                  </button>
+                  <button
+                    className="rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold"
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await updateLifeItem(action.id, {
+                          body: {
+                            ...action.body,
+                            hours: num(action, "hours", 1) + 1,
+                          },
+                        });
+                      })
+                    }
+                  >
+                    +1h
+                  </button>
+                  <button
+                    className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-[#f4f5f0]"
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await updateLifeItem(action.id, { status: "DONE" });
+                      })
+                    }
+                  >
+                    Done
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
         </section>
       ) : null}
 

@@ -558,16 +558,17 @@ function AppContent() {
     });
   }
 
-  async function reduceActionHours(action: LifeItem, nextHours: number) {
-    await run('Reduce scope', async () => {
+  async function updateActionHours(action: LifeItem, nextHours: number) {
+    await run('Update action hours', async () => {
+      const hours = Math.max(0.5, nextHours);
       await updateLifeItem(action.id, {
         body: {
           ...action.body,
-          hours: Math.max(0.5, nextHours),
+          hours,
         },
       });
       await reloadItems();
-      notify(`Action reduced to ${Math.max(0.5, nextHours).toFixed(1)}h.`);
+      notify(`Action set to ${hours.toFixed(1)}h.`);
     });
   }
 
@@ -1080,13 +1081,25 @@ function AppContent() {
                       variant="secondary"
                       style={{ flex: 1 }}
                       onPress={() =>
-                        void reduceActionHours(
+                        void updateActionHours(
                           action,
                           bodyNumber(action, 'hours', 1) - 1,
                         )
                       }
                     >
                       −1h
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() =>
+                        void updateActionHours(
+                          action,
+                          bodyNumber(action, 'hours', 1) + 1,
+                        )
+                      }
+                    >
+                      +1h
                     </Button>
                     <Button
                       style={{ flex: 1 }}
