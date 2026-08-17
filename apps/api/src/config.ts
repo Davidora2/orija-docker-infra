@@ -15,6 +15,11 @@ const envSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
   GOOGLE_CLIENT_IDS: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_CLIENT_ID: z.string().optional(),
+  MICROSOFT_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_TENANT_ID: z.string().optional(),
+  CALENDAR_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
   SMTP_USER: z.string().optional(),
@@ -36,6 +41,11 @@ export type AppConfig = {
   refreshTokenDays: number;
   autoMigrate: boolean;
   googleClientIds: string[];
+  googleOauthClientSecret: string | null;
+  microsoftClientId: string | null;
+  microsoftClientSecret: string | null;
+  microsoftTenantId: string;
+  calendarTokenEncryptionKey: string | null;
   resendApiKey: string | null;
   emailFrom: string;
   smtpUser: string | null;
@@ -70,6 +80,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
+    googleOauthClientSecret: parsed.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || null,
+    microsoftClientId: parsed.MICROSOFT_CLIENT_ID?.trim() || null,
+    microsoftClientSecret: parsed.MICROSOFT_CLIENT_SECRET?.trim() || null,
+    microsoftTenantId: parsed.MICROSOFT_TENANT_ID?.trim() || 'common',
+    calendarTokenEncryptionKey:
+      parsed.CALENDAR_TOKEN_ENCRYPTION_KEY?.trim() || null,
     resendApiKey: parsed.RESEND_API_KEY ?? null,
     emailFrom:
       parsed.EMAIL_FROM?.trim() ||

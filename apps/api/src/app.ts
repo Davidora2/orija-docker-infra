@@ -6,6 +6,7 @@ import { z, ZodError } from 'zod';
 import { createAuth } from './auth.js';
 import { registerAuthExtras } from './auth-extras.js';
 import { registerCalendarRoutes } from './calendar.js';
+import { registerCalendarSyncRoutes } from './calendar-sync.js';
 import {
   sendBillRemindersForUser,
   startBillReminderScheduler,
@@ -826,6 +827,7 @@ export async function buildApp(
     publicUser,
   });
   registerCalendarRoutes(app, sql, auth);
+  registerCalendarSyncRoutes(app, sql, config, auth);
 
   const mailer = createMailer(config);
 

@@ -59,6 +59,12 @@ const migrations = [
       new URL('../migrations/010_saving_timeline_dashboard.sql', import.meta.url),
     ),
   },
+  {
+    version: '011_microsoft_calendar_sync',
+    path: fileURLToPath(
+      new URL('../migrations/011_microsoft_calendar_sync.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

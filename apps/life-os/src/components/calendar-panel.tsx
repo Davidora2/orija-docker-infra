@@ -7,6 +7,7 @@ import {
   type CalendarEvent,
   type CalendarPayload,
 } from "../lib/api";
+import { CalendarSyncPanel } from "./calendar-sync-panel";
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -94,6 +95,8 @@ export function CalendarPanel({
 
   return (
     <section className="space-y-4">
+      <CalendarSyncPanel onError={onError} />
+
       <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

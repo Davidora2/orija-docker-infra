@@ -23,6 +23,7 @@ import {
 import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
 import { GoogleSignInButton } from "./google-sign-in-button";
+import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import {
@@ -381,7 +382,7 @@ export function LifeOSApp() {
         ) : null}
 
         {(authMode === "login" || authMode === "register") &&
-        providers?.google ? (
+        (providers?.google || providers?.microsoft) ? (
           <>
             <div className="flex items-center gap-3 text-xs text-[#6c7771]">
               <span className="h-px flex-1 bg-[#dde2dd]" />
@@ -390,6 +391,12 @@ export function LifeOSApp() {
             </div>
             <GoogleSignInButton
               enabled={Boolean(providers?.google)}
+              busy={busy}
+              onSuccess={(next) => setAccount(next)}
+              onError={(message) => setError(message)}
+            />
+            <MicrosoftSignInButton
+              enabled={Boolean(providers?.microsoft)}
               busy={busy}
               onSuccess={(next) => setAccount(next)}
               onError={(message) => setError(message)}

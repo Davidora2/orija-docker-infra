@@ -186,8 +186,10 @@ export async function login(input: {
 
 export type AuthProviders = {
   google: boolean;
+  microsoft?: boolean;
   password: boolean;
   emailDelivery: "smtp" | "resend" | "console" | "unavailable";
+  calendarSync?: { google: boolean; microsoft: boolean };
 };
 
 export async function getAuthProviders(): Promise<AuthProviders> {
@@ -199,6 +201,23 @@ export async function getAuthProviders(): Promise<AuthProviders> {
 export async function loginWithGoogle(idToken: string): Promise<Account> {
   const auth = await parseResponse<Session & { account: Account }>(
     await fetch(`${apiBaseUrl}/v1/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idToken,
+        deviceName: "web",
+        timezone:
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      }),
+    }),
+  );
+  saveSession(auth);
+  return auth.account;
+}
+
+export async function loginWithMicrosoft(idToken: string): Promise<Account> {
+  const auth = await parseResponse<Session & { account: Account }>(
+    await fetch(`${apiBaseUrl}/v1/auth/microsoft`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -297,6 +316,51 @@ export async function getCalendar(input: {
   if (input.areaIds?.length) params.set("areaIds", input.areaIds.join(","));
   if (input.types?.length) params.set("types", input.types.join(","));
   return request<CalendarPayload>(`/v1/calendar?${params.toString()}`);
+}
+
+export type CalendarConnection = {
+  id: string;
+  provider: "google" | "microsoft";
+  accountEmail: string | null;
+  calendarId: string;
+  syncTasks: boolean;
+  syncPayments: boolean;
+  syncPaydays: boolean;
+  reminderMinutes: number;
+  lastSyncedAt: string | null;
+};
+
+export async function listCalendarConnections(): Promise<{
+  providers: { google: boolean; microsoft: boolean };
+  connections: CalendarConnection[];
+}> {
+  return request("/v1/calendar/connections");
+}
+
+export async function startCalendarConnect(
+  provider: "google" | "microsoft",
+  redirectPath = "/?tab=calendar",
+): Promise<{ url: string }> {
+  return request(`/v1/calendar/connect/${provider}`, {
+    method: "POST",
+    body: JSON.stringify({ redirectPath }),
+  });
+}
+
+export async function syncCalendar(connectionId?: string): Promise<{
+  ok: boolean;
+  pushed: number;
+}> {
+  return request("/v1/calendar/sync", {
+    method: "POST",
+    body: JSON.stringify({ connectionId, months: 1 }),
+  });
+}
+
+export async function disconnectCalendar(connectionId: string): Promise<void> {
+  await request(`/v1/calendar/connections/${connectionId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function logout() {
