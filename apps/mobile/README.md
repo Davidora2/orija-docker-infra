@@ -38,3 +38,15 @@ eas build --profile preview --platform ios
 
 Android preview produces an APK. iOS preview requires a registered device and
 Apple signing; TestFlight uses the production profile.
+
+### Local Android APK (no EAS account)
+
+Requires Android SDK (`ANDROID_HOME`) and JDK 17+.
+
+```bash
+export EXPO_PUBLIC_API_URL=https://lifeos.orija.store/api
+export EXPO_PUBLIC_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id
+./scripts/build-android-apk.sh
+```
+
+Output: `android/app/build/outputs/apk/release/app-release.apk`
