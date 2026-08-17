@@ -1,0 +1,14 @@
+.git
+.github
+**/node_modules
+**/.next
+**/dist
+**/.expo
+**/android
+**/ios
+**/*.db
+**/*.db-journal
+.env
+.env.*
+!.env.production.example
+artifacts
