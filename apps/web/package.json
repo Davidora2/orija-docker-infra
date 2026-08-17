@@ -39,14 +39,6 @@
     "tsx": "^4.23.1",
     "typescript": "^5"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "prisma",
-      "@prisma/engines",
-      "@prisma/client",
-      "esbuild"
-    ]
-  },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   }

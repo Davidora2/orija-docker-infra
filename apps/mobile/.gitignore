@@ -1,0 +1,9 @@
+android/
+ios/
+*.jks
+*.keystore
+*.apk
+*.aab
+.env
+.env.*
+!.env.example
