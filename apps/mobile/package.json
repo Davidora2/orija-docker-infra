@@ -33,7 +33,9 @@
     "typecheck": "tsc --noEmit",
     "export:android": "expo export --platform android",
     "export:ios": "expo export --platform ios",
-    "export:web": "expo export --platform web"
+    "export:web": "expo export --platform web",
+    "prebuild:android": "expo prebuild --platform android --clean",
+    "apk:release": "cd android && ./gradlew assembleRelease"
   },
   "private": true
 }
