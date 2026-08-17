@@ -71,7 +71,8 @@ export function OutgoingsView({
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [view, setView] = useState<'calendar' | 'list'>('calendar');
+  const [view, setView] = useState<'calendar' | 'list' | 'category'>('calendar');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [data, setData] = useState<MonthOutgoings | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -89,6 +90,7 @@ export function OutgoingsView({
   const [recWeekday, setRecWeekday] = useState('1');
   const [recAnchor, setRecAnchor] = useState('');
   const [recNote, setRecNote] = useState('');
+  const [recCategoryId, setRecCategoryId] = useState('');
   const [recDueDate, setRecDueDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
@@ -99,6 +101,7 @@ export function OutgoingsView({
   const [editNote, setEditNote] = useState('');
   const [editWeekday, setEditWeekday] = useState('1');
   const [editDate, setEditDate] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState('');
   const [dailyAmount, setDailyAmount] = useState('');
   const [dailyNote, setDailyNote] = useState('');
   const [dailyCategoryId, setDailyCategoryId] = useState<string | null>(null);
@@ -150,6 +153,52 @@ export function OutgoingsView({
     [year, month],
   );
   const selectedDay = data?.days.find((day) => day.date === selectedDate) ?? null;
+
+  function matchesCategoryFilter(item: { categoryId: string | null }) {
+    if (categoryFilter === 'all') return true;
+    if (categoryFilter === 'uncategorised') return !item.categoryId;
+    return item.categoryId === categoryFilter;
+  }
+
+  const filteredList = useMemo(() => {
+    if (!data) return [];
+    return data.list.filter(matchesCategoryFilter);
+  }, [data, categoryFilter]);
+
+  const categoryGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { key: string; label: string; totalCents: number; items: OutgoingItem[] }
+    >();
+    for (const item of filteredList) {
+      const key = item.categoryId ?? 'uncategorised';
+      const label =
+        item.categoryName ??
+        categories.find((category) => category.id === item.categoryId)?.name ??
+        'Uncategorised';
+      const existing = groups.get(key);
+      if (existing) {
+        existing.totalCents += item.amountCents;
+        existing.items.push(item);
+      } else {
+        groups.set(key, {
+          key,
+          label,
+          totalCents: item.amountCents,
+          items: [item],
+        });
+      }
+    }
+    return [...groups.values()].sort((a, b) => b.totalCents - a.totalCents);
+  }, [filteredList, categories]);
+
+  function categoryLabel(categoryId: string | null | undefined) {
+    if (!categoryId) return 'Uncategorised';
+    return (
+      categories.find((category) => category.id === categoryId)?.name ??
+      'Uncategorised'
+    );
+  }
 
   function shiftMonth(delta: number) {
     const date = new Date(Date.UTC(year, month - 1 + delta, 1));
@@ -277,11 +326,13 @@ export function OutgoingsView({
             ? recAnchor || recDueDate
             : null,
         note: recNote.trim() || undefined,
+        categoryId: recCategoryId || null,
       });
       setRecName('');
       setRecAmount('');
       setRecAnchor('');
       setRecNote('');
+      setRecCategoryId('');
       await load();
       onChanged();
       notify('Recurring outgoing added.');
@@ -298,6 +349,7 @@ export function OutgoingsView({
     setEditAmount(String(row.amountCents / 100));
     setEditNote(row.note ?? '');
     setEditWeekday(String(row.weekday ?? 1));
+    setEditCategoryId(row.categoryId ?? '');
     if (row.cadence === 'biweekly' || row.cadence === 'four_weekly') {
       setEditDate(row.anchorDate ?? '');
     } else if (row.dayOfMonth) {
@@ -322,6 +374,7 @@ export function OutgoingsView({
         name: editName.trim(),
         amountCents: Math.round(pounds * 100),
         note: editNote.trim(),
+        categoryId: editCategoryId || null,
       };
       if (row.cadence === 'weekly') {
         patch.weekday = Number(editWeekday);
@@ -445,7 +498,72 @@ export function OutgoingsView({
               List
             </Text>
           </Pressable>
+          <Pressable
+            style={[styles.chip, view === 'category' && styles.chipActive]}
+            onPress={() => setView('category')}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                view === 'category' && styles.chipTextActive,
+              ]}
+            >
+              By category
+            </Text>
+          </Pressable>
         </View>
+        {data ? (
+          <View style={styles.rowWrap}>
+            <Pressable
+              style={[styles.chip, categoryFilter === 'all' && styles.chipActive]}
+              onPress={() => setCategoryFilter('all')}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  categoryFilter === 'all' && styles.chipTextActive,
+                ]}
+              >
+                All
+              </Text>
+            </Pressable>
+            {categories.map((category) => (
+              <Pressable
+                key={category.id}
+                style={[
+                  styles.chip,
+                  categoryFilter === category.id && styles.chipActive,
+                ]}
+                onPress={() => setCategoryFilter(category.id)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    categoryFilter === category.id && styles.chipTextActive,
+                  ]}
+                >
+                  {category.name}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              style={[
+                styles.chip,
+                categoryFilter === 'uncategorised' && styles.chipActive,
+              ]}
+              onPress={() => setCategoryFilter('uncategorised')}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  categoryFilter === 'uncategorised' && styles.chipTextActive,
+                ]}
+              >
+                Uncategorised
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
         {data ? (
           <View style={{ gap: 4, marginTop: 4 }}>
             <Text style={styles.totalOut}>
@@ -696,15 +814,21 @@ export function OutgoingsView({
 
       {data && view === 'list' ? (
         <View style={styles.card}>
-          {data.list.length === 0 ? (
-            <Text style={styles.meta}>No outgoings this month.</Text>
+          {filteredList.length === 0 ? (
+            <Text style={styles.meta}>
+              No outgoings this month
+              {categoryFilter !== 'all' ? ' for this category' : ''}.
+            </Text>
           ) : (
-            data.list.map((item) => (
+            filteredList.map((item) => (
               <View key={item.id} style={styles.listRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
                   <Text style={styles.meta}>
                     {item.date} · {sourceLabel(item)}
+                    {item.categoryName || item.categoryId
+                      ? ` · ${item.categoryName ?? categoryLabel(item.categoryId)}`
+                      : ''}
                     {item.paid
                       ? ' · paid'
                       : item.source !== 'entry'
@@ -733,6 +857,32 @@ export function OutgoingsView({
                 <Text style={styles.expense}>
                   -{formatMoney(item.amountCents, displayCurrency)}
                 </Text>
+              </View>
+            ))
+          )}
+        </View>
+      ) : null}
+
+      {data && view === 'category' ? (
+        <View style={styles.card}>
+          <Text style={styles.eyebrow}>By category</Text>
+          {categoryGroups.length === 0 ? (
+            <Text style={styles.meta}>Nothing to show for this filter.</Text>
+          ) : (
+            categoryGroups.map((group) => (
+              <View key={group.key} style={{ gap: 6, marginTop: 10 }}>
+                <View style={styles.row}>
+                  <Text style={[styles.itemTitle, { flex: 1 }]}>{group.label}</Text>
+                  <Text style={styles.expense}>
+                    {formatMoney(group.totalCents, displayCurrency)}
+                  </Text>
+                </View>
+                {group.items.map((item) => (
+                  <Text key={item.id} style={styles.meta}>
+                    {item.date} · {item.title} ·{' '}
+                    {formatMoney(item.amountCents, displayCurrency)}
+                  </Text>
+                ))}
               </View>
             ))
           )}
@@ -801,6 +951,45 @@ export function OutgoingsView({
                     placeholder="Note — e.g. from joint account"
                     placeholderTextColor="#9BA49E"
                   />
+                  <Text style={styles.meta}>Category</Text>
+                  <View style={styles.rowWrap}>
+                    <Pressable
+                      style={[
+                        styles.chip,
+                        editCategoryId === '' && styles.chipActive,
+                      ]}
+                      onPress={() => setEditCategoryId('')}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          editCategoryId === '' && styles.chipTextActive,
+                        ]}
+                      >
+                        Uncategorised
+                      </Text>
+                    </Pressable>
+                    {categories.map((category) => (
+                      <Pressable
+                        key={category.id}
+                        style={[
+                          styles.chip,
+                          editCategoryId === category.id && styles.chipActive,
+                        ]}
+                        onPress={() => setEditCategoryId(category.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            editCategoryId === category.id &&
+                              styles.chipTextActive,
+                          ]}
+                        >
+                          {category.name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
                   <View style={styles.row}>
                     <Pressable
                       style={styles.button}
@@ -825,6 +1014,7 @@ export function OutgoingsView({
                       {formatMoney(row.amountCents, displayCurrency)} · {row.cadence}
                       {row.dayOfMonth != null ? ` · day ${row.dayOfMonth}` : ''}
                       {row.anchorDate ? ` · ${row.anchorDate}` : ''}
+                      {` · ${categoryLabel(row.categoryId)}`}
                       {row.note ? ` · ${row.note}` : ''}
                     </Text>
                   </View>
@@ -944,6 +1134,41 @@ export function OutgoingsView({
             />
           </>
         )}
+        <Text style={styles.meta}>Category</Text>
+        <View style={styles.rowWrap}>
+          <Pressable
+            style={[styles.chip, recCategoryId === '' && styles.chipActive]}
+            onPress={() => setRecCategoryId('')}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                recCategoryId === '' && styles.chipTextActive,
+              ]}
+            >
+              Uncategorised
+            </Text>
+          </Pressable>
+          {categories.map((category) => (
+            <Pressable
+              key={category.id}
+              style={[
+                styles.chip,
+                recCategoryId === category.id && styles.chipActive,
+              ]}
+              onPress={() => setRecCategoryId(category.id)}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  recCategoryId === category.id && styles.chipTextActive,
+                ]}
+              >
+                {category.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
         <Text style={styles.meta}>Note (optional)</Text>
         <TextInput
           style={styles.input}

@@ -53,7 +53,8 @@ export function OutgoingsPanel({
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [view, setView] = useState<"calendar" | "list">("calendar");
+  const [view, setView] = useState<"calendar" | "list" | "category">("calendar");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [data, setData] = useState<MonthOutgoings | null>(null);
   const [recurringRows, setRecurringRows] = useState<RecurringOutgoing[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,6 +63,7 @@ export function OutgoingsPanel({
   const [editNote, setEditNote] = useState("");
   const [editWeekday, setEditWeekday] = useState("1");
   const [editDate, setEditDate] = useState("");
+  const [editCategoryId, setEditCategoryId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -80,6 +82,7 @@ export function OutgoingsPanel({
   const [recWeekday, setRecWeekday] = useState("1");
   const [recAnchor, setRecAnchor] = useState("");
   const [recNote, setRecNote] = useState("");
+  const [recCategoryId, setRecCategoryId] = useState<string>("");
   const [recDueDate, setRecDueDate] = useState(() => {
     const today = new Date();
     const y = today.getFullYear();
@@ -140,6 +143,66 @@ export function OutgoingsPanel({
     () => data?.days.find((day) => day.date === selectedDate) ?? null,
     [data, selectedDate],
   );
+
+  function matchesCategoryFilter(item: {
+    categoryId: string | null;
+  }) {
+    if (categoryFilter === "all") return true;
+    if (categoryFilter === "uncategorised") return !item.categoryId;
+    return item.categoryId === categoryFilter;
+  }
+
+  const filteredList = useMemo(() => {
+    if (!data) return [];
+    return data.list.filter(matchesCategoryFilter);
+  }, [data, categoryFilter]);
+
+  const filteredSelectedItems = useMemo(() => {
+    if (!selectedDay) return [];
+    return selectedDay.items.filter(matchesCategoryFilter);
+  }, [selectedDay, categoryFilter]);
+
+  const categoryGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { key: string; label: string; totalCents: number; items: OutgoingItem[] }
+    >();
+    for (const item of filteredList) {
+      const key = item.categoryId ?? "uncategorised";
+      const label =
+        item.categoryName ??
+        (item.categoryId
+          ? categories.find((category) => category.id === item.categoryId)?.name
+          : null) ??
+        "Uncategorised";
+      const existing = groups.get(key);
+      if (existing) {
+        existing.totalCents += item.amountCents;
+        existing.items.push(item);
+      } else {
+        groups.set(key, {
+          key,
+          label,
+          totalCents: item.amountCents,
+          items: [item],
+        });
+      }
+    }
+    return [...groups.values()].sort((a, b) => b.totalCents - a.totalCents);
+  }, [filteredList, categories]);
+
+  const filteredTotalCents = useMemo(
+    () => filteredList.reduce((sum, item) => sum + item.amountCents, 0),
+    [filteredList],
+  );
+
+  function categoryLabel(categoryId: string | null | undefined) {
+    if (!categoryId) return "Uncategorised";
+    return (
+      categories.find((category) => category.id === categoryId)?.name ??
+      "Uncategorised"
+    );
+  }
 
   const firstWeekday = useMemo(() => {
     return new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
@@ -236,6 +299,36 @@ export function OutgoingsPanel({
     }
   }
 
+  async function changeRecurringCategory(
+    recurringId: string,
+    categoryId: string,
+  ) {
+    setBusy(true);
+    try {
+      await updateRecurringOutgoing(budget.id, recurringId, {
+        categoryId: categoryId || null,
+      });
+      await load();
+      onChanged();
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Could not update category.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeItemCategory(item: OutgoingItem, categoryId: string) {
+    if (item.source === "entry") {
+      await changeEntryCategory(item.id, categoryId);
+      return;
+    }
+    if (item.source === "recurring" && item.recurringId) {
+      await changeRecurringCategory(item.recurringId, categoryId);
+    }
+  }
+
   async function addRecurring() {
     const pounds = Number(recAmount);
     if (!recName.trim() || !Number.isFinite(pounds) || pounds <= 0) {
@@ -273,11 +366,13 @@ export function OutgoingsPanel({
             ? recAnchor || recDueDate
             : null,
         note: recNote.trim() || undefined,
+        categoryId: recCategoryId || null,
       });
       setRecName("");
       setRecAmount("");
       setRecAnchor("");
       setRecNote("");
+      setRecCategoryId("");
       await load();
       onChanged();
     } catch (error) {
@@ -377,6 +472,7 @@ export function OutgoingsPanel({
     setEditAmount(String(row.amountCents / 100));
     setEditNote(row.note ?? "");
     setEditWeekday(String(row.weekday ?? 1));
+    setEditCategoryId(row.categoryId ?? "");
     if (row.cadence === "biweekly" || row.cadence === "four_weekly") {
       setEditDate(row.anchorDate ?? "");
     } else if (row.dayOfMonth) {
@@ -401,6 +497,7 @@ export function OutgoingsPanel({
         name: editName.trim(),
         amountCents: Math.round(pounds * 100),
         note: editNote.trim(),
+        categoryId: editCategoryId || null,
       };
       if (row.cadence === "weekly") {
         patch.weekday = Number(editWeekday);
@@ -494,8 +591,69 @@ export function OutgoingsPanel({
             >
               List
             </button>
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                view === "category"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] text-[#14241f]"
+              }`}
+              onClick={() => setView("category")}
+            >
+              By category
+            </button>
           </div>
         </div>
+        {data ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                categoryFilter === "all"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] text-[#14241f]"
+              }`}
+              onClick={() => setCategoryFilter("all")}
+            >
+              All
+            </button>
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                  categoryFilter === category.id
+                    ? "bg-[#14241f] text-[#f4f5f0]"
+                    : "border border-[#dde2dd] text-[#14241f]"
+                }`}
+                onClick={() => setCategoryFilter(category.id)}
+              >
+                {category.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                categoryFilter === "uncategorised"
+                  ? "bg-[#14241f] text-[#f4f5f0]"
+                  : "border border-[#dde2dd] text-[#14241f]"
+              }`}
+              onClick={() => setCategoryFilter("uncategorised")}
+            >
+              Uncategorised
+            </button>
+          </div>
+        ) : null}
+        {data && categoryFilter !== "all" ? (
+          <p className="mt-2 text-sm text-[#6c7771]">
+            Filtered total{" "}
+            <span className="font-semibold text-[#14241f]">
+              {formatMoney(filteredTotalCents, displayCurrency)}
+            </span>
+            {" · "}
+            {filteredList.length} item{filteredList.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
         {data ? (
           <div className="mt-3 space-y-1 text-sm text-[#6c7771]">
             <p className="font-serif text-2xl text-[#14241f]">
@@ -693,6 +851,9 @@ export function OutgoingsPanel({
             {data.days.map((day) => {
               const dayNum = Number(day.date.slice(8, 10));
               const active = selectedDate === day.date;
+              const dayTotal = day.items
+                .filter(matchesCategoryFilter)
+                .reduce((sum, item) => sum + item.amountCents, 0);
               return (
                 <button
                   key={day.date}
@@ -707,9 +868,9 @@ export function OutgoingsPanel({
                   }`}
                 >
                   <div className="text-[11px] font-bold">{dayNum}</div>
-                  {day.totalCents > 0 ? (
+                  {dayTotal > 0 ? (
                     <div className={`mt-1 text-[10px] ${active ? "text-[#d6f57a]" : "text-[#c9634f]"}`}>
-                      {formatMoney(day.totalCents, displayCurrency)}
+                      {formatMoney(dayTotal, displayCurrency)}
                     </div>
                   ) : null}
                   {day.isPayDay ? (
@@ -727,16 +888,22 @@ export function OutgoingsPanel({
                 {selectedDay.date}
                 {selectedDay.isPayDay ? " · payday" : ""}
               </p>
-              {selectedDay.items.length === 0 ? (
-                <p className="text-sm text-[#6c7771]">No outgoings on this day.</p>
+              {filteredSelectedItems.length === 0 ? (
+                <p className="text-sm text-[#6c7771]">
+                  No outgoings on this day
+                  {categoryFilter !== "all" ? " for this category" : ""}.
+                </p>
               ) : (
-                selectedDay.items.map((item) => (
+                filteredSelectedItems.map((item) => (
                   <div key={item.id} className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-semibold">{item.title}</p>
                         <p className="text-xs text-[#6c7771]">
                           {sourceLabel(item)}
+                          {item.categoryName || item.categoryId
+                            ? ` · ${item.categoryName ?? categoryLabel(item.categoryId)}`
+                            : ""}
                           {item.paid
                             ? " · paid"
                             : item.source !== "entry"
@@ -759,13 +926,13 @@ export function OutgoingsPanel({
                         </p>
                       </div>
                     </div>
-                    {item.source === "entry" ? (
+                    {item.source === "entry" || item.source === "recurring" ? (
                       <select
                         className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
                         value={item.categoryId ?? ""}
                         disabled={busy}
                         onChange={(e) =>
-                          void changeEntryCategory(item.id, e.target.value)
+                          void changeItemCategory(item, e.target.value)
                         }
                       >
                         <option value="">Uncategorised</option>
@@ -786,10 +953,13 @@ export function OutgoingsPanel({
 
       {data && view === "list" ? (
         <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
-          {data.list.length === 0 ? (
-            <p className="text-sm text-[#6c7771]">No outgoings this month yet.</p>
+          {filteredList.length === 0 ? (
+            <p className="text-sm text-[#6c7771]">
+              No outgoings this month
+              {categoryFilter !== "all" ? " for this category" : ""} yet.
+            </p>
           ) : (
-            data.list.map((item) => (
+            filteredList.map((item) => (
               <div
                 key={item.id}
                 className="space-y-2 border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
@@ -799,6 +969,9 @@ export function OutgoingsPanel({
                     <p className="font-semibold">{item.title}</p>
                     <p className="text-xs text-[#6c7771]">
                       {item.date} · {sourceLabel(item)}
+                      {item.categoryName || item.categoryId
+                        ? ` · ${item.categoryName ?? categoryLabel(item.categoryId)}`
+                        : ""}
                       {item.paid
                         ? " · paid"
                         : item.source !== "entry"
@@ -814,13 +987,13 @@ export function OutgoingsPanel({
                     </p>
                   </div>
                 </div>
-                {item.source === "entry" ? (
+                {item.source === "entry" || item.source === "recurring" ? (
                   <select
                     className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
                     value={item.categoryId ?? ""}
                     disabled={busy}
                     onChange={(e) =>
-                      void changeEntryCategory(item.id, e.target.value)
+                      void changeItemCategory(item, e.target.value)
                     }
                   >
                     <option value="">Uncategorised</option>
@@ -831,6 +1004,52 @@ export function OutgoingsPanel({
                     ))}
                   </select>
                 ) : null}
+              </div>
+            ))
+          )}
+        </article>
+      ) : null}
+
+      {data && view === "category" ? (
+        <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-4">
+          <div>
+            <h4 className="font-semibold">Outgoings by category</h4>
+            <p className="text-sm text-[#6c7771]">
+              Daily expenses and recurring bills grouped together. Filter with
+              the chips above when you want one category only.
+            </p>
+          </div>
+          {categoryGroups.length === 0 ? (
+            <p className="text-sm text-[#6c7771]">Nothing to show for this filter.</p>
+          ) : (
+            categoryGroups.map((group) => (
+              <div
+                key={group.key}
+                className="space-y-2 border-t border-[#dde2dd] pt-3 first:border-0 first:pt-0"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold">{group.label}</p>
+                  <p className="font-bold text-[#c9634f]">
+                    {formatMoney(group.totalCents, displayCurrency)}
+                  </p>
+                </div>
+                {group.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 rounded-xl bg-[#f7f8f5] px-3 py-2"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">{item.title}</p>
+                      <p className="text-xs text-[#6c7771]">
+                        {item.date} · {sourceLabel(item)}
+                        {item.note ? ` · ${item.note}` : ""}
+                      </p>
+                    </div>
+                    <p className="text-sm font-bold text-[#c9634f]">
+                      -{formatMoney(item.amountCents, displayCurrency)}
+                    </p>
+                  </div>
+                ))}
               </div>
             ))
           )}
@@ -902,6 +1121,23 @@ export function OutgoingsPanel({
                     value={editNote}
                     onChange={(e) => setEditNote(e.target.value)}
                   />
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                      Category
+                    </span>
+                    <select
+                      className="w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                      value={editCategoryId}
+                      onChange={(e) => setEditCategoryId(e.target.value)}
+                    >
+                      <option value="">Uncategorised</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -927,6 +1163,7 @@ export function OutgoingsPanel({
                     <p className="text-xs text-[#6c7771]">
                       {formatMoney(row.amountCents, displayCurrency)} ·{" "}
                       {cadenceLabel(row.cadence)} · {scheduleSummary(row)}
+                      {` · ${categoryLabel(row.categoryId)}`}
                       {row.note ? ` · ${row.note}` : ""}
                     </p>
                   </div>
@@ -1062,6 +1299,27 @@ export function OutgoingsPanel({
             </label>
           )}
         </div>
+        <label className="block space-y-1">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+            Category
+          </span>
+          <select
+            className="w-full rounded-xl border border-[#dde2dd] px-3 py-3 text-sm"
+            value={recCategoryId}
+            onChange={(e) => setRecCategoryId(e.target.value)}
+          >
+            <option value="">Uncategorised</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          <span className="block text-xs text-[#6c7771]">
+            Same categories as daily expenses — use them to filter and group in
+            By category view.
+          </span>
+        </label>
         <label className="block space-y-1">
           <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
             Note

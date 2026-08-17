@@ -1047,4 +1047,83 @@ suite('account and couple household API', () => {
     const categories = detail.json<{ categories: { name: string }[] }>().categories;
     expect(categories.some((category) => category.name === 'Pets')).toBe(true);
   });
+
+  it('assigns categories to recurring outgoings and surfaces them in month view', async () => {
+    const user = await register('recurring-cat@example.com', 'Recurring Cat');
+    await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Wealth', icon: 'wallet-outline' }],
+        preferredCurrency: 'GBP',
+      },
+    });
+
+    const budgetRes = await app.inject({
+      method: 'POST',
+      url: '/v1/budgets',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Personal budget',
+        visibility: 'PRIVATE',
+        currency: 'GBP',
+        period: 'monthly',
+        seedCategories: true,
+      },
+    });
+    expect(budgetRes.statusCode).toBe(201);
+    const budget = budgetRes.json<{
+      id: string;
+      categories: { id: string; name: string }[];
+    }>();
+    const housing =
+      budget.categories.find((category) => category.name === 'Housing') ??
+      budget.categories[0];
+    expect(housing).toBeTruthy();
+
+    const recurring = await app.inject({
+      method: 'POST',
+      url: `/v1/budgets/${budget.id}/recurring`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Rent',
+        amountCents: 120_000,
+        cadence: 'monthly',
+        dayOfMonth: 1,
+        categoryId: housing!.id,
+      },
+    });
+    expect(recurring.statusCode).toBe(201);
+    expect(recurring.json<{ categoryId: string }>().categoryId).toBe(housing!.id);
+    const recurringId = recurring.json<{ id: string }>().id;
+
+    const patched = await app.inject({
+      method: 'PATCH',
+      url: `/v1/budgets/${budget.id}/recurring/${recurringId}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { categoryId: housing!.id },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json<{ categoryId: string }>().categoryId).toBe(housing!.id);
+
+    const now = new Date();
+    const outgoings = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budget.id}/outgoings?year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(outgoings.statusCode).toBe(200);
+    const rent = outgoings
+      .json<{
+        list: {
+          recurringId: string | null;
+          categoryId: string | null;
+          categoryName: string | null;
+        }[];
+      }>()
+      .list.find((item) => item.recurringId === recurringId);
+    expect(rent?.categoryId).toBe(housing!.id);
+    expect(rent?.categoryName).toBe(housing!.name);
+  });
 });

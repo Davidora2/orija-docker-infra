@@ -882,6 +882,7 @@ export async function updateRecurringOutgoing(
     anchorDate: string | null;
     note: string;
     active: boolean;
+    categoryId: string | null;
   }>,
 ): Promise<RecurringOutgoing> {
   const raw = await request<Record<string, unknown>>(
