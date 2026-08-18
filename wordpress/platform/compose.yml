@@ -56,6 +56,63 @@ services:
       - "com.orija.stack=wp-platform"
       - "com.orija.role=shared-cache"
 
+  # Catch-all status page so http://<host-ip>:18100 is not a Traefik 404.
+  # WordPress sites still win via higher-priority Host() routers.
+  landing:
+    image: nginx:1.27-alpine
+    container_name: wp-landing
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat > /usr/share/nginx/html/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1"/>
+          <title>WordPress platform</title>
+          <style>
+            body { font-family: system-ui, sans-serif; background:#0b1220; color:#e8eefc; margin:0; padding:2rem; }
+            main { max-width: 40rem; }
+            h1 { font-size: 1.4rem; }
+            code, li { font-size: .95rem; }
+            a { color:#8ec8ff; }
+            .ok { color:#7dffa3; }
+          </style>
+        </head>
+        <body>
+          <main>
+            <p class="ok">Platform is up</p>
+            <h1>orija WordPress hosting</h1>
+            <p>This is the shared Traefik origin on port <code>18100</code>. Opening the raw IP is expected to show this page.</p>
+            <p>Each WordPress site is a separate stack and needs its own hostname:</p>
+            <ol>
+              <li>Provision: <code>./wordpress/scripts/new-site.sh --slug … --domain … --owner …</code></li>
+              <li>Deploy the site stack in Portainer</li>
+              <li>Point Cloudflare Tunnel (or DNS) at <code>http://localhost:18100</code></li>
+              <li>Open <code>https://your-domain/wp-admin/install.php</code></li>
+            </ol>
+            <p>Private Traefik dashboard: host port <code>18101</code> (do not expose publicly).</p>
+          </main>
+        </body>
+        </html>
+        EOF
+        exec nginx -g 'daemon off;'
+    networks:
+      - wp-public
+    labels:
+      - "com.orija.stack=wp-platform"
+      - "com.orija.role=landing"
+      - "traefik.enable=true"
+      - "traefik.docker.network=wp-public"
+      - "traefik.http.routers.wp-landing.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.wp-landing.entrypoints=web"
+      - "traefik.http.routers.wp-landing.priority=1"
+      - "traefik.http.routers.wp-landing.service=wp-landing"
+      - "traefik.http.services.wp-landing.loadbalancer.server.port=80"
+
 networks:
   wp-public:
     name: wp-public

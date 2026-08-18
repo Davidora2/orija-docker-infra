@@ -31,7 +31,9 @@ export PORTAINER_API_TOKEN=ptr_...
 ./wordpress/scripts/deploy-platform.sh
 ```
 
-Confirm containers `wp-traefik` and `wp-redis` are running and network `wp-public` exists.
+Confirm containers `wp-traefik`, `wp-redis`, and `wp-landing` are running and network `wp-public` exists.
+
+On your LAN, open `http://<docker-host-ip>:18100/` — you should see **Platform is up**, not Traefik `404 page not found`. A 404 on the raw IP means Traefik is reachable but no catch-all / site router matched (refresh after the landing service is deployed). WordPress sites are served by hostname, not by IP.
 
 ## Step 2 — Provision a site in git/workdir
 

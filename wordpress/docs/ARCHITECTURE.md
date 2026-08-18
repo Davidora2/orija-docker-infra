@@ -36,6 +36,7 @@
 |---------|-------|------|
 | `traefik` | `traefik:v3.6` | HTTP router; reads Docker labels; binds host `18100→80` |
 | `redis` | `redis:7-alpine` | Optional shared object cache for WP plugins |
+| `landing` | `nginx:1.27-alpine` | Catch-all status page for raw IP access (`:18100`) |
 
 Creates Docker network **`wp-public`** (external for site stacks).
 
