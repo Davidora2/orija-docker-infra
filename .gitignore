@@ -13,5 +13,7 @@ apps/web/prisma/dev.db-journal
 wordpress/sites/*/.env
 wordpress/sites/*/CREDENTIALS.txt
 wordpress/sites/*/.compose-err
+wordpress/scripts/__pycache__/
+*.pyc
 !wordpress/sites/registry.yaml
 !wordpress/sites/.gitkeep
