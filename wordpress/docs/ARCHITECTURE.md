@@ -34,7 +34,7 @@
 
 | Service | Image | Role |
 |---------|-------|------|
-| `traefik` | `traefik:v3.3` | HTTP router; reads Docker labels; binds host `18100→80` |
+| `traefik` | `traefik:v3.6` | HTTP router; reads Docker labels; binds host `18100→80` |
 | `redis` | `redis:7-alpine` | Optional shared object cache for WP plugins |
 
 Creates Docker network **`wp-public`** (external for site stacks).

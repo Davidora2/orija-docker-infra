@@ -4,7 +4,8 @@
 
 services:
   traefik:
-    image: traefik:v3.3
+    # v3.6.1+ negotiates Docker API (required for Docker Engine 29+)
+    image: traefik:v3.6
     container_name: wp-traefik
     restart: unless-stopped
     command:
