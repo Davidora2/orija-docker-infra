@@ -1,48 +1,31 @@
-# CreatoMatch
+# orija-docker-infra
 
-Upfluence-style UGC / influencer campaign platform.
+Docker / Portainer infrastructure for the orija host (`portainer.orija.store`).
 
-Find creators by the content they share → outreach with templates → preview brief & terms → apply → pay or affiliate → track posts & metrics.
+## WordPress hosting (multi-site)
 
-## Quick start
-
-```bash
-cd apps/web
-pnpm install
-pnpm db:push
-pnpm db:seed
-pnpm dev
-```
-
-Or from repo root:
+Scalable WordPress platform: one shared Traefik edge (`wp-platform`), many isolated site stacks (`wp-<slug>`), account → site registry, and Portainer-friendly deploy scripts.
 
 ```bash
-pnpm --dir apps/web install
-pnpm db:reset
-pnpm dev
+./wordpress/scripts/new-site.sh --slug acme --domain acme.orija.store --owner alice
+./wordpress/scripts/deploy-platform.sh   # needs PORTAINER_API_TOKEN
+./wordpress/scripts/deploy-site.sh --slug acme
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Full docs: **[wordpress/README.md](wordpress/README.md)**
 
-## Demo personas
+| Doc | Topic |
+|-----|--------|
+| [Architecture](wordpress/docs/ARCHITECTURE.md) | Traefik, isolation, scaling |
+| [Quick start](wordpress/docs/QUICKSTART.md) | First site end-to-end |
+| [Multi-account](wordpress/docs/MULTI-ACCOUNT.md) | Portainer users ↔ WP admins |
+| [Operations](wordpress/docs/OPERATIONS.md) | Backups, updates, troubleshooting |
+| [Portainer](wordpress/docs/PORTAINER.md) | API, tunnels, ports |
 
-Use the **Brand / Creator** switcher in the sidebar:
+## Other apps in this repo
 
-| Persona | Email | What to try |
-|---------|-------|-------------|
-| Brand | `brand@creatomatch.app` | Discovery search (`skincare`), campaign pipeline, accept applications, sync metrics, mark paid |
-| Creator | `maya@creators.app` | Opportunities, preview brief, submit posts, view affiliate assets & earnings |
+`apps/web` contains CreatoMatch (UGC campaign MVP). See that app’s README for local Node development.
 
-Seeded campaign: **Spring Glow Serum Launch** (hybrid paid + affiliate).
+## Portainer skill
 
-## What's included (MVP)
-
-- Content-based creator discovery (caption/topic matching)
-- Campaigns with brief, terms, deliverables, paid/gift/affiliate/hybrid
-- Outreach templates with merge tags
-- Creator brief preview + application flow
-- Affiliate tracking links + promo codes
-- Deliverable submission, metric sync stub, payouts & commissions
-- Brand analytics dashboard
-
-See [PLAN.md](./PLAN.md) for full product roadmap.
+Cloud Agents: `.cursor/skills/portainer-deploy/SKILL.md`

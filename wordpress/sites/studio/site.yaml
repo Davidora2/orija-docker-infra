@@ -1,0 +1,13 @@
+slug: studio
+domain: studio.orija.store
+title: Bob Studios
+owner_account: bob
+stack_name: wp-studio
+status: example
+created: 2026-08-18
+compose: compose.yml
+notes: |
+  1. Deploy wp-platform first (shared Traefik + redis).
+  2. Deploy this stack in Portainer (name: wp-studio).
+  3. Point Cloudflare Tunnel hostname studio.orija.store → http://localhost:18100
+  4. Open https://studio.orija.store/wp-admin/install.php and create the WP admin user.

@@ -1,0 +1,13 @@
+slug: acme
+domain: acme.orija.store
+title: Acme Marketing
+owner_account: alice
+stack_name: wp-acme
+status: example
+created: 2026-08-18
+compose: compose.yml
+notes: |
+  1. Deploy wp-platform first (shared Traefik + redis).
+  2. Deploy this stack in Portainer (name: wp-acme).
+  3. Point Cloudflare Tunnel hostname acme.orija.store → http://localhost:18100
+  4. Open https://acme.orija.store/wp-admin/install.php and create the WP admin user.

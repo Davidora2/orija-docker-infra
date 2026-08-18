@@ -1,0 +1,65 @@
+# WordPress Hosting Platform — shared edge proxy
+# Deploy as Portainer stack: wp-platform
+# Origin for Cloudflare Tunnel: http://localhost:${PLATFORM_HTTP_PORT:-18100}
+
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: wp-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=wp-public
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+      - --accesslog=${TRAEFIK_ACCESS_LOG:-true}
+      - --ping=true
+    ports:
+      # High port only — do not bind host 80/443 (Cloudflare Tunnel origin)
+      - "${PLATFORM_HTTP_PORT:-18100}:80"
+      # Traefik dashboard (restrict via firewall / do not tunnel publicly)
+      - "${PLATFORM_DASHBOARD_PORT:-18101}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - wp-public
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.orija.stack=wp-platform"
+      - "com.orija.role=edge-proxy"
+
+  # Optional shared Redis for WordPress object cache plugins
+  redis:
+    image: redis:7-alpine
+    container_name: wp-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - wp_redis_data:/data
+    networks:
+      - wp-public
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 3s
+      retries: 5
+    labels:
+      - "com.orija.stack=wp-platform"
+      - "com.orija.role=shared-cache"
+
+networks:
+  wp-public:
+    name: wp-public
+    driver: bridge
+
+volumes:
+  wp_redis_data:
+    name: wp_redis_data
