@@ -1,0 +1,9 @@
+# Per-site secrets and env files — never commit
+sites/*/.env
+sites/*/*.env
+sites/*/credentials.txt
+platform/.env
+
+# Local scratch
+*.bak
+.tmp/

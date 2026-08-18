@@ -8,3 +8,10 @@ dist
 .DS_Store
 apps/web/prisma/dev.db
 apps/web/prisma/dev.db-journal
+
+# WordPress hosting secrets
+wordpress-hosting/sites/*/.env
+wordpress-hosting/sites/*/*.env
+wordpress-hosting/sites/*/credentials.txt
+wordpress-hosting/sites/*/backups/
+wordpress-hosting/platform/.env

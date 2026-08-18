@@ -1,48 +1,40 @@
-# CreatoMatch
+# orija-docker-infra
 
-Upfluence-style UGC / influencer campaign platform.
+Docker / Portainer infrastructure for Orija — including a **scalable WordPress hosting platform** managed through [Portainer](https://portainer.orija.store).
 
-Find creators by the content they share → outreach with templates → preview brief & terms → apply → pay or affiliate → track posts & metrics.
+## WordPress hosting (primary)
 
-## Quick start
-
-```bash
-cd apps/web
-pnpm install
-pnpm db:push
-pnpm db:seed
-pnpm dev
-```
-
-Or from repo root:
+Host many isolated WordPress websites on one Docker host. Each site gets its own stack, database, volumes, and WordPress admin account. Cloudflare Tunnel maps each hostname to a high origin port (no host `80`/`443`).
 
 ```bash
-pnpm --dir apps/web install
-pnpm db:reset
-pnpm dev
+cd wordpress-hosting
+./scripts/deploy-platform.sh          # shared Redis (once)
+./scripts/provision-site.sh \
+  --slug acme \
+  --domain acme.orija.store \
+  --title "Acme Marketing" \
+  --admin-user acmeadmin \
+  --deploy
+./scripts/list-sites.sh
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Full docs: **[wordpress-hosting/README.md](./wordpress-hosting/README.md)**
 
-## Demo personas
+| Guide | Path |
+|-------|------|
+| Architecture | [wordpress-hosting/docs/architecture.md](./wordpress-hosting/docs/architecture.md) |
+| Add a site | [wordpress-hosting/docs/adding-a-site.md](./wordpress-hosting/docs/adding-a-site.md) |
+| Manage accounts | [wordpress-hosting/docs/managing-accounts.md](./wordpress-hosting/docs/managing-accounts.md) |
+| Portainer ops | [wordpress-hosting/docs/portainer-ops.md](./wordpress-hosting/docs/portainer-ops.md) |
+| Backups | [wordpress-hosting/docs/backups-restore.md](./wordpress-hosting/docs/backups-restore.md) |
+| Scaling | [wordpress-hosting/docs/scaling.md](./wordpress-hosting/docs/scaling.md) |
 
-Use the **Brand / Creator** switcher in the sidebar:
+## Portainer for Cloud Agents
 
-| Persona | Email | What to try |
-|---------|-------|-------------|
-| Brand | `brand@creatomatch.app` | Discovery search (`skincare`), campaign pipeline, accept applications, sync metrics, mark paid |
-| Creator | `maya@creators.app` | Opportunities, preview brief, submit posts, view affiliate assets & earnings |
+Skill: [`.cursor/skills/portainer-deploy/SKILL.md`](./.cursor/skills/portainer-deploy/SKILL.md)
 
-Seeded campaign: **Spring Glow Serum Launch** (hybrid paid + affiliate).
+Required secret: `PORTAINER_API_TOKEN`
 
-## What's included (MVP)
+## Other apps in this repo
 
-- Content-based creator discovery (caption/topic matching)
-- Campaigns with brief, terms, deliverables, paid/gift/affiliate/hybrid
-- Outreach templates with merge tags
-- Creator brief preview + application flow
-- Affiliate tracking links + promo codes
-- Deliverable submission, metric sync stub, payouts & commissions
-- Brand analytics dashboard
-
-See [PLAN.md](./PLAN.md) for full product roadmap.
+`apps/web` contains CreatoMatch (influencer campaign MVP). See [PLAN.md](./PLAN.md) for that product plan.

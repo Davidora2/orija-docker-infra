@@ -1,0 +1,40 @@
+# Shared platform services for WordPress hosting
+#
+# Stack name in Portainer: wp-platform
+# Deploy once per Docker host. WordPress site stacks join the
+# external network `wp-platform` to use Redis.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: wp-platform-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - wp_platform_redis:/data
+    networks:
+      - wp-platform
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # Redis is internal-only. Sites reach it as hostname `redis`
+    # on the wp-platform network. Do not publish a host port unless
+    # you need local debugging.
+
+networks:
+  wp-platform:
+    name: wp-platform
+    driver: bridge
+
+volumes:
+  wp_platform_redis:
+    name: wp_platform_redis

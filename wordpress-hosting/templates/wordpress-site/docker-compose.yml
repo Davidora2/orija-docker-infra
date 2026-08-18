@@ -1,0 +1,144 @@
+# Per-site WordPress stack template
+#
+# Portainer stack name: wp-${SITE_SLUG}
+# Git compose path: wordpress-hosting/templates/wordpress-site/docker-compose.yml
+#
+# Required env (Portainer stack Env or sites/<slug>/.env):
+#   SITE_SLUG, SITE_DOMAIN, SITE_TITLE, HOST_PORT
+#   MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD
+#   WP_ADMIN_USER, WP_ADMIN_PASSWORD, WP_ADMIN_EMAIL
+#
+# Prerequisite: platform stack `wp-platform` (creates external network wp-platform).
+
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-wordpress}
+      MYSQL_USER: ${MYSQL_USER:-wordpress}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  wordpress:
+    image: wordpress:6.7-php8.2-apache
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # High host port only — Cloudflare Tunnel maps hostname → this port.
+      # Never bind 80/443 on the Docker host.
+      - "${HOST_PORT:?set HOST_PORT}:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: ${MYSQL_USER:-wordpress}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE:-wordpress}
+      WORDPRESS_TABLE_PREFIX: ${WORDPRESS_TABLE_PREFIX:-wp_}
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', 'https://${SITE_DOMAIN}');
+        define('WP_SITEURL', 'https://${SITE_DOMAIN}');
+        define('FORCE_SSL_ADMIN', true);
+        if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+          $$_SERVER['HTTPS'] = 'on';
+        }
+        define('WP_REDIS_HOST', 'redis');
+        define('WP_REDIS_PORT', 6379);
+        define('WP_REDIS_PREFIX', '${SITE_SLUG}:');
+        define('WP_MEMORY_LIMIT', '${WP_MEMORY_LIMIT:-256M}');
+        define('WP_MAX_MEMORY_LIMIT', '${WP_MAX_MEMORY_LIMIT:-512M}');
+    volumes:
+      - wp_html:/var/www/html
+    networks:
+      - internal
+      - wp-platform
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1/ >/dev/null || curl -fsS http://127.0.0.1/wp-admin/install.php >/dev/null || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    labels:
+      - "orija.wp.slug=${SITE_SLUG}"
+      - "orija.wp.domain=${SITE_DOMAIN}"
+      - "orija.wp.managed=true"
+
+  # One-shot installer: creates the site + primary WP admin account.
+  # Safe to re-run — exits 0 if already installed.
+  wp-init:
+    image: wordpress:cli-php8.2
+    restart: "on-failure"
+    depends_on:
+      wordpress:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: ${MYSQL_USER:-wordpress}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE:-wordpress}
+    volumes:
+      - wp_html:/var/www/html
+    networks:
+      - internal
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        echo "Waiting for WordPress files..."
+        i=0
+        while [ ! -f /var/www/html/wp-settings.php ]; do
+          i=$$((i+1))
+          if [ "$$i" -gt 60 ]; then
+            echo "WordPress core not ready" >&2
+            exit 1
+          fi
+          sleep 2
+        done
+        if wp core is-installed 2>/dev/null; then
+          echo "WordPress already installed for ${SITE_SLUG} — skipping."
+          exit 0
+        fi
+        echo "Installing WordPress for ${SITE_DOMAIN}..."
+        wp core install \
+          --url="https://${SITE_DOMAIN}" \
+          --title="${SITE_TITLE}" \
+          --admin_user="${WP_ADMIN_USER}" \
+          --admin_password="${WP_ADMIN_PASSWORD}" \
+          --admin_email="${WP_ADMIN_EMAIL}" \
+          --skip-email
+        wp option update blogdescription "${SITE_TAGLINE:-Managed by Orija WordPress Hosting}"
+        wp rewrite structure '/%postname%/'
+        wp plugin install redis-cache --activate || true
+        wp redis enable || true
+        echo "Install complete. Admin: ${WP_ADMIN_USER} @ https://${SITE_DOMAIN}/wp-admin"
+
+networks:
+  internal:
+    driver: bridge
+  wp-platform:
+    external: true
+    name: wp-platform
+
+volumes:
+  db_data:
+    name: ${SITE_SLUG}_db
+  wp_html:
+    name: ${SITE_SLUG}_wp_html

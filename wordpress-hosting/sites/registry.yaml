@@ -1,0 +1,28 @@
+# Orija WordPress site registry
+# Inventory only — NEVER store passwords here.
+# Secrets live in Portainer stack env and/or sites/<slug>/.env (gitignored).
+#
+# Updated by: scripts/provision-site.sh
+# Listed by:   scripts/list-sites.sh
+
+version: 1
+host: odserver2
+portainer_url: https://portainer.orija.store
+platform_stack: wp-platform
+port_range:
+  start: 19100
+  end: 19999
+
+# Populated by provision-site.sh. Example shape:
+# sites:
+#   - slug: acme
+#     stack: wp-acme
+#     domain: acme.orija.store
+#     title: Acme Marketing
+#     host_port: 19100
+#     admin_user: acmeadmin
+#     admin_email: admin@acme.example
+#     created_at: "2026-08-18T00:00:00Z"
+#     status: deployed
+#     notes: "Client CRM-123"
+sites: []
