@@ -4,8 +4,8 @@
   <div class="topbar">
     <div class="brand">{{ title }} <span>Hosting</span></div>
     <nav>
-      <a class="btn btn-primary" href="/sites/new">+ Create website</a>
-      <form method="post" action="/logout" style="display:inline">
+      <a class="btn btn-primary" href="{{ url('/sites/new') }}">+ Create website</a>
+      <form method="post" action="{{ url('/logout') }}" style="display:inline">
         <button class="btn btn-ghost" type="submit">Sign out</button>
       </form>
     </nav>
@@ -34,7 +34,7 @@
       </div>
       <p class="meta">{{ s.domain }}</p>
       <div class="actions">
-        <a class="btn btn-primary" href="/sites/{{ s.slug }}">Manage</a>
+        <a class="btn btn-primary" href="{{ url('/sites/' ~ s.slug) }}">Manage</a>
         <a class="btn btn-ghost" href="https://{{ s.domain }}" target="_blank" rel="noopener">Visit</a>
       </div>
     </article>
@@ -43,7 +43,7 @@
   {% else %}
   <div class="empty">
     <p>No websites yet.</p>
-    <p><a class="btn btn-primary" href="/sites/new">Create your first website</a></p>
+    <p><a class="btn btn-primary" href="{{ url('/sites/new') }}">Create your first website</a></p>
   </div>
   {% endif %}
 </div>

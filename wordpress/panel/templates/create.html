@@ -4,7 +4,7 @@
   <div class="topbar">
     <div class="brand">{{ title }} <span>Hosting</span></div>
     <nav>
-      <a class="btn btn-ghost" href="/">← All websites</a>
+      <a class="btn btn-ghost" href="{{ url('/') }}">← All websites</a>
     </nav>
   </div>
 
@@ -12,7 +12,7 @@
     <h2>Create a website</h2>
     <p class="meta">Fill this in — we’ll set up WordPress for you automatically.</p>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
-    <form method="post" action="/sites/new">
+    <form method="post" action="{{ url('/sites/new') }}">
       <label for="site_title">Website name</label>
       <input id="site_title" name="site_title" type="text" required value="{{ form.title }}" placeholder="My Bakery"/>
 

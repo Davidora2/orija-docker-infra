@@ -4,7 +4,7 @@
   <div class="topbar">
     <div class="brand">{{ title }} <span>Hosting</span></div>
     <nav>
-      <a class="btn btn-ghost" href="/">← All websites</a>
+      <a class="btn btn-ghost" href="{{ url('/') }}">← All websites</a>
     </nav>
   </div>
 
@@ -35,14 +35,14 @@
     </dl>
     <p class="hint">Save this password now. You can change it later inside WordPress.</p>
     {% else %}
-    <p class="meta">This site was imported without stored login details. Open the install or login page on the site itself.</p>
+    <p class="meta">Open WordPress on the site to finish setup or reset your password.</p>
     {% endif %}
 
     <h3 style="margin-top:1.25rem;font-family:var(--display);font-weight:500">Make it public</h3>
     <ol class="steps">
-      <li>In Cloudflare Tunnel, add hostname <strong>{{ site.domain }}</strong></li>
+      <li>In Cloudflare Tunnel, add hostname <strong>{{ site.domain }}</strong> (skip if it already works)</li>
       <li>Point it to <strong>http://localhost:18100</strong></li>
-      <li>Wait a minute, then visit your site</li>
+      <li>Visit your site</li>
     </ol>
 
     <div class="actions" style="margin-top:1.25rem">
@@ -51,7 +51,7 @@
     </div>
 
     <hr style="border:0;border-top:1px solid var(--line);margin:1.5rem 0"/>
-    <form method="post" action="/sites/{{ site.slug }}/delete" onsubmit="return confirm('Delete this website permanently?');">
+    <form method="post" action="{{ url('/sites/' ~ site.slug ~ '/delete') }}" onsubmit="return confirm('Delete this website permanently?');">
       <button class="btn btn-danger" type="submit">Delete website</button>
     </form>
   </div>

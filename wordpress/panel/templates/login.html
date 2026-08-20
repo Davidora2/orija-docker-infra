@@ -5,7 +5,7 @@
     <h2>{{ title }}</h2>
     <p class="meta">Sign in to manage your websites.</p>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
-    <form method="post" action="/login">
+    <form method="post" action="{{ url('/login') }}">
       <label for="password">Password</label>
       <input id="password" type="password" name="password" required autofocus placeholder="Hosting panel password"/>
       <button class="btn btn-primary btn-block" type="submit">Sign in</button>
