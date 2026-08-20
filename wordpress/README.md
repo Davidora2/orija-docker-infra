@@ -12,7 +12,19 @@ Scalable WordPress hosting for **https://portainer.orija.store**: one shared edg
 | Scripts | Provision, list, remove, validate, deploy |
 | Docs | Architecture, ops, multi-account, Portainer & tunnel |
 
-## Quick start
+## Easiest way (recommended) — Hosting Control Panel
+
+Use the **Bluehost-style dashboard** in your browser:
+
+1. Open **https://hosting.orija.store** (after tunnel is set)
+2. Sign in with your panel password
+3. Click **Create website**
+4. Manage all sites from one place
+
+Deploy the panel once: `./wordpress/scripts/deploy-panel.sh`  
+Docs: [panel/README.md](panel/README.md)
+
+## Advanced / script quick start
 
 ```bash
 # 1) Deploy shared platform (once)

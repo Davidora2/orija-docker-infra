@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">{{ title }} <span>Hosting</span></div>
+    <nav>
+      <a class="btn btn-primary" href="/sites/new">+ Create website</a>
+      <form method="post" action="/logout" style="display:inline">
+        <button class="btn btn-ghost" type="submit">Sign out</button>
+      </form>
+    </nav>
+  </div>
+
+  <section class="hero">
+    <h1>Your websites</h1>
+    <p>Create and manage WordPress sites like a hosting dashboard — no Docker or Portainer needed.</p>
+  </section>
+
+  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+  {% if sites %}
+  <div class="grid">
+    {% for s in sites %}
+    <article class="card">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start">
+        <h3>{{ s.title }}</h3>
+        {% if s.health == 'running' %}
+          <span class="badge badge-ok">Online</span>
+        {% elif s.health == 'starting' %}
+          <span class="badge badge-warn">Starting</span>
+        {% else %}
+          <span class="badge badge-muted">{{ s.health }}</span>
+        {% endif %}
+      </div>
+      <p class="meta">{{ s.domain }}</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="/sites/{{ s.slug }}">Manage</a>
+        <a class="btn btn-ghost" href="https://{{ s.domain }}" target="_blank" rel="noopener">Visit</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <p>No websites yet.</p>
+    <p><a class="btn btn-primary" href="/sites/new">Create your first website</a></p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

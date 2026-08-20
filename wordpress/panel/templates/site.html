@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">{{ title }} <span>Hosting</span></div>
+    <nav>
+      <a class="btn btn-ghost" href="/">← All websites</a>
+    </nav>
+  </div>
+
+  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start">
+      <div>
+        <h2>{{ site.title }}</h2>
+        <p class="meta">{{ site.domain }} · stack {{ site.stack_name }}</p>
+      </div>
+      {% if site.health == 'running' %}
+        <span class="badge badge-ok">Online</span>
+      {% elif site.health == 'starting' %}
+        <span class="badge badge-warn">Starting</span>
+      {% else %}
+        <span class="badge badge-muted">{{ site.health }}</span>
+      {% endif %}
+    </div>
+
+    <h3 style="margin-top:1.25rem;font-family:var(--display);font-weight:500">WordPress login</h3>
+    {% if site.admin_password %}
+    <dl class="kv">
+      <dt>Admin URL</dt><dd><a href="https://{{ site.domain }}/wp-admin" target="_blank" rel="noopener">https://{{ site.domain }}/wp-admin</a></dd>
+      <dt>Username</dt><dd>{{ site.admin_user }}</dd>
+      <dt>Password</dt><dd>{{ site.admin_password }}</dd>
+      <dt>Email</dt><dd>{{ site.admin_email }}</dd>
+    </dl>
+    <p class="hint">Save this password now. You can change it later inside WordPress.</p>
+    {% else %}
+    <p class="meta">This site was imported without stored login details. Open the install or login page on the site itself.</p>
+    {% endif %}
+
+    <h3 style="margin-top:1.25rem;font-family:var(--display);font-weight:500">Make it public</h3>
+    <ol class="steps">
+      <li>In Cloudflare Tunnel, add hostname <strong>{{ site.domain }}</strong></li>
+      <li>Point it to <strong>http://localhost:18100</strong></li>
+      <li>Wait a minute, then visit your site</li>
+    </ol>
+
+    <div class="actions" style="margin-top:1.25rem">
+      <a class="btn btn-primary" href="https://{{ site.domain }}" target="_blank" rel="noopener">Visit website</a>
+      <a class="btn btn-ghost" href="https://{{ site.domain }}/wp-admin" target="_blank" rel="noopener">WordPress admin</a>
+    </div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:1.5rem 0"/>
+    <form method="post" action="/sites/{{ site.slug }}/delete" onsubmit="return confirm('Delete this website permanently?');">
+      <button class="btn btn-danger" type="submit">Delete website</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

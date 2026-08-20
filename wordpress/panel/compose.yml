@@ -1,0 +1,70 @@
+# Orija Hosting Control Panel — Bluehost-style UI for WordPress sites
+# Portainer stack name: wp-panel
+# After deploy, add Cloudflare Tunnel: hosting.orija.store → http://localhost:18100
+
+services:
+  panel:
+    image: python:3.12-slim
+    container_name: wp-panel
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      PORTAINER_URL: ${PORTAINER_URL:-https://portainer.orija.store}
+      PORTAINER_API_TOKEN: ${PORTAINER_API_TOKEN:?set PORTAINER_API_TOKEN}
+      PORTAINER_ENDPOINT_ID: ${PORTAINER_ENDPOINT_ID:-3}
+      PANEL_PASSWORD: ${PANEL_PASSWORD:?set PANEL_PASSWORD}
+      PANEL_SESSION_SECRET: ${PANEL_SESSION_SECRET:?set PANEL_SESSION_SECRET}
+      PANEL_DATA_DIR: /data
+      DEFAULT_DOMAIN_SUFFIX: ${DEFAULT_DOMAIN_SUFFIX:-orija.store}
+      PANEL_TITLE: ${PANEL_TITLE:-Orija}
+      PANEL_GIT_REF: ${PANEL_GIT_REF:-refs/heads/cursor/wordpress-portainer-hosting-4648}
+      PANEL_DOMAIN: ${PANEL_DOMAIN:-hosting.orija.store}
+    volumes:
+      - wp_panel_data:/data
+    networks:
+      - wp-public
+    # No host port publish — Traefik on wp-platform routes by hostname.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        set -e
+        apt-get update -qq
+        apt-get install -y -qq git ca-certificates >/dev/null
+        REF="$${PANEL_GIT_REF#refs/heads/}"
+        rm -rf /tmp/repo
+        git clone --depth 1 --branch "$$REF" https://github.com/Davidora2/orija-docker-infra.git /tmp/repo
+        rm -rf /app/*
+        cp -a /tmp/repo/wordpress/panel/. /app/
+        if [ -f /tmp/repo/wordpress/sites/registry.yaml ]; then
+          mkdir -p /bootstrap
+          cp /tmp/repo/wordpress/sites/registry.yaml /bootstrap/registry.yaml || true
+        fi
+        pip install --no-cache-dir -r /app/requirements.txt
+        exec uvicorn app:app --host 0.0.0.0 --port 8080
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    labels:
+      - "com.orija.stack=wp-panel"
+      - "com.orija.role=hosting-panel"
+      - "traefik.enable=true"
+      - "traefik.docker.network=wp-public"
+      - "traefik.http.routers.wp-panel.rule=Host(`${PANEL_DOMAIN:-hosting.orija.store}`)"
+      - "traefik.http.routers.wp-panel.entrypoints=web"
+      - "traefik.http.routers.wp-panel.service=wp-panel"
+      - "traefik.http.services.wp-panel.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.wp-panel-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.wp-panel.middlewares=wp-panel-headers"
+
+networks:
+  wp-public:
+    external: true
+    name: wp-public
+
+volumes:
+  wp_panel_data:
+    name: wp_panel_data
