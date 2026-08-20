@@ -1,0 +1,52 @@
+# Central inventory of WordPress sites and owning Portainer accounts.
+# Updated automatically by scripts/new-site.sh and scripts/remove-site.sh.
+#
+# owner_account: Portainer username or team name responsible for the stack
+# stack_name: Portainer stack name (must be unique on the endpoint)
+# domain: public hostname (Cloudflare Tunnel → platform origin)
+# slug: short id used in container/volume names
+
+version: 1
+platform:
+  stack_name: wp-platform
+  http_port: 18100
+  dashboard_port: 18101
+  tunnel_origin: http://localhost:18100
+  network: wp-public
+
+accounts:
+  - id: alice
+    display_name: alice
+    portainer_user: alice
+    notes: example account for docs/demo
+  - id: bob
+    display_name: bob
+    portainer_user: bob
+    notes: example account for docs/demo
+  - id: cursor
+    display_name: cursor
+    portainer_user: cursor
+    notes: auto-added by new-site.sh
+
+sites:
+  - slug: test
+    domain: test.orija.store
+    title: Test Website
+    owner_account: cursor
+    stack_name: wp-test
+    status: provisioned
+    created: 2026-08-20
+  - slug: studio
+    domain: studio.orija.store
+    title: Bob Studios
+    owner_account: bob
+    stack_name: wp-studio
+    status: example
+    created: 2026-08-18
+  - slug: acme
+    domain: acme.orija.store
+    title: Acme Marketing
+    owner_account: alice
+    stack_name: wp-acme
+    status: example
+    created: 2026-08-18

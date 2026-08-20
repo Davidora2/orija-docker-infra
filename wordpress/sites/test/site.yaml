@@ -1,0 +1,13 @@
+slug: test
+domain: test.orija.store
+title: Test Website
+owner_account: cursor
+stack_name: wp-test
+status: provisioned
+created: 2026-08-20
+compose: compose.yml
+notes: |
+  1. Deploy wp-platform first (shared Traefik + redis).
+  2. Deploy this stack in Portainer (name: wp-test).
+  3. Point Cloudflare Tunnel hostname test.orija.store → http://localhost:18100
+  4. Open https://test.orija.store/wp-admin/install.php and create the WP admin user.

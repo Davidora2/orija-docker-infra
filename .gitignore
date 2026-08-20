@@ -15,3 +15,8 @@ wordpress-hosting/sites/*/*.env
 wordpress-hosting/sites/*/credentials.txt
 wordpress-hosting/sites/*/backups/
 wordpress-hosting/platform/.env
+
+# WordPress (Traefik platform) secrets
+wordpress/sites/*/.env
+wordpress/sites/*/CREDENTIALS.txt
+wordpress/sites/*/credentials.txt
