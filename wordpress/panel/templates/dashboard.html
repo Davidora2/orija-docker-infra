@@ -4,6 +4,7 @@
   <div class="topbar">
     <div class="brand">{{ title }} <span>Hosting</span></div>
     <nav>
+      <a class="btn btn-ghost" href="{{ url('/account/password') }}">Password</a>
       <a class="btn btn-primary" href="{{ url('/sites/new') }}">+ Create website</a>
       <form method="post" action="{{ url('/logout') }}" style="display:inline">
         <button class="btn btn-ghost" type="submit">Sign out</button>
@@ -15,6 +16,17 @@
     <h1>Your websites</h1>
     <p>Create and manage WordPress sites like a hosting dashboard — no Docker or Portainer needed.</p>
   </section>
+
+  {% if recovery_code %}
+  <div class="flash">
+    <strong>Save your recovery code:</strong>
+    <code style="font-size:1.05rem">{{ recovery_code }}</code>
+    <p class="hint" style="margin:.5rem 0">You’ll need this if you forget your panel password.</p>
+    <form method="post" action="{{ url('/account/dismiss-recovery') }}">
+      <button class="btn btn-ghost" type="submit">I’ve saved it — hide this</button>
+    </form>
+  </div>
+  {% endif %}
 
   {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 

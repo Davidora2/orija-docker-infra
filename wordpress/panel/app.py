@@ -12,12 +12,12 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+import auth as panel_auth
 import sites as site_service
 
 BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 
-PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "")
 SESSION_SECRET = os.environ.get("PANEL_SESSION_SECRET") or secrets.token_hex(32)
 DOMAIN_SUFFIX = os.environ.get("DEFAULT_DOMAIN_SUFFIX", "orija.store")
 PANEL_TITLE = os.environ.get("PANEL_TITLE", "Orija Hosting")
@@ -74,6 +74,7 @@ def ctx(request: Request, **extra):
 @app.on_event("startup")
 def startup() -> None:
     site_service._ensure_data()
+    panel_auth.bootstrap_from_env()
     if not (site_service.load_registry().get("sites")):
         site_service.import_existing_from_yaml(Path("/bootstrap/registry.yaml"))
 
@@ -92,13 +93,7 @@ def login_page(request: Request):
 
 @app.post("/login")
 def login_submit(request: Request, password: str = Form(...)):
-    if not PANEL_PASSWORD:
-        return templates.TemplateResponse(
-            "login.html",
-            ctx(request, error="Panel password is not configured."),
-            status_code=500,
-        )
-    if password != PANEL_PASSWORD:
+    if not panel_auth.verify_password(password):
         return templates.TemplateResponse(
             "login.html",
             ctx(request, error="Incorrect password."),
@@ -114,6 +109,59 @@ def logout(request: Request):
     return RedirectResponse(p(request, "/login"), status_code=303)
 
 
+@app.get("/forgot", response_class=HTMLResponse)
+def forgot_page(request: Request):
+    return templates.TemplateResponse(
+        "forgot.html",
+        ctx(request, error=None, success=None, recovery_hint=panel_auth.recovery_hint()),
+    )
+
+
+@app.post("/forgot", response_class=HTMLResponse)
+def forgot_submit(
+    request: Request,
+    recovery_code: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "forgot.html",
+            ctx(
+                request,
+                error="New passwords do not match.",
+                success=None,
+                recovery_hint=panel_auth.recovery_hint(),
+            ),
+            status_code=400,
+        )
+    try:
+        new_code = panel_auth.reset_with_recovery(recovery_code, new_password)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "forgot.html",
+            ctx(
+                request,
+                error=str(exc),
+                success=None,
+                recovery_hint=panel_auth.recovery_hint(),
+            ),
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "forgot.html",
+        ctx(
+            request,
+            error=None,
+            success=(
+                "Password updated. Sign in with your new password. "
+                f"Your new recovery code is {new_code} — save it now."
+            ),
+            recovery_hint=panel_auth.recovery_hint(),
+        ),
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     redir = require_login(request)
@@ -126,6 +174,82 @@ def dashboard(request: Request):
             sites=site_service.list_sites(),
             domain_suffix=DOMAIN_SUFFIX,
             flash=request.session.pop("flash", None),
+            recovery_code=panel_auth.peek_pending_recovery(),
+        ),
+    )
+
+
+@app.post("/account/dismiss-recovery")
+def dismiss_recovery(request: Request):
+    redir = require_login(request)
+    if redir:
+        return redir
+    panel_auth.dismiss_recovery_reveal()
+    request.session["flash"] = "Recovery code hidden. Make sure you saved it."
+    return RedirectResponse(p(request, "/"), status_code=303)
+
+
+@app.get("/account/password", response_class=HTMLResponse)
+def password_page(request: Request):
+    redir = require_login(request)
+    if redir:
+        return redir
+    return templates.TemplateResponse(
+        "password.html",
+        ctx(request, error=None, success=None, new_recovery=None),
+    )
+
+
+@app.post("/account/password", response_class=HTMLResponse)
+def password_change(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    redir = require_login(request)
+    if redir:
+        return redir
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "password.html",
+            ctx(request, error="New passwords do not match.", success=None, new_recovery=None),
+            status_code=400,
+        )
+    try:
+        panel_auth.change_password(current_password, new_password)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "password.html",
+            ctx(request, error=str(exc), success=None, new_recovery=None),
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "password.html",
+        ctx(request, error=None, success="Password changed successfully.", new_recovery=None),
+    )
+
+
+@app.post("/account/recovery", response_class=HTMLResponse)
+def recovery_rotate(request: Request, current_password: str = Form(...)):
+    redir = require_login(request)
+    if redir:
+        return redir
+    try:
+        code = panel_auth.rotate_recovery(current_password)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "password.html",
+            ctx(request, error=str(exc), success=None, new_recovery=None),
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "password.html",
+        ctx(
+            request,
+            error=None,
+            success="New recovery code created. Save it now.",
+            new_recovery=code,
         ),
     )
 

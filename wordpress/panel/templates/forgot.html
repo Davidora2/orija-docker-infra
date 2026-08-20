@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="login-wrap">
+  <div class="card login-card">
+    <h2>Reset password</h2>
+    <p class="meta">Use your recovery code (looks like <strong>{{ recovery_hint }}</strong>).</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% if success %}<div class="flash">{{ success }}</div>{% endif %}
+    <form method="post" action="{{ url('/forgot') }}">
+      <label for="recovery_code">Recovery code</label>
+      <input id="recovery_code" name="recovery_code" type="text" required placeholder="XXXX-XXXX-XXXX" autocomplete="off"/>
+
+      <label for="new_password">New password</label>
+      <input id="new_password" name="new_password" type="password" required minlength="8"/>
+
+      <label for="confirm_password">Confirm new password</label>
+      <input id="confirm_password" name="confirm_password" type="password" required minlength="8"/>
+
+      <button class="btn btn-primary btn-block" type="submit">Reset password</button>
+    </form>
+    <p class="hint" style="margin-top:1rem;text-align:center">
+      <a href="{{ url('/login') }}">← Back to sign in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}
