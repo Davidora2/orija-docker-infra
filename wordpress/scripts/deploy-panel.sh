@@ -36,6 +36,7 @@ env = [
   {"name": "PANEL_DOMAIN", "value": os.environ.get("PANEL_DOMAIN", "hosting.orija.store")},
   {"name": "DEFAULT_DOMAIN_SUFFIX", "value": os.environ.get("DEFAULT_DOMAIN_SUFFIX", "orija.store")},
   {"name": "PANEL_TITLE", "value": os.environ.get("PANEL_TITLE", "Orija")},
+  {"name": "PANEL_ROOT_PATH", "value": os.environ.get("PANEL_ROOT_PATH", "/hosting")},
 ]
 json.dump({"Name": "wp-panel", "StackFileContent": compose, "Env": env}, open("/tmp/wp-panel-stack.json","w"))
 json.dump({"stackFileContent": compose, "env": env, "prune": False, "pullImage": True}, open("/tmp/wp-panel-update.json","w"))
