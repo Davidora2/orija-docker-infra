@@ -69,14 +69,14 @@ export function LifeOSApp() {
   const [online, setOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    | "command"
-    | "ideas"
-    | "portfolio"
-    | "capacity"
-    | "budget"
+    | "today"
+    | "plan"
     | "calendar"
-    | "review"
-  >("command");
+    | "money"
+    | "you"
+  >("today");
+  const [planSegment, setPlanSegment] = useState<"areas" | "projects" | "ideas">("areas");
+  const [youDest, setYouDest] = useState<"menu" | "capacity" | "review">("menu");
   const [authMode, setAuthMode] = useState<
     "login" | "register" | "forgot" | "reset"
   >("login");
@@ -490,25 +490,46 @@ export function LifeOSApp() {
       <nav className="mb-5 flex flex-wrap gap-2">
         {(
           [
-            ["command", "Command"],
-            ["ideas", "Ideas"],
-            ["portfolio", "Areas"],
-            ["capacity", "Capacity"],
-            ["budget", "Budget"],
+            ["today", "Today"],
+            ["plan", "Plan"],
             ["calendar", "Calendar"],
-            ["review", "Review"],
+            ["money", "Money"],
+            ["you", "You"],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             className={`rounded-full px-3 py-1.5 text-xs font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setTab(id);
+              if (id === "you") setYouDest("menu");
+            }}
           >
             {label}
           </button>
         ))}
       </nav>
+      {tab === "plan" ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(
+            [
+              ["areas", "Areas"],
+              ["projects", "Projects"],
+              ["ideas", "Ideas"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs font-bold ${planSegment === id ? "bg-[#617a57] text-white" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
+              onClick={() => setPlanSegment(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {error ? (
         <p className="mb-4 rounded-xl bg-[#f8e4df] px-3 py-2 text-sm text-[#c9634f]">
@@ -516,7 +537,7 @@ export function LifeOSApp() {
         </p>
       ) : null}
 
-      {tab === "command" ? (
+      {tab === "today" ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Primary move</p>
@@ -565,7 +586,7 @@ export function LifeOSApp() {
         </section>
       ) : null}
 
-      {tab === "ideas" ? (
+      {tab === "plan" && planSegment === "ideas" ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">Capture idea</h2>
@@ -616,7 +637,8 @@ export function LifeOSApp() {
                   setProjectOutcome(str(idea, "note"));
                   setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
                   setActionTitle(`Advance: ${idea.title}`);
-                  setTab("portfolio");
+                  setTab("plan");
+                  setPlanSegment("projects");
                 }}
               >
                 Convert to project
@@ -626,7 +648,7 @@ export function LifeOSApp() {
         </section>
       ) : null}
 
-      {tab === "portfolio" ? (
+      {tab === "plan" && (planSegment === "areas" || planSegment === "projects") ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">Life areas</h2>
@@ -863,7 +885,26 @@ export function LifeOSApp() {
         </section>
       ) : null}
 
-      {tab === "capacity" ? (
+      {tab === "you" && youDest === "menu" ? (
+        <section className="space-y-3">
+          <h2 className="font-serif text-2xl text-[#14241f]">You</h2>
+          <p className="text-sm text-[#6c7771]">Capacity and weekly review live here.</p>
+          <button type="button" className="block w-full rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left" onClick={() => setYouDest("capacity")}>
+            <div className="text-sm font-bold text-[#14241f]">Capacity</div>
+            <div className="text-xs text-[#6c7771]">Weekly hours and load</div>
+          </button>
+          <button type="button" className="block w-full rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left" onClick={() => setYouDest("review")}>
+            <div className="text-sm font-bold text-[#14241f]">Weekly Review</div>
+            <div className="text-xs text-[#6c7771]">CEO-style check-in</div>
+          </button>
+          <button type="button" className="block w-full rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left" onClick={() => setSettingsOpen(true)}>
+            <div className="text-sm font-bold text-[#14241f]">Settings</div>
+            <div className="text-xs text-[#6c7771]">Account and currency</div>
+          </button>
+        </section>
+      ) : null}
+
+      {tab === "you" && youDest === "capacity" ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">
@@ -1024,7 +1065,7 @@ export function LifeOSApp() {
         </section>
       ) : null}
 
-      {tab === "budget" ? (
+      {tab === "money" ? (
         <BudgetPanel account={account} onError={setError} />
       ) : null}
 
@@ -1035,7 +1076,7 @@ export function LifeOSApp() {
         />
       ) : null}
 
-      {tab === "review" ? (
+      {tab === "you" && youDest === "review" ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Scorecard</p>

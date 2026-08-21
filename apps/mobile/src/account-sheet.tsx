@@ -547,7 +547,9 @@ export function AccountSheet({
                     secondary
                   />
                 ) : null}
-                <Text style={styles.serverText}>Server: {apiBaseUrl}</Text>
+                <Text style={styles.serverText}>
+                  {__DEV__ ? `Server: ${apiBaseUrl}` : 'Synced with your Life OS account'}
+                </Text>
               </>
             ) : (
               <>

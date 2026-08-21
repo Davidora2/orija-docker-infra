@@ -1,5 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import {
+  cacheAccount,
+  cacheItems,
+  cacheJson,
+  cacheKeys,
+  enqueueOutbox,
+  isNetworkFailure,
+  isOptimisticId,
+  loadCachedAccount,
+  loadCachedItems,
+  loadCachedJson,
+  optimisticLifeItem,
+  resolveMappedId,
+  setSyncPhase,
+} from './offline';
 
 const sessionKey = 'life-os-api-session';
 const requestTimeoutMs = 15_000;
@@ -172,17 +187,26 @@ async function fetchWithTimeout(
 async function refreshSession(session: Session): Promise<Session> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
-      const response = await fetchWithTimeout(`${apiBaseUrl}/v1/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          refreshToken: session.refreshToken,
-          deviceName: `${Platform.OS} Life OS`,
-        }),
-      });
-      const refreshed = await parseResponse<Session>(response);
-      await saveSession(refreshed);
-      return refreshed;
+      try {
+        const response = await fetchWithTimeout(`${apiBaseUrl}/v1/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            refreshToken: session.refreshToken,
+            deviceName: `${Platform.OS} Life OS`,
+          }),
+        });
+        const refreshed = await parseResponse<Session>(response);
+        await saveSession(refreshed);
+        return refreshed;
+      } catch (error) {
+        // Network/timeout during refresh: keep local session so the user stays
+        // signed in offline with cached data. Only clear on true auth rejection.
+        if (isNetworkFailure(error)) {
+          throw error;
+        }
+        throw error;
+      }
     })().finally(() => {
       refreshPromise = null;
     });
@@ -190,36 +214,53 @@ async function refreshSession(session: Session): Promise<Session> {
   return refreshPromise;
 }
 
-async function request<T>(
+/** Direct authenticated request that never reads/writes the offline outbox. */
+async function requestOnline<T>(
   path: string,
   options: RequestInit = {},
   retry = true,
 ): Promise<T> {
   const session = await loadSession();
-  const response = await fetchWithTimeout(`${apiBaseUrl}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
-      ...options.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${apiBaseUrl}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    await setSyncPhase('offline');
+    throw error;
+  }
 
   if (response.status === 401 && session && retry) {
     try {
       await refreshSession(session);
-      return request<T>(path, options, false);
+      return requestOnline<T>(path, options, false);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         const currentSession = await loadSession();
         if (currentSession?.refreshToken === session.refreshToken) {
           await saveSession(null);
+          await cacheAccount(null);
         }
       }
       throw error;
     }
   }
+  await setSyncPhase('online');
   return parseResponse<T>(response);
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  retry = true,
+): Promise<T> {
+  return requestOnline<T>(path, options, retry);
 }
 
 export async function register(input: {
@@ -367,7 +408,19 @@ export async function getCalendar(input: {
   if (input.start) params.set('start', input.start);
   if (input.areaIds?.length) params.set('areaIds', input.areaIds.join(','));
   if (input.types?.length) params.set('types', input.types.join(','));
-  return request<CalendarPayload>(`/v1/calendar?${params.toString()}`);
+  const path = `/v1/calendar?${params.toString()}`;
+  try {
+    const payload = await request<CalendarPayload>(path);
+    await cacheJson(cacheKeys.calendar, payload);
+    return payload;
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await setSyncPhase('offline');
+      const cached = await loadCachedJson<CalendarPayload>(cacheKeys.calendar);
+      if (cached) return cached;
+    }
+    throw error;
+  }
 }
 
 export async function logout(): Promise<void> {
@@ -379,16 +432,31 @@ export async function logout(): Promise<void> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: session.refreshToken }),
       });
+    } catch {
+      // Still clear local session on logout even if the server is unreachable.
     } finally {
       await saveSession(null);
+      await cacheAccount(null);
     }
   }
 }
 
+
 export async function getAccount(): Promise<Account | null> {
   const session = await loadSession();
   if (!session) return null;
-  return request<Account>('/v1/me');
+  try {
+    const account = await request<Account>('/v1/me');
+    await cacheAccount(account);
+    return account;
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await setSyncPhase('offline');
+      const cached = await loadCachedAccount();
+      if (cached) return cached;
+    }
+    throw error;
+  }
 }
 
 export async function updateProfile(input: {
@@ -397,10 +465,12 @@ export async function updateProfile(input: {
   preferredCurrency?: string;
   avatarUrl?: string | null;
 }): Promise<Account> {
-  return request<Account>('/v1/me', {
+  const account = await request<Account>('/v1/me', {
     method: 'PATCH',
     body: JSON.stringify(input),
   });
+  await cacheAccount(account);
+  return account;
 }
 
 export async function createPartnerInvite(
@@ -428,11 +498,25 @@ export async function setActiveHousehold(householdId: string): Promise<Account> 
 
 export async function listLifeItems(kind?: ItemKind): Promise<LifeItem[]> {
   const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
-  const rows = await request<Record<string, unknown>[]>(`/v1/items${query}`);
-  return rows.map(mapItem);
+  try {
+    const rows = await request<Record<string, unknown>[]>(`/v1/items${query}`);
+    const items = rows.map(mapItem);
+    if (!kind) await cacheItems(items);
+    return items;
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await setSyncPhase('offline');
+      const cached = await loadCachedItems();
+      if (cached) {
+        return kind ? cached.filter((item) => item.kind === kind) : cached;
+      }
+    }
+    throw error;
+  }
 }
 
-export async function createLifeItem(input: {
+/** Online-only create used by the outbox flusher (skips queue). */
+export async function createLifeItemOnline(input: {
   kind: ItemKind;
   title: string;
   visibility?: ItemVisibility;
@@ -441,7 +525,7 @@ export async function createLifeItem(input: {
   body?: Record<string, unknown>;
   sortOrder?: number;
 }): Promise<LifeItem> {
-  const raw = await request<Record<string, unknown>>('/v1/items', {
+  const raw = await requestOnline<Record<string, unknown>>('/v1/items', {
     method: 'POST',
     body: JSON.stringify({
       kind: input.kind,
@@ -456,6 +540,69 @@ export async function createLifeItem(input: {
   return mapItem(raw);
 }
 
+export async function updateLifeItemOnline(
+  id: string,
+  input: {
+    title?: string;
+    status?: string;
+    visibility?: ItemVisibility;
+    parentId?: string | null;
+    body?: Record<string, unknown>;
+    sortOrder?: number;
+  },
+): Promise<LifeItem> {
+  const raw = await requestOnline<Record<string, unknown>>(`/v1/items/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+  return mapItem(raw);
+}
+
+export async function deleteLifeItemOnline(id: string): Promise<void> {
+  await requestOnline<void>(`/v1/items/${id}`, { method: 'DELETE' });
+}
+
+export async function createLifeItem(input: {
+  kind: ItemKind;
+  title: string;
+  visibility?: ItemVisibility;
+  status?: string;
+  parentId?: string | null;
+  body?: Record<string, unknown>;
+  sortOrder?: number;
+}): Promise<LifeItem> {
+  try {
+    const item = await createLifeItemOnline(input);
+    const cached = (await loadCachedItems()) ?? [];
+    await cacheItems([...cached.filter((row) => row.id !== item.id), item]);
+    return item;
+  } catch (error) {
+    if (!isNetworkFailure(error)) throw error;
+    await setSyncPhase('offline');
+    const account = await loadCachedAccount();
+    const optimistic = optimisticLifeItem({
+      ...input,
+      ownerUserId: account?.user.id,
+    });
+    await enqueueOutbox({
+      kind: 'createLifeItem',
+      optimisticId: optimistic.id,
+      input: {
+        kind: input.kind,
+        title: input.title,
+        visibility: input.visibility,
+        status: input.status,
+        parentId: input.parentId,
+        body: input.body,
+        sortOrder: input.sortOrder,
+      },
+    });
+    const cached = (await loadCachedItems()) ?? [];
+    await cacheItems([...cached, optimistic]);
+    return optimistic;
+  }
+}
+
 export async function updateLifeItem(
   id: string,
   input: {
@@ -467,15 +614,82 @@ export async function updateLifeItem(
     sortOrder?: number;
   },
 ): Promise<LifeItem> {
-  const raw = await request<Record<string, unknown>>(`/v1/items/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(input),
-  });
-  return mapItem(raw);
+  const resolvedId = resolveMappedId(id);
+  if (isOptimisticId(resolvedId)) {
+    const cached = (await loadCachedItems()) ?? [];
+    const existing = cached.find((item) => item.id === resolvedId);
+    if (!existing) throw new ApiError(404, 'not_found', 'Item not found offline.');
+    const updated: LifeItem = {
+      ...existing,
+      title: input.title ?? existing.title,
+      status: input.status ?? existing.status,
+      visibility: input.visibility ?? existing.visibility,
+      parentId:
+        input.parentId !== undefined ? input.parentId : existing.parentId,
+      body: input.body ?? existing.body,
+      sortOrder: input.sortOrder ?? existing.sortOrder,
+      updatedAt: new Date().toISOString(),
+    };
+    await enqueueOutbox({
+      kind: 'updateLifeItem',
+      itemId: resolvedId,
+      input,
+    });
+    await cacheItems(cached.map((item) => (item.id === resolvedId ? updated : item)));
+    return updated;
+  }
+
+  try {
+    const item = await updateLifeItemOnline(resolvedId, input);
+    const cached = (await loadCachedItems()) ?? [];
+    await cacheItems(cached.map((row) => (row.id === item.id ? item : row)));
+    return item;
+  } catch (error) {
+    if (!isNetworkFailure(error)) throw error;
+    await setSyncPhase('offline');
+    const cached = (await loadCachedItems()) ?? [];
+    const existing = cached.find((item) => item.id === resolvedId);
+    if (!existing) throw error;
+    const updated: LifeItem = {
+      ...existing,
+      title: input.title ?? existing.title,
+      status: input.status ?? existing.status,
+      visibility: input.visibility ?? existing.visibility,
+      parentId:
+        input.parentId !== undefined ? input.parentId : existing.parentId,
+      body: input.body ?? existing.body,
+      sortOrder: input.sortOrder ?? existing.sortOrder,
+      updatedAt: new Date().toISOString(),
+    };
+    await enqueueOutbox({
+      kind: 'updateLifeItem',
+      itemId: resolvedId,
+      input,
+    });
+    await cacheItems(cached.map((item) => (item.id === resolvedId ? updated : item)));
+    return updated;
+  }
 }
 
 export async function deleteLifeItem(id: string): Promise<void> {
-  await request<void>(`/v1/items/${id}`, { method: 'DELETE' });
+  const resolvedId = resolveMappedId(id);
+  if (isOptimisticId(resolvedId)) {
+    const cached = (await loadCachedItems()) ?? [];
+    await cacheItems(cached.filter((item) => item.id !== resolvedId));
+    await enqueueOutbox({ kind: 'deleteLifeItem', itemId: resolvedId });
+    return;
+  }
+  try {
+    await deleteLifeItemOnline(resolvedId);
+    const cached = (await loadCachedItems()) ?? [];
+    await cacheItems(cached.filter((item) => item.id !== resolvedId));
+  } catch (error) {
+    if (!isNetworkFailure(error)) throw error;
+    await setSyncPhase('offline');
+    const cached = (await loadCachedItems()) ?? [];
+    await cacheItems(cached.filter((item) => item.id !== resolvedId));
+    await enqueueOutbox({ kind: 'deleteLifeItem', itemId: resolvedId });
+  }
 }
 
 export async function pingApi(): Promise<boolean> {
@@ -500,10 +714,34 @@ export async function completeOnboarding(
   areas: { title: string; icon?: string }[],
   preferredCurrency?: string,
 ): Promise<Account> {
-  return request<Account>('/v1/onboarding/complete', {
+  const account = await request<Account>('/v1/onboarding/complete', {
     method: 'POST',
     body: JSON.stringify({ areas, preferredCurrency }),
   });
+  await cacheAccount(account);
+  return account;
+}
+
+/** Flush the offline outbox then refresh life items from the server. */
+export async function syncPendingChanges(
+  onItemsChanged?: (items: LifeItem[]) => void,
+): Promise<{ flushed: boolean; remaining: number }> {
+  const { flushOutbox } = await import('./offline');
+  const result = await flushOutbox({
+    createLifeItem: createLifeItemOnline,
+    updateLifeItem: updateLifeItemOnline,
+    deleteLifeItem: deleteLifeItemOnline,
+    onItemsChanged,
+  });
+  if (result.remaining === 0) {
+    try {
+      const items = await listLifeItems();
+      onItemsChanged?.(items);
+    } catch {
+      // keep optimistic cache if refresh fails
+    }
+  }
+  return { flushed: result.remaining === 0, remaining: result.remaining };
 }
 
 export type BudgetSummary = {
@@ -702,8 +940,19 @@ function mapRecurring(raw: Record<string, unknown>): RecurringOutgoing {
 }
 
 export async function listBudgets(): Promise<Budget[]> {
-  const rows = await request<Record<string, unknown>[]>('/v1/budgets');
-  return rows.map(mapBudget);
+  try {
+    const rows = await request<Record<string, unknown>[]>('/v1/budgets');
+    const budgets = rows.map(mapBudget);
+    await cacheJson(cacheKeys.budgets, budgets);
+    return budgets;
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await setSyncPhase('offline');
+      const cached = await loadCachedJson<Budget[]>(cacheKeys.budgets);
+      if (cached) return cached;
+    }
+    throw error;
+  }
 }
 
 export async function getBudget(id: string): Promise<Budget> {

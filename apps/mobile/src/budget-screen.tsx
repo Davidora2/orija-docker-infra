@@ -8,6 +8,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import {
   createBudget,
+  formatMoney,
   getBudget,
   listBudgets,
   type Account,
@@ -34,7 +35,7 @@ export function BudgetScreen({ account, notify }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
-  const [section, setSection] = useState<'outgoings' | 'wealth'>('outgoings');
+  const [section, setSection] = useState<'overview' | 'outgoings' | 'wealth'>('overview');
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || 'GBP';
 
@@ -83,11 +84,9 @@ export function BudgetScreen({ account, notify }: Props) {
 
   return (
     <ScrollView contentContainerStyle={styles.stack}>
-      <Text style={styles.title}>Budgets</Text>
+      <Text style={styles.title}>Money</Text>
       <Text style={styles.lede}>
-        Keep a personal budget private. Shared budgets are visible to your linked
-        partner. Daily expenses live inside Outgoings so they count toward this
-        month&apos;s total and pay delta.
+        Calm cashflow pulse — overview, spending, and wealth in one place.
       </Text>
 
       <View style={styles.row}>
@@ -149,33 +148,65 @@ export function BudgetScreen({ account, notify }: Props) {
       {detail ? (
         <>
           <View style={styles.row}>
-            <Pressable
-              style={[styles.chip, section === 'outgoings' && styles.chipActive]}
-              onPress={() => setSection('outgoings')}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  section === 'outgoings' && styles.chipTextActive,
-                ]}
+            {(
+              [
+                ['overview', 'Overview'],
+                ['outgoings', 'Spending'],
+                ['wealth', 'Wealth'],
+              ] as const
+            ).map(([id, label]) => (
+              <Pressable
+                key={id}
+                style={[styles.chip, section === id && styles.chipActive]}
+                onPress={() => setSection(id)}
               >
-                Outgoings
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.chip, section === 'wealth' && styles.chipActive]}
-              onPress={() => setSection('wealth')}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  section === 'wealth' && styles.chipTextActive,
-                ]}
-              >
-                Wealth
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.chipText,
+                    section === id && styles.chipTextActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
+
+          {section === 'overview' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Cashflow pulse</Text>
+              <Text style={styles.meta}>
+                Income{' '}
+                {formatMoney(detail.summary?.incomeCents ?? 0, currency)} ·
+                Spent{' '}
+                {formatMoney(detail.summary?.expenseCents ?? 0, currency)} ·
+                Planned{' '}
+                {formatMoney(detail.summary?.plannedCents ?? 0, currency)}
+              </Text>
+              <Text style={styles.cardTitle}>
+                Balance{' '}
+                {formatMoney(detail.summary?.balanceCents ?? 0, currency)}
+              </Text>
+              <Text style={styles.meta}>
+                Open Spending for bills and daily expenses, or Wealth for savings
+                and debt.
+              </Text>
+              <View style={styles.row}>
+                <Pressable
+                  style={styles.buttonSecondary}
+                  onPress={() => setSection('outgoings')}
+                >
+                  <Text style={styles.buttonTextSecondary}>Spending</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.buttonSecondary}
+                  onPress={() => setSection('wealth')}
+                >
+                  <Text style={styles.buttonTextSecondary}>Wealth</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
 
           {section === 'outgoings' ? (
             <OutgoingsView

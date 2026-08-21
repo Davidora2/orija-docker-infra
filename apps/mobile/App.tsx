@@ -32,11 +32,22 @@ import {
   ApiError,
   createLifeItem,
   getAccount,
+  loadSession,
   pingApi,
+  syncPendingChanges,
   updateLifeItem,
   type Account,
   type LifeItem,
 } from './src/api';
+import {
+  getSyncPhase,
+  loadCachedAccount,
+  loadCachedItems,
+  loadOutbox,
+  setSyncPhase,
+  subscribeSyncStatus,
+  type SyncPhase,
+} from './src/offline';
 import {
   WEEK_DAYS,
   bodyNumber,
@@ -80,7 +91,10 @@ const serif = Platform.select({
   default: 'Georgia',
 });
 
-type Tab = 'command' | 'portfolio' | 'ideas' | 'capacity' | 'budget' | 'calendar' | 'review';
+type Tab = 'today' | 'plan' | 'calendar' | 'money' | 'you';
+type PlanSegment = 'areas' | 'projects' | 'ideas';
+type YouDest = 'menu' | 'capacity' | 'review' | 'household' | 'integrations' | 'settings';
+type FabKind = 'idea' | 'action' | 'project' | 'spend';
 
 function tap(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== 'web') void Haptics.impactAsync(style);
@@ -271,12 +285,17 @@ function todayLabel(): string {
 function AppContent() {
   const insets = useSafeAreaInsets();
   const incomingUrl = Linking.useURL();
-  const [tab, setTab] = useState<Tab>('command');
+  const [tab, setTab] = useState<Tab>('today');
+  const [planSegment, setPlanSegment] = useState<PlanSegment>('areas');
+  const [youDest, setYouDest] = useState<YouDest>('menu');
+  const [fabKind, setFabKind] = useState<FabKind>('idea');
   const [account, setAccount] = useState<Account | null>(null);
   const [items, setItems] = useState<LifeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [online, setOnline] = useState(true);
+  const [syncPhase, setSyncPhaseState] = useState<SyncPhase>(getSyncPhase());
+  const [pendingCount, setPendingCount] = useState(0);
   const [accountOpen, setAccountOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -316,6 +335,32 @@ function AppContent() {
     setTimeout(() => setToast(null), 2800);
   }, []);
 
+  const applyVisionHours = useCallback((nextItems: LifeItem[]) => {
+    const vision = ofKind(nextItems, 'VISION').find((item) =>
+      Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
+    );
+    if (vision) {
+      setAvailableHoursInput(String(bodyNumber(vision, 'availableHours', 11)));
+    }
+  }, []);
+
+  const flushSync = useCallback(async () => {
+    const reachable = await pingApi();
+    if (!reachable) {
+      setOnline(false);
+      await setSyncPhase('offline');
+      return;
+    }
+    setOnline(true);
+    const result = await syncPendingChanges((nextItems) => {
+      setItems(nextItems);
+      applyVisionHours(nextItems);
+    });
+    if (result.remaining === 0) {
+      notify('Synced');
+    }
+  }, [applyVisionHours, notify]);
+
   const load = useCallback(
     async (mode: 'boot' | 'refresh' = 'boot') => {
       if (mode === 'refresh') setRefreshing(true);
@@ -323,45 +368,95 @@ function AppContent() {
       try {
         const reachable = await pingApi();
         setOnline(reachable);
+        if (!reachable) await setSyncPhase('offline');
+
         const nextAccount = await getAccount();
         setAccount(nextAccount);
         if (!nextAccount) {
+          const session = await loadSession();
+          const cachedAccount = await loadCachedAccount();
+          if (session && cachedAccount) {
+            setAccount(cachedAccount);
+            const cachedItems = (await loadCachedItems()) ?? [];
+            setItems(cachedItems);
+            applyVisionHours(cachedItems);
+            setOnline(false);
+            await setSyncPhase('offline');
+            notify('Offline — showing last saved data.');
+            return;
+          }
           setItems([]);
           setAccountOpen(true);
           return;
         }
-        const nextItems = await refreshAllItems();
-        setItems(nextItems);
-        const vision = ofKind(nextItems, 'VISION').find((item) =>
-          Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
-        );
-        if (vision) {
-          setAvailableHoursInput(String(bodyNumber(vision, 'availableHours', 11)));
+        try {
+          const nextItems = await refreshAllItems();
+          setItems(nextItems);
+          applyVisionHours(nextItems);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw error;
+          const cachedItems = (await loadCachedItems()) ?? [];
+          setItems(cachedItems);
+          applyVisionHours(cachedItems);
+          setOnline(false);
+          await setSyncPhase('offline');
+          notify('Offline — showing cached life items.');
+        }
+        if (reachable) {
+          void flushSync();
         }
       } catch (error) {
         setOnline(false);
+        await setSyncPhase('offline');
         if (error instanceof ApiError && error.status === 401) {
           setAccount(null);
           setItems([]);
           setAccountOpen(true);
         } else {
-          notify(
-            error instanceof Error
-              ? error.message
-              : 'Could not load Life OS data.',
-          );
+          const session = await loadSession();
+          const cachedAccount = await loadCachedAccount();
+          const cachedItems = (await loadCachedItems()) ?? [];
+          if (session && cachedAccount) {
+            setAccount(cachedAccount);
+            setItems(cachedItems);
+            applyVisionHours(cachedItems);
+            notify('Offline — using last known session.');
+          } else {
+            notify(
+              error instanceof Error
+                ? error.message
+                : 'Could not load Life OS data.',
+            );
+          }
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
+        setPendingCount((await loadOutbox()).length);
       }
     },
-    [notify],
+    [applyVisionHours, flushSync, notify],
   );
 
   useEffect(() => {
     void load('boot');
   }, [load]);
+
+  useEffect(() => {
+    return subscribeSyncStatus((phase, meta) => {
+      setSyncPhaseState(phase);
+      setPendingCount(meta.pendingCount);
+      setOnline(phase !== 'offline');
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!online) return;
+    const timer = setInterval(() => {
+      void flushSync().catch(() => undefined);
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [online, flushSync]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -453,7 +548,8 @@ function AppContent() {
       setIdeaPillarId(null);
       setCaptureOpen(false);
       await reloadItems();
-      setTab('ideas');
+      setTab('plan');
+      setPlanSegment('ideas');
       notify('Idea saved to your account.');
     });
   }
@@ -536,7 +632,8 @@ function AppContent() {
       setProjectPriority('SCHEDULE');
       setActionTitle('');
       await reloadItems();
-      setTab('portfolio');
+      setTab('plan');
+      setPlanSegment('projects');
       notify('Project and next action saved.');
     });
   }
@@ -678,7 +775,18 @@ function AppContent() {
         <View>
           <Text style={styles.brandMark}>Life OS</Text>
           <Text style={styles.topMeta}>
-            {todayLabel()} · {online ? 'Online' : 'Offline'}
+            {todayLabel()} ·{' '}
+            {syncPhase === 'syncing'
+              ? 'Syncing…'
+              : syncPhase === 'synced' && pendingCount === 0
+                ? online
+                  ? 'Synced'
+                  : 'Offline'
+                : !online || syncPhase === 'offline'
+                  ? pendingCount > 0
+                    ? `Offline · ${pendingCount} queued`
+                    : 'Offline'
+                  : 'Online'}
           </Text>
         </View>
         <Pressable
@@ -703,12 +811,12 @@ function AppContent() {
           <RefreshControl refreshing={refreshing} onRefresh={() => void load('refresh')} />
         }
       >
-        {tab === 'command' ? (
+        {tab === 'today' ? (
           <View style={styles.stack}>
+            <Text style={styles.cardEyebrow}>COMMAND</Text>
             <Text style={styles.greeting}>Good focus, {firstName(account)}.</Text>
             <Text style={styles.lede}>
-              Your Command Centre is built from live projects and actions — not demo
-              cards.
+              Available · planned · remaining — pick your primary move for today.
             </Text>
 
             <Card>
@@ -732,7 +840,10 @@ function AppContent() {
                     </Button>
                     <Button
                       variant="secondary"
-                      onPress={() => setTab('capacity')}
+                      onPress={() => {
+                        setTab('you');
+                        setYouDest('capacity');
+                      }}
                       style={{ flex: 1 }}
                     >
                       Capacity
@@ -810,10 +921,41 @@ function AppContent() {
           </View>
         ) : null}
 
-        {tab === 'ideas' ? (
+
+        {tab === 'plan' ? (
+          <View style={styles.segmentRow}>
+            {(
+              [
+                ['areas', 'Areas'],
+                ['projects', 'Projects'],
+                ['ideas', 'Ideas'],
+              ] as const
+            ).map(([id, label]) => (
+              <Pressable
+                key={id}
+                onPress={() => {
+                  tap();
+                  setPlanSegment(id);
+                }}
+                style={[styles.segmentChip, planSegment === id && styles.segmentChipActive]}
+              >
+                <Text
+                  style={[
+                    styles.segmentChipText,
+                    planSegment === id && styles.segmentChipTextActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {tab === 'plan' && planSegment === 'ideas' ? (
           <View style={styles.stack}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Idea Studio</Text>
+              <Text style={styles.sectionTitle}>Ideas</Text>
               <Button onPress={() => setCaptureOpen(true)}>Capture</Button>
             </View>
             {ideas.length === 0 ? (
@@ -866,10 +1008,11 @@ function AppContent() {
           </View>
         ) : null}
 
-        {tab === 'portfolio' ? (
+        {tab === 'plan' && (planSegment === 'areas' || planSegment === 'projects') ? (
           <View style={styles.stack}>
+            {planSegment === 'projects' ? (
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Life areas & projects</Text>
+              <Text style={styles.sectionTitle}>Projects</Text>
               <Button
                 onPress={() => {
                   setSourceIdeaId(null);
@@ -885,7 +1028,13 @@ function AppContent() {
                 New project
               </Button>
             </View>
+            ) : (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Areas</Text>
+            </View>
+            )}
 
+            {planSegment === 'areas' ? (
             <Card>
               <Text style={styles.cardEyebrow}>Your life areas</Text>
               <Text style={styles.cardBody}>
@@ -913,7 +1062,10 @@ function AppContent() {
                 ))
               )}
             </Card>
+            ) : null}
 
+            {planSegment === 'projects' ? (
+            <>
             <Card>
               <Text style={styles.cardEyebrow}>Eisenhower</Text>
               <Text style={styles.cardTitle}>Priority matrix</Text>
@@ -1021,17 +1173,63 @@ function AppContent() {
                 </Card>
               );
             })}
+            </>
+            ) : null}
           </View>
         ) : null}
 
-        {tab === 'budget' ? (
+        {tab === 'money' ? (
           <BudgetScreen account={account!} notify={notify} />
         ) : null}
 
         {tab === 'calendar' ? <CalendarScreen notify={notify} /> : null}
 
-        {tab === 'capacity' ? (
+
+        {tab === 'you' && youDest === 'menu' ? (
           <View style={styles.stack}>
+            <Text style={styles.sectionTitle}>You</Text>
+            <Text style={styles.lede}>
+              Capacity, review, household, integrations, and settings.
+            </Text>
+            {(
+              [
+                ['capacity', 'Capacity', 'Weekly hours and load', 'speedometer-outline'],
+                ['review', 'Weekly Review', 'CEO-style check-in', 'stats-chart-outline'],
+                ['household', 'Household', 'Partner link and shared space', 'people-outline'],
+                ['integrations', 'Integrations', 'Calendar sync connectors', 'extension-puzzle-outline'],
+                ['settings', 'Settings', 'Account, currency, notifications', 'settings-outline'],
+              ] as const
+            ).map(([id, title, body, icon]) => (
+              <Pressable
+                key={id}
+                style={styles.youRow}
+                onPress={() => {
+                  tap();
+                  if (id === 'settings' || id === 'household' || id === 'integrations') {
+                    setAccountOpen(true);
+                    setYouDest('menu');
+                  } else {
+                    setYouDest(id);
+                  }
+                }}
+              >
+                <Icon name={icon} color={colors.sageDeep} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>{title}</Text>
+                  <Text style={styles.listMeta}>{body}</Text>
+                </View>
+                <Icon name="chevron-forward" color={colors.muted} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {tab === 'you' && youDest === 'capacity' ? (
+          <View style={styles.stack}>
+            <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
+              <Icon name="chevron-back" color={colors.sageDeep} />
+              <Text style={styles.backText}>You</Text>
+            </Pressable>
             <Text style={styles.sectionTitle}>Capacity</Text>
             <Card>
               <Text style={styles.cardEyebrow}>This week</Text>
@@ -1114,8 +1312,12 @@ function AppContent() {
           </View>
         ) : null}
 
-        {tab === 'review' ? (
+        {tab === 'you' && youDest === 'review' ? (
           <View style={styles.stack}>
+            <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
+              <Icon name="chevron-back" color={colors.sageDeep} />
+              <Text style={styles.backText}>You</Text>
+            </Pressable>
             <Text style={styles.sectionTitle}>Weekly Review</Text>
             <Card>
               <Text style={styles.cardEyebrow}>Scorecard</Text>
@@ -1167,13 +1369,11 @@ function AppContent() {
       <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
         {(
           [
-            ['command', 'Command', 'grid-outline'],
-            ['ideas', 'Ideas', 'bulb-outline'],
-            ['portfolio', 'Areas', 'layers-outline'],
-            ['capacity', 'Capacity', 'speedometer-outline'],
-            ['budget', 'Budget', 'wallet-outline'],
+            ['today', 'Today', 'sunny-outline'],
+            ['plan', 'Plan', 'layers-outline'],
             ['calendar', 'Calendar', 'calendar-outline'],
-            ['review', 'Review', 'stats-chart-outline'],
+            ['money', 'Money', 'wallet-outline'],
+            ['you', 'You', 'person-outline'],
           ] as const
         ).map(([id, label, icon]) => (
           <Pressable
@@ -1181,6 +1381,8 @@ function AppContent() {
             onPress={() => {
               tap();
               setTab(id);
+              if (id === 'you') setYouDest('menu');
+              if (id === 'plan' && planSegment == null) setPlanSegment('areas');
             }}
             style={styles.tabItem}
           >
@@ -1200,6 +1402,7 @@ function AppContent() {
         style={[styles.fab, { bottom: 78 + insets.bottom }]}
         onPress={() => {
           tap();
+          setFabKind('idea');
           setCaptureOpen(true);
         }}
       >
@@ -1237,13 +1440,64 @@ function AppContent() {
                 },
               ]}
             >
-              <Text style={styles.sectionTitle}>Capture idea</Text>
+              <Text style={styles.sectionTitle}>Capture</Text>
+              <View style={styles.chipRow}>
+                {(
+                  [
+                    ['idea', 'Idea'],
+                    ['action', 'Action'],
+                    ['project', 'Project'],
+                    ['spend', 'Spend'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <Pressable
+                    key={id}
+                    onPress={() => {
+                      if (id === 'project') {
+                        setCaptureOpen(false);
+                        setSourceIdeaId(null);
+                        setProjectTitle('');
+                        setProjectOutcome('');
+                        setProjectPillarId(pillars[0]?.id ?? null);
+                        setProjectPriority('SCHEDULE');
+                        setActionTitle('');
+                        setActionHours('2');
+                        setProjectOpen(true);
+                        return;
+                      }
+                      if (id === 'spend') {
+                        setCaptureOpen(false);
+                        setTab('money');
+                        notify('Add spending under Money → Spending.');
+                        return;
+                      }
+                      setFabKind(id);
+                    }}
+                    style={[styles.chip, fabKind === id && styles.chipActive]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        fabKind === id && styles.chipTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {fabKind === 'action' ? (
+                <Text style={styles.cardBody}>
+                  Quick actions land as open actions. Add estimate below.
+                </Text>
+              ) : null}
               <Field
                 label="Title"
                 value={ideaTitle}
                 onChangeText={setIdeaTitle}
-                placeholder="What showed up?"
+                placeholder={fabKind === 'action' ? 'What will you do?' : 'What showed up?'}
               />
+              {fabKind === 'idea' ? (
               <Field
                 label="Note"
                 value={ideaNote}
@@ -1251,7 +1505,17 @@ function AppContent() {
                 placeholder="Context, why it matters"
                 multiline
               />
-              <Text style={styles.fieldLabel}>Pillar (optional)</Text>
+              ) : (
+              <Field
+                label="Hours"
+                value={actionHours}
+                onChangeText={setActionHours}
+                keyboardType="decimal-pad"
+              />
+              )}
+              <Text style={styles.fieldLabel}>
+                {fabKind === 'action' ? 'Area (optional)' : 'Area (optional)'}
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.chipRow}>
                   {pillars.map((pillar) => (
@@ -1286,9 +1550,37 @@ function AppContent() {
                 <Button
                   style={{ flex: 1 }}
                   disabled={busy}
-                  onPress={() => void saveIdea()}
+                  onPress={() => {
+                    if (fabKind === 'action') {
+                      void run('Save action', async () => {
+                        if (!ideaTitle.trim()) {
+                          notify('Give the action a title.');
+                          return;
+                        }
+                        const hours = Number(actionHours);
+                        await createLifeItem({
+                          kind: 'ACTION',
+                          title: ideaTitle.trim(),
+                          parentId: ideaPillarId,
+                          body: {
+                            hours: Number.isFinite(hours) && hours > 0 ? hours : 1,
+                            note: ideaNote.trim(),
+                          },
+                        });
+                        setIdeaTitle('');
+                        setIdeaNote('');
+                        setIdeaPillarId(null);
+                        setCaptureOpen(false);
+                        await reloadItems();
+                        setTab('today');
+                        notify('Action saved.');
+                      });
+                      return;
+                    }
+                    void saveIdea();
+                  }}
                 >
-                  Save idea
+                  {fabKind === 'action' ? 'Save action' : 'Save idea'}
                 </Button>
               </View>
             </ScrollView>
@@ -1743,6 +2035,54 @@ const styles = StyleSheet.create({
   tabItem: { flex: 1, alignItems: 'center', gap: 4 },
   tabLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
   tabLabelActive: { color: colors.ink },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  segmentChip: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    paddingVertical: 10,
+  },
+  segmentChipActive: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  segmentChipText: {
+    color: colors.ink,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  segmentChipTextActive: {
+    color: colors.acid,
+  },
+  youRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  backText: {
+    color: colors.sageDeep,
+    fontWeight: '700',
+    fontSize: 13,
+  },
   fab: {
     position: 'absolute',
     right: 18,
