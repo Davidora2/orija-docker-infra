@@ -508,7 +508,13 @@ function AppContent() {
   }, [incomingUrl]);
 
   const pillars = useMemo(() => ofKind(items, 'PILLAR').filter(isOpen), [items]);
-  const projects = useMemo(() => ofKind(items, 'PROJECT').filter(isOpen), [items]);
+  const projects = useMemo(
+    () =>
+      ofKind(items, 'PROJECT').filter(
+        (item) => item.status !== 'ARCHIVED' && item.status !== 'CONVERTED',
+      ),
+    [items],
+  );
   const actions = useMemo(() => ofKind(items, 'ACTION'), [items]);
   const doneActions = useMemo(
     () => actions.filter((item) => item.status === 'DONE'),
@@ -693,7 +699,9 @@ function AppContent() {
     setIdeaNote('');
     setIdeaPillarId(null);
     setQuickActionProjectId(
-      projectId !== undefined ? projectId : (projects[0]?.id ?? null),
+      projectId !== undefined
+        ? projectId
+        : (projects.find((item) => isOpen(item))?.id ?? null),
     );
     setQuickActionImportance('HIGH');
     setQuickActionUrgency('LOW');
@@ -1051,6 +1059,17 @@ function AppContent() {
               void moveActionQuadrant(action, quadrant)
             }
             onCompleteAction={(action) => void completeAction(action)}
+            onSetProjectStatus={(project, status) =>
+              void run('Update project status', async () => {
+                await updateLifeItem(project.id, { status });
+                await reloadItems();
+                notify(
+                  status === 'DONE'
+                    ? 'Project marked done.'
+                    : 'Project reopened.',
+                );
+              })
+            }
             onAddArea={() => void addLifeArea()}
             onRemoveArea={(pillar) => void removeLifeArea(pillar)}
             onOpenProjectsMatrix={() => setPlanSegment('projects')}
