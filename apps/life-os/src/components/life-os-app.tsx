@@ -25,13 +25,20 @@ import { CalendarPanel } from "./calendar-panel";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
-import { PriorityMatrixPanel } from "./priority-matrix-panel";
+import { PlanPanel } from "./plan-panel";
 import {
-  PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
+  actionBodyWithFlags,
+  actionBodyWithLevels,
+  actionPriorityQuadrant,
+  flagsFromQuadrant,
+  levelsFromQuadrant,
   priorityRank,
-  projectPriorityQuadrant,
-  type PriorityQuadrant,
+  projectBodyWithPriority,
+  projectPriorityLevel,
+  projectPriorityRank,
+  type PriorityLevel,
+  type ProjectPriority,
 } from "../lib/priority-matrix";
 
 function num(item: LifeItem, key: string, fallback = 0) {
@@ -93,9 +100,12 @@ export function LifeOSApp() {
   const [projectOutcome, setProjectOutcome] = useState("");
   const [projectPillarId, setProjectPillarId] = useState("");
   const [projectPriority, setProjectPriority] =
-    useState<PriorityQuadrant>("SCHEDULE");
+    useState<ProjectPriority>("MEDIUM");
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
+  const [actionImportance, setActionImportance] =
+    useState<PriorityLevel>("HIGH");
+  const [actionUrgency, setActionUrgency] = useState<PriorityLevel>("LOW");
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
@@ -164,13 +174,25 @@ export function LifeOSApp() {
     if (openActions.length === 0) return null;
     const projectById = new Map(projects.map((project) => [project.id, project]));
     return [...openActions].sort((a, b) => {
+      const aProject = projectById.get(a.parentId ?? "");
+      const bProject = projectById.get(b.parentId ?? "");
       const aRank = priorityRank(
-        projectPriorityQuadrant(projectById.get(a.parentId ?? "")?.body),
+        actionPriorityQuadrant(a.body, aProject?.body),
       );
       const bRank = priorityRank(
-        projectPriorityQuadrant(projectById.get(b.parentId ?? "")?.body),
+        actionPriorityQuadrant(b.body, bProject?.body),
       );
-      return aRank - bRank || a.sortOrder - b.sortOrder;
+      const aProjectRank = projectPriorityRank(
+        projectPriorityLevel(aProject?.body),
+      );
+      const bProjectRank = projectPriorityRank(
+        projectPriorityLevel(bProject?.body),
+      );
+      return (
+        aRank - bRank ||
+        aProjectRank - bProjectRank ||
+        a.sortOrder - b.sortOrder
+      );
     })[0];
   }, [openActions, projects]);
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
@@ -549,9 +571,10 @@ export function LifeOSApp() {
                   {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
                   {(() => {
                     const parent = projects.find((p) => p.id === primary.parentId);
-                    if (!parent) return "";
                     const meta =
-                      PRIORITY_QUADRANT_META[projectPriorityQuadrant(parent.body)];
+                      PRIORITY_QUADRANT_META[
+                        actionPriorityQuadrant(primary.body, parent?.body)
+                      ];
                     return ` · ${meta.title}`;
                   })()}
                 </p>
@@ -586,303 +609,190 @@ export function LifeOSApp() {
         </section>
       ) : null}
 
-      {tab === "plan" && planSegment === "ideas" ? (
-        <section className="space-y-4">
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
-            <h2 className="font-serif text-2xl">Capture idea</h2>
-            <input
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              placeholder="Title"
-              value={ideaTitle}
-              onChange={(e) => setIdeaTitle(e.target.value)}
-            />
-            <textarea
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              placeholder="Note"
-              value={ideaNote}
-              onChange={(e) => setIdeaNote(e.target.value)}
-            />
-            <button
-              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  if (!ideaTitle.trim()) throw new Error("Give the idea a title.");
-                  await createLifeItem({
-                    kind: "IDEA",
-                    title: ideaTitle.trim(),
-                    body: { note: ideaNote.trim(), impact: 0, effort: 0, alignment: 0, timing: 0 },
-                  });
-                  setIdeaTitle("");
-                  setIdeaNote("");
-                })
+      {tab === "plan" ? (
+        <PlanPanel
+          planSegment={planSegment}
+          pillars={pillars}
+          projects={projects}
+          items={items}
+          openActions={openActions}
+          availableHours={available}
+          busy={busy}
+          areaTitle={areaTitle}
+          onAreaTitleChange={setAreaTitle}
+          onAddArea={() =>
+            void run(async () => {
+              if (!areaTitle.trim()) throw new Error("Name the life area.");
+              await createLifeItem({
+                kind: "PILLAR",
+                title: areaTitle.trim(),
+                body: { icon: "compass-outline" },
+                sortOrder: pillars.length,
+              });
+              setAreaTitle("");
+            })
+          }
+          onRemoveArea={(pillar) =>
+            void run(async () => {
+              await updateLifeItem(pillar.id, { status: "ARCHIVED" });
+            })
+          }
+          ideaTitle={ideaTitle}
+          ideaNote={ideaNote}
+          onIdeaTitleChange={setIdeaTitle}
+          onIdeaNoteChange={setIdeaNote}
+          onSaveIdea={() =>
+            void run(async () => {
+              if (!ideaTitle.trim()) throw new Error("Give the idea a title.");
+              await createLifeItem({
+                kind: "IDEA",
+                title: ideaTitle.trim(),
+                body: {
+                  note: ideaNote.trim(),
+                  impact: 0,
+                  effort: 0,
+                  alignment: 0,
+                  timing: 0,
+                },
+              });
+              setIdeaTitle("");
+              setIdeaNote("");
+            })
+          }
+          onConvertIdea={(idea) => {
+            setProjectTitle(idea.title);
+            setProjectOutcome(str(idea, "note"));
+            setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
+            setProjectPriority("MEDIUM");
+            setActionTitle(`Next: ${idea.title}`);
+            setActionImportance("HIGH");
+            setActionUrgency("LOW");
+            setPlanSegment("projects");
+          }}
+          onEvaluateIdea={(idea, scores) =>
+            void run(async () => {
+              const overall =
+                (scores.impact +
+                  scores.alignment +
+                  scores.timing +
+                  (10 - scores.effort)) /
+                4;
+              await updateLifeItem(idea.id, {
+                status: "EVALUATED",
+                body: {
+                  ...idea.body,
+                  impact: scores.impact,
+                  effort: scores.effort,
+                  alignment: scores.alignment,
+                  timing: scores.timing,
+                  evalNotes: scores.notes,
+                  score: overall,
+                },
+              });
+            })
+          }
+          projectTitle={projectTitle}
+          projectOutcome={projectOutcome}
+          projectPillarId={projectPillarId}
+          projectPriority={projectPriority}
+          actionTitle={actionTitle}
+          actionHours={actionHours}
+          actionImportance={actionImportance}
+          actionUrgency={actionUrgency}
+          onProjectTitleChange={setProjectTitle}
+          onProjectOutcomeChange={setProjectOutcome}
+          onProjectPillarIdChange={setProjectPillarId}
+          onProjectPriorityChange={setProjectPriority}
+          onActionTitleChange={setActionTitle}
+          onActionHoursChange={setActionHours}
+          onActionImportanceChange={setActionImportance}
+          onActionUrgencyChange={setActionUrgency}
+          onSaveProject={() =>
+            void run(async () => {
+              if (!projectTitle.trim() || !actionTitle.trim()) {
+                throw new Error("Project and next action are required.");
               }
-            >
-              Save idea
-            </button>
-          </article>
-          {ideas.map((idea) => (
-            <article key={idea.id} className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-              <h3 className="font-serif text-xl">{idea.title}</h3>
-              {str(idea, "note") ? (
-                <p className="mt-1 text-sm text-[#6c7771]">{str(idea, "note")}</p>
-              ) : null}
-              <button
-                className="mt-3 rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold"
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setProjectTitle(idea.title);
-                  setProjectOutcome(str(idea, "note"));
-                  setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
-                  setActionTitle(`Advance: ${idea.title}`);
-                  setTab("plan");
-                  setPlanSegment("projects");
-                }}
-              >
-                Convert to project
-              </button>
-            </article>
-          ))}
-        </section>
-      ) : null}
-
-      {tab === "plan" && (planSegment === "areas" || planSegment === "projects") ? (
-        <section className="space-y-4">
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
-            <h2 className="font-serif text-2xl">Life areas</h2>
-            <p className="text-sm text-[#6c7771]">
-              Add or remove the areas you want Life OS to track.
-            </p>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 rounded-xl border border-[#dde2dd] px-3 py-3"
-                placeholder="e.g. Fitness, Side project"
-                value={areaTitle}
-                onChange={(e) => setAreaTitle(e.target.value)}
-              />
-              <button
-                className="rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    if (!areaTitle.trim()) throw new Error("Name the life area.");
-                    await createLifeItem({
-                      kind: "PILLAR",
-                      title: areaTitle.trim(),
-                      body: { icon: "compass-outline" },
-                      sortOrder: pillars.length,
-                    });
-                    setAreaTitle("");
-                  })
-                }
-              >
-                Add
-              </button>
-            </div>
-            {pillars.length === 0 ? (
-              <p className="text-sm text-[#6c7771]">No areas yet — add one above.</p>
-            ) : (
-              pillars.map((pillar) => (
-                <div
-                  key={pillar.id}
-                  className="flex items-center justify-between border-t border-[#dde2dd] pt-3"
-                >
-                  <p className="font-semibold">{pillar.title}</p>
-                  <button
-                    type="button"
-                    className="text-xs font-bold text-[#c9634f]"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        await updateLifeItem(pillar.id, { status: "ARCHIVED" });
-                      })
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))
-            )}
-          </article>
-
-          <PriorityMatrixPanel
-            projects={projects}
-            busy={busy}
-            onMove={(project, quadrant) =>
-              void run(async () => {
-                await updateLifeItem(project.id, {
-                  body: { ...project.body, priorityQuadrant: quadrant },
-                });
-              })
-            }
-          />
-
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
-            <h2 className="font-serif text-2xl">New project</h2>
-            <input
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              placeholder="Project title"
-              value={projectTitle}
-              onChange={(e) => setProjectTitle(e.target.value)}
-            />
-            <textarea
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              placeholder="Outcome"
-              value={projectOutcome}
-              onChange={(e) => setProjectOutcome(e.target.value)}
-            />
-            <select
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              value={projectPillarId}
-              onChange={(e) => setProjectPillarId(e.target.value)}
-            >
-              <option value="">Select life area</option>
-              {pillars.map((pillar) => (
-                <option key={pillar.id} value={pillar.id}>
-                  {pillar.title}
-                </option>
-              ))}
-            </select>
-            <label className="block space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                Priority matrix
-              </span>
-              <select
-                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                value={projectPriority}
-                onChange={(e) =>
-                  setProjectPriority(e.target.value as PriorityQuadrant)
-                }
-              >
-                {PRIORITY_MATRIX_ORDER.map((id) => (
-                  <option key={id} value={id}>
-                    {PRIORITY_QUADRANT_META[id].title} —{" "}
-                    {PRIORITY_QUADRANT_META[id].subtitle}
-                  </option>
-                ))}
-              </select>
-              <span className="block text-sm text-[#6c7771]">
-                {PRIORITY_QUADRANT_META[projectPriority].description}
-              </span>
-            </label>
-            <input
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              placeholder="First next action"
-              value={actionTitle}
-              onChange={(e) => setActionTitle(e.target.value)}
-            />
-            <label className="block space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                Hours for first action
-              </span>
-              <input
-                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                placeholder="Hours"
-                value={actionHours}
-                onChange={(e) => setActionHours(e.target.value)}
-              />
-            </label>
-            <button
-              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
-              type="button"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  if (!projectTitle.trim() || !actionTitle.trim()) {
-                    throw new Error("Project and next action are required.");
-                  }
-                  const hours = Number(actionHours);
-                  if (!Number.isFinite(hours) || hours <= 0) {
-                    throw new Error("Hours must be a positive number.");
-                  }
-                  const project = await createLifeItem({
-                    kind: "PROJECT",
-                    title: projectTitle.trim(),
-                    parentId: projectPillarId || null,
-                    body: {
-                      outcome: projectOutcome.trim(),
-                      priorityQuadrant: projectPriority,
-                    },
-                  });
-                  await createLifeItem({
-                    kind: "ACTION",
-                    title: actionTitle.trim(),
-                    parentId: project.id,
-                    body: { hours, day: "Fri" },
-                  });
-                  setProjectTitle("");
-                  setProjectOutcome("");
-                  setProjectPriority("SCHEDULE");
-                  setActionTitle("");
-                })
+              const hours = Number(actionHours);
+              if (!Number.isFinite(hours) || hours <= 0) {
+                throw new Error("Hours must be a positive number.");
               }
-            >
-              Save project
-            </button>
-          </article>
-          {pillars.map((pillar) => {
-            const pillarProjects = projects.filter((project) => project.parentId === pillar.id);
-            return (
-              <article key={pillar.id} className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Area</p>
-                <h3 className="font-serif text-xl">{pillar.title}</h3>
-                {pillarProjects.length === 0 ? (
-                  <p className="mt-2 text-sm text-[#6c7771]">No projects yet.</p>
-                ) : (
-                  pillarProjects.map((project) => {
-                    const next = items.find(
-                      (item) =>
-                        item.kind === "ACTION" &&
-                        item.parentId === project.id &&
-                        open(item),
-                    );
-                    const quadrant = projectPriorityQuadrant(project.body);
-                    const meta = PRIORITY_QUADRANT_META[quadrant];
-                    return (
-                      <div key={project.id} className="mt-3 border-t border-[#dde2dd] pt-3">
-                        <p className="font-semibold">{project.title}</p>
-                        <p className="text-sm text-[#6c7771]">
-                          {meta.title} · {meta.subtitle}
-                        </p>
-                        <p className="text-sm text-[#6c7771]">
-                          Next: {next ? `${next.title} (${num(next, "hours", 1)}h)` : "None"}
-                        </p>
-                        <label className="mt-2 block text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                          Priority
-                          <select
-                            className="mt-1 w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm font-normal normal-case tracking-normal text-[#14241f]"
-                            value={quadrant}
-                            disabled={busy}
-                            onChange={(e) =>
-                              void run(async () => {
-                                await updateLifeItem(project.id, {
-                                  body: {
-                                    ...project.body,
-                                    priorityQuadrant: e.target
-                                      .value as PriorityQuadrant,
-                                  },
-                                });
-                              })
-                            }
-                          >
-                            {PRIORITY_MATRIX_ORDER.map((id) => (
-                              <option key={id} value={id}>
-                                {PRIORITY_QUADRANT_META[id].title}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    );
-                  })
-                )}
-              </article>
-            );
-          })}
-        </section>
+              const project = await createLifeItem({
+                kind: "PROJECT",
+                title: projectTitle.trim(),
+                parentId: projectPillarId || null,
+                body: projectBodyWithPriority(
+                  { outcome: projectOutcome.trim() },
+                  projectPriority,
+                ),
+              });
+              await createLifeItem({
+                kind: "ACTION",
+                title: actionTitle.trim(),
+                parentId: project.id,
+                body: actionBodyWithLevels(
+                  { hours, day: "This week" },
+                  actionImportance,
+                  actionUrgency,
+                ),
+              });
+              setProjectTitle("");
+              setProjectOutcome("");
+              setProjectPriority("MEDIUM");
+              setActionTitle("");
+              setActionImportance("HIGH");
+              setActionUrgency("LOW");
+            })
+          }
+          onMoveProjectPriority={(project, priority) =>
+            void run(async () => {
+              await updateLifeItem(project.id, {
+                body: projectBodyWithPriority(project.body, priority),
+              });
+            })
+          }
+          onMoveAction={(action, quadrant) =>
+            void run(async () => {
+              const { importance, urgency } = levelsFromQuadrant(quadrant);
+              await updateLifeItem(action.id, {
+                body: actionBodyWithLevels(action.body, importance, urgency),
+              });
+            })
+          }
+          onCompleteAction={(action) =>
+            void run(async () => {
+              await updateLifeItem(action.id, { status: "DONE" });
+            })
+          }
+          onQuickAddAction={(
+            projectId,
+            title,
+            hours,
+            importance,
+            urgency,
+            when,
+          ) =>
+            void run(async () => {
+              await createLifeItem({
+                kind: "ACTION",
+                title,
+                parentId: projectId,
+                body: actionBodyWithLevels(
+                  { hours, day: when ?? "This week" },
+                  importance,
+                  urgency,
+                ),
+              });
+            })
+          }
+          onOpenProjectsMatrix={() => setPlanSegment("projects")}
+          onUpdateActionLevels={(action, importance, urgency) =>
+            void run(async () => {
+              await updateLifeItem(action.id, {
+                body: actionBodyWithLevels(action.body, importance, urgency),
+              });
+            })
+          }
+        />
       ) : null}
 
       {tab === "you" && youDest === "menu" ? (

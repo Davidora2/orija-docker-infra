@@ -9,6 +9,7 @@ This package converts the product brief into estimation-ready planning artifacts
 | Document | Purpose |
 |----------|---------|
 | [UX_IA.md](./UX_IA.md) | **Locked UX IA** — nav, onboarding, six mockup screens, shipped→target label map |
+| [PLAN_UX.md](./PLAN_UX.md) | **Locked Plan UX** — functional developer ticket for Plan (Areas/Projects/Ideas, Action Eisenhower, Capacity Σ) |
 | [PRODUCT_BRIEF.md](./PRODUCT_BRIEF.md) | Condensed product brief (source of truth for scope) |
 | [TECHNICAL_REQUIREMENTS.md](./TECHNICAL_REQUIREMENTS.md) | Architecture, data model, NFRs, security, and team recommendations |
 | [FEATURE_BACKLOG.md](./FEATURE_BACKLOG.md) | Prioritized MVP backlog (MoSCoW + phases) |
@@ -20,11 +21,13 @@ This package converts the product brief into estimation-ready planning artifacts
 
 ## Hierarchy
 
-Day-to-day mental model (see [UX_IA.md](./UX_IA.md)):
+Committed day-to-day work (see [PLAN_UX.md](./PLAN_UX.md)):
 
 ```
-Area → Idea → Project → Action
+Area → Project → Action
 ```
+
+Ideas are a pre-commit path: `Idea → Project → Action`. Nav shell and mockup inventory: [UX_IA.md](./UX_IA.md).
 
 Deeper planning structure (visions / goals / milestones) remains available; users live at **Action** day-to-day.
 
