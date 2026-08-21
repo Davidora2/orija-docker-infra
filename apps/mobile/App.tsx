@@ -62,13 +62,17 @@ import {
   weeklyCapacityHours,
 } from './src/life-data';
 import {
+  PRIORITY_LEVELS,
+  PRIORITY_LEVEL_META,
   PRIORITY_QUADRANT_META,
   PROJECT_PRIORITIES,
   PROJECT_PRIORITY_META,
-  actionBodyWithFlags,
+  actionBodyWithLevels,
   actionPriorityQuadrant,
-  flagsFromQuadrant,
+  levelsFromQuadrant,
   projectBodyWithPriority,
+  quadrantFromLevels,
+  type PriorityLevel,
   type PriorityQuadrant,
   type ProjectPriority,
 } from './src/priority-matrix';
@@ -314,8 +318,8 @@ function AppContent() {
   const [quickActionProjectId, setQuickActionProjectId] = useState<string | null>(
     null,
   );
-  const [quickActionImportant, setQuickActionImportant] = useState(true);
-  const [quickActionUrgent, setQuickActionUrgent] = useState(false);
+  const [quickActionImportance, setQuickActionImportance] = useState<PriorityLevel>('HIGH');
+  const [quickActionUrgency, setQuickActionUrgency] = useState<PriorityLevel>('LOW');
 
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectTitle, setProjectTitle] = useState('');
@@ -326,15 +330,16 @@ function AppContent() {
   const [actionTitle, setActionTitle] = useState('');
   const [actionHours, setActionHours] = useState('2');
   const [actionDay, setActionDay] = useState<string>('Fri');
-  const [actionImportantFlag, setActionImportantFlag] = useState(true);
-  const [actionUrgentFlag, setActionUrgentFlag] = useState(false);
+  const [actionImportance, setActionImportance] =
+    useState<PriorityLevel>('HIGH');
+  const [actionUrgency, setActionUrgency] = useState<PriorityLevel>('LOW');
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
 
   const [evaluateId, setEvaluateId] = useState<string | null>(null);
-  const [impact, setImpact] = useState(3);
-  const [effort, setEffort] = useState(2);
-  const [alignment, setAlignment] = useState(3);
-  const [timing, setTiming] = useState(3);
+  const [impact, setImpact] = useState(7);
+  const [effort, setEffort] = useState(4);
+  const [alignment, setAlignment] = useState(8);
+  const [timing, setTiming] = useState(6);
 
   const [availableHoursInput, setAvailableHoursInput] = useState('11');
   const [areaTitle, setAreaTitle] = useState('');
@@ -596,8 +601,8 @@ function AppContent() {
     setActionTitle(`Next: ${idea.title}`);
     setActionHours('2');
     setActionDay('Fri');
-    setActionImportantFlag(true);
-    setActionUrgentFlag(false);
+    setActionImportance('HIGH');
+    setActionUrgency('LOW');
     setProjectOpen(true);
   }
 
@@ -632,13 +637,13 @@ function AppContent() {
         kind: 'ACTION',
         title: actionTitle.trim(),
         parentId: project.id,
-        body: actionBodyWithFlags(
+        body: actionBodyWithLevels(
           {
             hours,
             day: actionDay,
           },
-          actionImportantFlag,
-          actionUrgentFlag,
+          actionImportance,
+          actionUrgency,
         ),
       });
       if (sourceIdeaId) {
@@ -650,8 +655,8 @@ function AppContent() {
       setProjectOutcome('');
       setProjectPriority('MEDIUM');
       setActionTitle('');
-      setActionImportantFlag(true);
-      setActionUrgentFlag(false);
+      setActionImportance('HIGH');
+      setActionUrgency('LOW');
       await reloadItems();
       setTab('plan');
       setPlanSegment('projects');
@@ -670,9 +675,9 @@ function AppContent() {
 
   async function moveActionQuadrant(action: LifeItem, quadrant: PriorityQuadrant) {
     await run('Update action priority', async () => {
-      const { important, urgent } = flagsFromQuadrant(quadrant);
+      const { importance, urgency } = levelsFromQuadrant(quadrant);
       await updateLifeItem(action.id, {
-        body: actionBodyWithFlags(action.body, important, urgent),
+        body: actionBodyWithLevels(action.body, importance, urgency),
       });
       await reloadItems();
     });
@@ -690,8 +695,8 @@ function AppContent() {
     setQuickActionProjectId(
       projectId !== undefined ? projectId : (projects[0]?.id ?? null),
     );
-    setQuickActionImportant(true);
-    setQuickActionUrgent(false);
+    setQuickActionImportance('HIGH');
+    setQuickActionUrgency('LOW');
     setActionHours('1');
     setActionDay('Fri');
     setCaptureOpen(true);
@@ -1022,8 +1027,8 @@ function AppContent() {
               setProjectPriority('MEDIUM');
               setActionTitle('');
               setActionHours('2');
-              setActionImportantFlag(true);
-              setActionUrgentFlag(false);
+              setActionImportance('HIGH');
+              setActionUrgency('LOW');
               setProjectOpen(true);
             }}
             onCaptureIdea={() => openQuickCapture('idea')}
@@ -1343,8 +1348,8 @@ function AppContent() {
                         setProjectPriority('MEDIUM');
                         setActionTitle('');
                         setActionHours('2');
-                        setActionImportantFlag(true);
-                        setActionUrgentFlag(false);
+                        setActionImportance('HIGH');
+                        setActionUrgency('LOW');
                         setProjectOpen(true);
                         return;
                       }
@@ -1449,56 +1454,46 @@ function AppContent() {
                           ))}
                         </View>
                       </ScrollView>
-                      <Text style={styles.fieldLabel}>Important</Text>
+                      <Text style={styles.fieldLabel}>Importance</Text>
                       <View style={styles.chipRow}>
-                        {(
-                          [
-                            [true, 'Yes'],
-                            [false, 'No'],
-                          ] as const
-                        ).map(([value, label]) => (
+                        {PRIORITY_LEVELS.map((level) => (
                           <Pressable
-                            key={label}
-                            onPress={() => setQuickActionImportant(value)}
+                            key={level}
+                            onPress={() => setQuickActionImportance(level)}
                             style={[
                               styles.chip,
-                              quickActionImportant === value && styles.chipActive,
+                              quickActionImportance === level && styles.chipActive,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.chipText,
-                                quickActionImportant === value && styles.chipTextActive,
+                                quickActionImportance === level && styles.chipTextActive,
                               ]}
                             >
-                              {label}
+                              {PRIORITY_LEVEL_META[level].title}
                             </Text>
                           </Pressable>
                         ))}
                       </View>
-                      <Text style={styles.fieldLabel}>Urgent</Text>
+                      <Text style={styles.fieldLabel}>Urgency</Text>
                       <View style={styles.chipRow}>
-                        {(
-                          [
-                            [true, 'Yes'],
-                            [false, 'No'],
-                          ] as const
-                        ).map(([value, label]) => (
+                        {PRIORITY_LEVELS.map((level) => (
                           <Pressable
-                            key={label}
-                            onPress={() => setQuickActionUrgent(value)}
+                            key={level}
+                            onPress={() => setQuickActionUrgency(level)}
                             style={[
                               styles.chip,
-                              quickActionUrgent === value && styles.chipActive,
+                              quickActionUrgency === level && styles.chipActive,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.chipText,
-                                quickActionUrgent === value && styles.chipTextActive,
+                                quickActionUrgency === level && styles.chipTextActive,
                               ]}
                             >
-                              {label}
+                              {PRIORITY_LEVEL_META[level].title}
                             </Text>
                           </Pressable>
                         ))}
@@ -1507,10 +1502,7 @@ function AppContent() {
                         Matrix:{' '}
                         {
                           PRIORITY_QUADRANT_META[
-                            actionPriorityQuadrant({
-                              important: quickActionImportant,
-                              urgent: quickActionUrgent,
-                            })
+                            quadrantFromLevels(quickActionImportance, quickActionUrgency)
                           ].title
                         }
                       </Text>
@@ -1587,15 +1579,15 @@ function AppContent() {
                           kind: 'ACTION',
                           title: ideaTitle.trim(),
                           parentId: quickActionProjectId,
-                          body: actionBodyWithFlags(
+                          body: actionBodyWithLevels(
                             {
                               hours:
                                 Number.isFinite(hours) && hours > 0 ? hours : 1,
                               day: actionMoreOpen ? actionDay : undefined,
                               note: ideaNote.trim() || undefined,
                             },
-                            quickActionImportant,
-                            quickActionUrgent,
+                            quickActionImportance,
+                            quickActionUrgency,
                           ),
                         });
                         setIdeaTitle('');
@@ -1642,8 +1634,8 @@ function AppContent() {
           >
             <Text style={styles.sectionTitle}>Evaluate idea</Text>
             <Text style={styles.cardBody}>
-              Score each dimension 1–5. Higher impact/alignment/timing is better;
-              higher effort is costlier.
+              Score each dimension 1–10. Overall blends impact, alignment, and
+              timing against effort.
             </Text>
             {(
               [
@@ -1654,9 +1646,11 @@ function AppContent() {
               ] as const
             ).map(([label, value, setter]) => (
               <View key={label} style={styles.scoreRow}>
-                <Text style={styles.fieldLabel}>{label}</Text>
+                <Text style={styles.fieldLabel}>
+                  {label} · {value}/10
+                </Text>
                 <View style={styles.chipRow}>
-                  {[1, 2, 3, 4, 5].map((n) => (
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                     <Pressable
                       key={n}
                       onPress={() => setter(n)}
@@ -1676,7 +1670,12 @@ function AppContent() {
               </View>
             ))}
             <Pill tone="ink">
-              Score {impact + alignment + timing - effort}
+              Overall{' '}
+              {(
+                (impact + alignment + timing + (10 - effort)) /
+                4
+              ).toFixed(1)}
+              /10
             </Pill>
             <View style={styles.row}>
               <Button
@@ -1791,56 +1790,46 @@ function AppContent() {
               onChangeText={setActionHours}
               keyboardType="decimal-pad"
             />
-            <Text style={styles.fieldLabel}>Action · Important</Text>
+            <Text style={styles.fieldLabel}>Importance</Text>
             <View style={styles.chipRow}>
-              {(
-                [
-                  [true, 'Yes'],
-                  [false, 'No'],
-                ] as const
-              ).map(([value, label]) => (
+              {PRIORITY_LEVELS.map((level) => (
                 <Pressable
-                  key={label}
-                  onPress={() => setActionImportantFlag(value)}
+                  key={level}
+                  onPress={() => setActionImportance(level)}
                   style={[
                     styles.chip,
-                    actionImportantFlag === value && styles.chipActive,
+                    actionImportance === level && styles.chipActive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.chipText,
-                      actionImportantFlag === value && styles.chipTextActive,
+                      actionImportance === level && styles.chipTextActive,
                     ]}
                   >
-                    {label}
+                    {PRIORITY_LEVEL_META[level].title}
                   </Text>
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.fieldLabel}>Action · Urgent</Text>
+            <Text style={styles.fieldLabel}>Urgency</Text>
             <View style={styles.chipRow}>
-              {(
-                [
-                  [true, 'Yes'],
-                  [false, 'No'],
-                ] as const
-              ).map(([value, label]) => (
+              {PRIORITY_LEVELS.map((level) => (
                 <Pressable
-                  key={label}
-                  onPress={() => setActionUrgentFlag(value)}
+                  key={level}
+                  onPress={() => setActionUrgency(level)}
                   style={[
                     styles.chip,
-                    actionUrgentFlag === value && styles.chipActive,
+                    actionUrgency === level && styles.chipActive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.chipText,
-                      actionUrgentFlag === value && styles.chipTextActive,
+                      actionUrgency === level && styles.chipTextActive,
                     ]}
                   >
-                    {label}
+                    {PRIORITY_LEVEL_META[level].title}
                   </Text>
                 </Pressable>
               ))}
@@ -1849,11 +1838,8 @@ function AppContent() {
               Matrix:{' '}
               {
                 PRIORITY_QUADRANT_META[
-                  actionPriorityQuadrant({
-                    important: actionImportantFlag,
-                    urgent: actionUrgentFlag,
-                  })
-                ].title
+                  quadrantFromLevels(actionImportance, actionUrgency)
+                ].label
               }
             </Text>
             <Text style={styles.fieldLabel}>Day</Text>

@@ -41,7 +41,7 @@ Plan is the **decision surface**. Today / Calendar / Capacity are **read surface
 
 - Capture and classify once on Plan (or via Global +).  
 - Downstream screens consume Actions; they do not invent parallel “today tasks,” “calendar tasks,” or “capacity tasks.”  
-- Changing an Action’s estimate, due/schedule, Important/Urgent, or project link updates Today / Calendar / Capacity / matrix automatically.
+- Changing an Action’s estimate, due/schedule, Importance/Urgency, or project link updates Today / Calendar / Capacity / matrix automatically.
 
 ---
 
@@ -134,7 +134,7 @@ Sort defaults (implementable):
 - Header: title, area, priority (H/M/L), status  
 - Outcome / why  
 - **Next Action** prominent; if missing and Active → primary repair CTA  
-- **Actions list** for this project (estimates, due, Important/Urgent badges or matrix label)  
+- **Actions list** for this project (estimates, due, Importance/Urgency badges or matrix label)  
 - Link: “See these Actions in Priority matrix” (filtered to this project)  
 - Time sum of open Actions vs Capacity (link to You → Capacity — not embedded Capacity editor)
 
@@ -150,40 +150,27 @@ Sort defaults (implementable):
 
 Actions are the **unit of execution** and the **unit of capacity**.
 
-### 6.1 Action fields
+## Mockup fidelity corrections (2026-08)
 
-| Field | Required | Values / notes |
-|-------|----------|----------------|
-| Title | Yes | Concrete next move |
-| Project | Yes (MVP) | Parent Project (implies Area) |
-| Estimate | Yes for planning math | Minutes or hours; used by Capacity |
-| Due date | Soft | |
-| Scheduled window | Soft | Start/end or date + duration for Calendar |
-| **Important** | Yes (default false or soft default) | Boolean |
-| **Urgent** | Yes (default false or soft default) | Boolean |
-| Status | Yes | Inbox / Planned / In progress / Waiting / Completed / Cancelled (shipped labels may lag) |
-| Energy | Soft | Low / Medium / High / Deep focus |
-| Notes | Soft | |
-| Visibility | Soft | Private / Household |
+User mockups supersede earlier polish where they conflict:
 
-### 6.2 Derived Eisenhower (Action only)
+1. **Importance / Urgency are Low | Medium | High** (not yes/no booleans). Eisenhower is still derived — see mapping below.
+2. **Matrix labels:** prefer **Do Now / Schedule / Delegate / Delete** (aliases of Do First / Eliminate).
+3. **Matrix layout:** dedicated full **2×2 grid** with Urgency × Importance axes — not stacked “move to” cards.
+4. **Ideas:** inbox capture bar, evaluate with **1–10** sliders + overall /10, and a **Turn into project** wizard (project → first action → review).
+5. **Area overview:** capacity ring/stats + active projects; Areas cards show hours, % capacity, progress, chevron.
+6. **Projects list:** search/filter/sort, capacity summary strip, filter sheet — not matrix-first.
 
-| Important | Urgent | Quadrant label | Rank (lower = sooner in Today) |
-|-----------|--------|----------------|--------------------------------|
-| Yes | Yes | **Do First** | 0 |
-| Yes | No | **Schedule** | 1 |
-| No | Yes | **Delegate** | 2 |
-| No | No | **Eliminate** | 3 |
+### Importance × Urgency → quadrant
 
-- Quadrant is **computed**, not stored as a separate source of truth (optional cache OK if always derived from Important×Urgent).  
-- Moving an Action “into” a matrix cell **sets** Important/Urgent to match that cell — it does **not** create a new entity.  
-- Matrix never lists Projects as the movable unit (migration from shipped UI: see §13).
+| Importance | Urgency | Quadrant |
+|------------|---------|----------|
+| High or Medium | High | **Do Now** |
+| High or Medium | Medium or Low | **Schedule** |
+| Low | High or Medium | **Delegate** |
+| Low | Low | **Delete** |
 
-### Acceptance
-
-- [ ] Action create/edit exposes Important and Urgent (or equivalent matrix placement)  
-- [ ] Changing Important/Urgent moves the Action in the matrix view  
-- [ ] Estimate changes update Capacity totals without re-entry elsewhere  
+Boolean legacy (`important`/`urgent`) still reads as High/Low for migration.
 
 ---
 
@@ -195,7 +182,7 @@ Minimal friction create from Plan (and Global + when defaulting to Action/Idea/P
 
 | Type | Quick fields |
 |------|----------------|
-| **Action** | Title, Project (contextual default), Estimate; Important/Urgent optional with sensible defaults |
+| **Action** | Title, Project (contextual default), Estimate; Importance/Urgency optional with sensible defaults |
 | **Idea** | Title (+ optional note); **no** Area/score required |
 | **Project** | Title, Area (contextual default), Priority default Medium |
 | **Spend** | Amount + category/note (lands in Money → Spending) — available from Global +, not Plan segments |
@@ -206,7 +193,7 @@ Quick Add must succeed without opening the full form.
 
 Reveal secondary fields without leaving the sheet:
 
-- Action: due, schedule, energy, notes, Important/Urgent if hidden in quick path, visibility  
+- Action: due, schedule, energy, notes, Importance/Urgency if hidden in quick path, visibility  
 - Project: outcome/why, target date, status, notes  
 - Idea: optional Area link, note  
 
@@ -242,7 +229,7 @@ On Plan → Projects (or a dedicated Actions sub-view if added later), support:
 Toggle persists per user (or per session minimum).
 
 Matrix cells show Action title + estimate + project cue.  
-Moving between cells updates Important/Urgent.  
+Moving between cells updates Importance/Urgency.  
 Empty cell copy: “No actions here.”
 
 ### 8.3 Interaction rules
@@ -306,7 +293,7 @@ Light scoring / Decision Engine can layer later; not required for this ticket’
 1. Confirm Project title (default from Idea title)  
 2. Choose Area  
 3. Set Project priority High/Medium/Low (default Medium)  
-4. Optionally create first Action (title, estimate, Important/Urgent)  
+4. Optionally create first Action (title, estimate, Importance/Urgency)  
 5. Land on Project detail with next Action set  
 
 ### Acceptance
@@ -368,7 +355,7 @@ Source of truth for shipped behavior today: `apps/life-os` / `apps/mobile` prior
 
 | Shipped today | Target (this spec) | Migration intent |
 |---------------|--------------------|------------------|
-| Eisenhower on **Project** (`priorityQuadrant` / `eisenhower` on project body) | Eisenhower on **Action** via Important×Urgent; matrix is Actions view | Move quadrant off Project; add Action Important/Urgent; backfill: map project quadrant → next Action flags or leave Actions default Schedule |
+| Eisenhower on **Project** (`priorityQuadrant` / `eisenhower` on project body) | Eisenhower on **Action** via Important×Urgent; matrix is Actions view | Move quadrant off Project; add Action Importance/Urgency; backfill: map project quadrant → next Action flags or leave Actions default Schedule |
 | Project “priority” = Do First / Schedule / … | Project priority = **High / Medium / Low** | Replace project quadrant UI with H/M/L; keep quadrant helper only for Actions |
 | Matrix panel lists **projects** | Matrix lists **Actions** | Rework `PriorityMatrixPanel` (and mobile equivalent) to Action chips |
 | Command / Today sorts by **parent project** quadrant | Today sorts by **Action** derived quadrant (+ due/schedule) | Update primary-move sort keys |
@@ -420,6 +407,6 @@ Where UX_IA still says “full Eisenhower later” on Project screens, **this fi
 ## 17. Next steps
 
 1. Design mockups for Plan (Areas cards, Projects list/detail, Actions matrix/list, Ideas inbox) against this ticket — not against shipped project matrix.  
-2. Engineering spike: migrate `priorityQuadrant` from Project → Action Important/Urgent + derived view.  
+2. Engineering spike: migrate `priorityQuadrant` from Project → Action Importance/Urgency + derived view.  
 3. Update [USER_STORIES.md](./USER_STORIES.md) / backlog items that still treat Eisenhower as a project attribute.  
 4. Implement Plan shell + Action matrix after mockup approval.  

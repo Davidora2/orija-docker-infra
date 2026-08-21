@@ -29,12 +29,15 @@ import { PlanPanel } from "./plan-panel";
 import {
   PRIORITY_QUADRANT_META,
   actionBodyWithFlags,
+  actionBodyWithLevels,
   actionPriorityQuadrant,
   flagsFromQuadrant,
+  levelsFromQuadrant,
   priorityRank,
   projectBodyWithPriority,
   projectPriorityLevel,
   projectPriorityRank,
+  type PriorityLevel,
   type ProjectPriority,
 } from "../lib/priority-matrix";
 
@@ -100,8 +103,9 @@ export function LifeOSApp() {
     useState<ProjectPriority>("MEDIUM");
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
-  const [actionImportantFlag, setActionImportantFlag] = useState(true);
-  const [actionUrgentFlag, setActionUrgentFlag] = useState(false);
+  const [actionImportance, setActionImportance] =
+    useState<PriorityLevel>("HIGH");
+  const [actionUrgency, setActionUrgency] = useState<PriorityLevel>("LOW");
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
@@ -661,25 +665,28 @@ export function LifeOSApp() {
             setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
             setProjectPriority("MEDIUM");
             setActionTitle(`Next: ${idea.title}`);
-            setActionImportantFlag(true);
-            setActionUrgentFlag(false);
+            setActionImportance("HIGH");
+            setActionUrgency("LOW");
             setPlanSegment("projects");
           }}
-          onEvaluateIdea={(idea) =>
+          onEvaluateIdea={(idea, scores) =>
             void run(async () => {
+              const overall =
+                (scores.impact +
+                  scores.alignment +
+                  scores.timing +
+                  (10 - scores.effort)) /
+                4;
               await updateLifeItem(idea.id, {
                 status: "EVALUATED",
                 body: {
                   ...idea.body,
-                  impact: num(idea, "impact", 3) || 3,
-                  effort: num(idea, "effort", 2) || 2,
-                  alignment: num(idea, "alignment", 3) || 3,
-                  timing: num(idea, "timing", 3) || 3,
-                  score:
-                    (num(idea, "impact", 3) || 3) +
-                    (num(idea, "alignment", 3) || 3) +
-                    (num(idea, "timing", 3) || 3) -
-                    (num(idea, "effort", 2) || 2),
+                  impact: scores.impact,
+                  effort: scores.effort,
+                  alignment: scores.alignment,
+                  timing: scores.timing,
+                  evalNotes: scores.notes,
+                  score: overall,
                 },
               });
             })
@@ -690,16 +697,16 @@ export function LifeOSApp() {
           projectPriority={projectPriority}
           actionTitle={actionTitle}
           actionHours={actionHours}
-          actionImportantFlag={actionImportantFlag}
-          actionUrgentFlag={actionUrgentFlag}
+          actionImportance={actionImportance}
+          actionUrgency={actionUrgency}
           onProjectTitleChange={setProjectTitle}
           onProjectOutcomeChange={setProjectOutcome}
           onProjectPillarIdChange={setProjectPillarId}
           onProjectPriorityChange={setProjectPriority}
           onActionTitleChange={setActionTitle}
           onActionHoursChange={setActionHours}
-          onActionImportantChange={setActionImportantFlag}
-          onActionUrgentChange={setActionUrgentFlag}
+          onActionImportanceChange={setActionImportance}
+          onActionUrgencyChange={setActionUrgency}
           onSaveProject={() =>
             void run(async () => {
               if (!projectTitle.trim() || !actionTitle.trim()) {
@@ -722,18 +729,18 @@ export function LifeOSApp() {
                 kind: "ACTION",
                 title: actionTitle.trim(),
                 parentId: project.id,
-                body: actionBodyWithFlags(
-                  { hours, day: "Fri" },
-                  actionImportantFlag,
-                  actionUrgentFlag,
+                body: actionBodyWithLevels(
+                  { hours, day: "This week" },
+                  actionImportance,
+                  actionUrgency,
                 ),
               });
               setProjectTitle("");
               setProjectOutcome("");
               setProjectPriority("MEDIUM");
               setActionTitle("");
-              setActionImportantFlag(true);
-              setActionUrgentFlag(false);
+              setActionImportance("HIGH");
+              setActionUrgency("LOW");
             })
           }
           onMoveProjectPriority={(project, priority) =>
@@ -745,9 +752,9 @@ export function LifeOSApp() {
           }
           onMoveAction={(action, quadrant) =>
             void run(async () => {
-              const { important, urgent } = flagsFromQuadrant(quadrant);
+              const { importance, urgency } = levelsFromQuadrant(quadrant);
               await updateLifeItem(action.id, {
-                body: actionBodyWithFlags(action.body, important, urgent),
+                body: actionBodyWithLevels(action.body, importance, urgency),
               });
             })
           }
@@ -756,21 +763,35 @@ export function LifeOSApp() {
               await updateLifeItem(action.id, { status: "DONE" });
             })
           }
-          onQuickAddAction={(projectId, title, hours) =>
+          onQuickAddAction={(
+            projectId,
+            title,
+            hours,
+            importance,
+            urgency,
+            when,
+          ) =>
             void run(async () => {
               await createLifeItem({
                 kind: "ACTION",
                 title,
                 parentId: projectId,
-                body: actionBodyWithFlags(
-                  { hours },
-                  true,
-                  false,
+                body: actionBodyWithLevels(
+                  { hours, day: when ?? "This week" },
+                  importance,
+                  urgency,
                 ),
               });
             })
           }
           onOpenProjectsMatrix={() => setPlanSegment("projects")}
+          onUpdateActionLevels={(action, importance, urgency) =>
+            void run(async () => {
+              await updateLifeItem(action.id, {
+                body: actionBodyWithLevels(action.body, importance, urgency),
+              });
+            })
+          }
         />
       ) : null}
 

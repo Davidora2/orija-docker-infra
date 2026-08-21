@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   actionBodyWithFlags,
+  actionBodyWithLevels,
+  actionImportanceLevel,
   actionPriorityQuadrant,
+  actionUrgencyLevel,
   flagsFromQuadrant,
+  levelsFromQuadrant,
   migrateActionBody,
   migrateProjectBody,
   priorityRank,
@@ -11,44 +15,49 @@ import {
   projectPriorityLevel,
   projectPriorityQuadrant,
   quadrantFromFlags,
+  quadrantFromLevels,
 } from './priority-matrix.js';
 
-describe('action Eisenhower (Important × Urgent)', () => {
-  it('derives quadrants from flags', () => {
+describe('action Eisenhower (Importance × Urgency L/M/H)', () => {
+  it('derives quadrants from L/M/H levels (mockup mapping)', () => {
+    expect(quadrantFromLevels('HIGH', 'HIGH')).toBe('DO_FIRST');
+    expect(quadrantFromLevels('HIGH', 'MEDIUM')).toBe('SCHEDULE');
+    expect(quadrantFromLevels('HIGH', 'LOW')).toBe('SCHEDULE');
+    expect(quadrantFromLevels('MEDIUM', 'HIGH')).toBe('DO_FIRST');
+    expect(quadrantFromLevels('MEDIUM', 'LOW')).toBe('SCHEDULE');
+    expect(quadrantFromLevels('LOW', 'HIGH')).toBe('DELEGATE');
+    expect(quadrantFromLevels('LOW', 'MEDIUM')).toBe('DELEGATE');
+    expect(quadrantFromLevels('LOW', 'LOW')).toBe('ELIMINATE');
+  });
+
+  it('derives quadrants from legacy boolean flags', () => {
     expect(quadrantFromFlags(true, true)).toBe('DO_FIRST');
     expect(quadrantFromFlags(true, false)).toBe('SCHEDULE');
     expect(quadrantFromFlags(false, true)).toBe('DELEGATE');
     expect(quadrantFromFlags(false, false)).toBe('ELIMINATE');
   });
 
-  it('reads Important/Urgent from action body', () => {
-    expect(
-      actionPriorityQuadrant({ important: true, urgent: true }),
-    ).toBe('DO_FIRST');
-    expect(
-      actionPriorityQuadrant({ important: true, urgent: false }),
-    ).toBe('SCHEDULE');
-    expect(
-      actionPriorityQuadrant({ important: false, urgent: true }),
-    ).toBe('DELEGATE');
-    expect(
-      actionPriorityQuadrant({ important: false, urgent: false }),
-    ).toBe('ELIMINATE');
+  it('reads Importance/Urgency levels from action body', () => {
+    expect(actionPriorityQuadrant({ importance: 'HIGH', urgency: 'HIGH' })).toBe('DO_FIRST');
+    expect(actionPriorityQuadrant({ importance: 'HIGH', urgency: 'LOW' })).toBe('SCHEDULE');
+    expect(actionPriorityQuadrant({ importance: 'LOW', urgency: 'HIGH' })).toBe('DELEGATE');
+    expect(actionPriorityQuadrant({ importance: 'LOW', urgency: 'LOW' })).toBe('ELIMINATE');
+  });
+
+  it('reads legacy boolean Important/Urgent from action body', () => {
+    expect(actionPriorityQuadrant({ important: true, urgent: true })).toBe('DO_FIRST');
+    expect(actionPriorityQuadrant({ important: true, urgent: false })).toBe('SCHEDULE');
+    expect(actionPriorityQuadrant({ important: false, urgent: true })).toBe('DELEGATE');
+    expect(actionPriorityQuadrant({ important: false, urgent: false })).toBe('ELIMINATE');
   });
 
   it('falls back to legacy action priorityQuadrant', () => {
-    expect(actionPriorityQuadrant({ priorityQuadrant: 'DELEGATE' })).toBe(
-      'DELEGATE',
-    );
+    expect(actionPriorityQuadrant({ priorityQuadrant: 'DELEGATE' })).toBe('DELEGATE');
   });
 
   it('falls back to parent project Eisenhower when action unset', () => {
-    expect(
-      actionPriorityQuadrant({}, { priorityQuadrant: 'DO_FIRST' }),
-    ).toBe('DO_FIRST');
-    expect(actionPriorityQuadrant({}, { eisenhower: 'ELIMINATE' })).toBe(
-      'ELIMINATE',
-    );
+    expect(actionPriorityQuadrant({}, { priorityQuadrant: 'DO_FIRST' })).toBe('DO_FIRST');
+    expect(actionPriorityQuadrant({}, { eisenhower: 'ELIMINATE' })).toBe('ELIMINATE');
   });
 
   it('defaults unset actions to Schedule', () => {
@@ -57,29 +66,39 @@ describe('action Eisenhower (Important × Urgent)', () => {
   });
 
   it('round-trips flags ↔ quadrant', () => {
-    for (const quadrant of [
-      'DO_FIRST',
-      'SCHEDULE',
-      'DELEGATE',
-      'ELIMINATE',
-    ] as const) {
+    for (const quadrant of ['DO_FIRST', 'SCHEDULE', 'DELEGATE', 'ELIMINATE'] as const) {
       const flags = flagsFromQuadrant(quadrant);
       expect(quadrantFromFlags(flags.important, flags.urgent)).toBe(quadrant);
+      const levels = levelsFromQuadrant(quadrant);
+      expect(quadrantFromLevels(levels.importance, levels.urgency)).toBe(quadrant);
     }
   });
 
-  it('ranks Do First highest', () => {
+  it('ranks Do Now highest', () => {
     expect(priorityRank('DO_FIRST')).toBeLessThan(priorityRank('SCHEDULE'));
     expect(priorityRank('SCHEDULE')).toBeLessThan(priorityRank('DELEGATE'));
     expect(priorityRank('DELEGATE')).toBeLessThan(priorityRank('ELIMINATE'));
   });
 
-  it('writes action body with derived quadrant', () => {
+  it('writes action body with L/M/H levels and mirrored bools', () => {
+    const body = actionBodyWithLevels({ hours: 2 }, 'HIGH', 'MEDIUM');
+    expect(body.importance).toBe('HIGH');
+    expect(body.urgency).toBe('MEDIUM');
+    expect(body.important).toBe(true);
+    expect(body.urgent).toBe(false);
+    expect(body.priorityQuadrant).toBe('SCHEDULE');
+    expect(body.hours).toBe(2);
+    expect(actionImportanceLevel(body)).toBe('HIGH');
+    expect(actionUrgencyLevel(body)).toBe('MEDIUM');
+  });
+
+  it('writes action body from legacy flags', () => {
     const body = actionBodyWithFlags({ hours: 2 }, true, true);
     expect(body.important).toBe(true);
     expect(body.urgent).toBe(true);
+    expect(body.importance).toBe('HIGH');
+    expect(body.urgency).toBe('HIGH');
     expect(body.priorityQuadrant).toBe('DO_FIRST');
-    expect(body.hours).toBe(2);
   });
 });
 
@@ -94,9 +113,7 @@ describe('project High/Medium/Low', () => {
     expect(projectPriorityFromLegacyQuadrant('SCHEDULE')).toBe('MEDIUM');
     expect(projectPriorityFromLegacyQuadrant('DELEGATE')).toBe('LOW');
     expect(projectPriorityFromLegacyQuadrant('ELIMINATE')).toBe('LOW');
-    expect(projectPriorityLevel({ priorityQuadrant: 'DO_FIRST' })).toBe(
-      'HIGH',
-    );
+    expect(projectPriorityLevel({ priorityQuadrant: 'DO_FIRST' })).toBe('HIGH');
     expect(projectPriorityLevel({ eisenhower: 'SCHEDULE' })).toBe('MEDIUM');
   });
 
@@ -125,33 +142,29 @@ describe('project High/Medium/Low', () => {
     expect(migrated.priorityQuadrant).toBeUndefined();
   });
 
-  it('legacy projectPriorityQuadrant still resolves for compat', () => {
-    expect(projectPriorityQuadrant({ priorityQuadrant: 'DO_FIRST' })).toBe(
-      'DO_FIRST',
-    );
+  it('projectPriorityQuadrant still resolves for legacy callers', () => {
+    expect(projectPriorityQuadrant({ priorityQuadrant: 'DO_FIRST' })).toBe('DO_FIRST');
     expect(projectPriorityQuadrant({ priority: 'HIGH' })).toBe('DO_FIRST');
-    expect(projectPriorityQuadrant({ priority: 'MEDIUM' })).toBe('SCHEDULE');
-    expect(projectPriorityQuadrant({ priority: 'LOW' })).toBe('ELIMINATE');
   });
 });
 
-describe('migrate action from parent project Eisenhower', () => {
-  it('seeds Important/Urgent from parent legacy quadrant', () => {
-    const migrated = migrateActionBody(
-      { hours: 1 },
-      { priorityQuadrant: 'DO_FIRST' },
-    );
-    expect(migrated.important).toBe(true);
-    expect(migrated.urgent).toBe(true);
+describe('migrateActionBody', () => {
+  it('preserves L/M/H levels when present', () => {
+    const migrated = migrateActionBody({
+      hours: 1,
+      importance: 'MEDIUM',
+      urgency: 'HIGH',
+    });
+    expect(migrated.importance).toBe('MEDIUM');
+    expect(migrated.urgency).toBe('HIGH');
     expect(migrated.priorityQuadrant).toBe('DO_FIRST');
-    expect(migrated.hours).toBe(1);
   });
 
-  it('keeps explicit action flags over parent', () => {
-    const migrated = migrateActionBody(
-      { important: false, urgent: false },
-      { priorityQuadrant: 'DO_FIRST' },
-    );
-    expect(migrated.priorityQuadrant).toBe('ELIMINATE');
+  it('seeds from parent Eisenhower', () => {
+    const seeded = migrateActionBody({}, { priorityQuadrant: 'DO_FIRST' });
+    expect(seeded.importance).toBe('HIGH');
+    expect(seeded.urgency).toBe('HIGH');
+    expect(seeded.important).toBe(true);
+    expect(seeded.urgent).toBe(true);
   });
 });
