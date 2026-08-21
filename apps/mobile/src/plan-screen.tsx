@@ -79,6 +79,10 @@ type Props = {
   onMoveProjectPriority: (project: LifeItem, priority: ProjectPriority) => void;
   onMoveActionQuadrant: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onSetProjectStatus: (
+    project: LifeItem,
+    status: 'ACTIVE' | 'PAUSED' | 'DONE',
+  ) => void;
   onAddArea: (title: string) => void;
   onRemoveArea: (pillar: LifeItem) => void;
   onOpenProjectsMatrix: () => void;
@@ -179,8 +183,23 @@ function Button({
   );
 }
 
+function projectStatusLabel(status: string): string {
+  if (status === 'DONE') return 'Done';
+  if (status === 'PAUSED') return 'Paused';
+  return 'Active';
+}
+
+function projectStatusRank(status: string): number {
+  if (status === 'DONE') return 2;
+  if (status === 'PAUSED') return 1;
+  return 0;
+}
+
 function sortedProjects(projects: LifeItem[]): LifeItem[] {
   return [...projects].sort((a, b) => {
+    const statusDelta =
+      projectStatusRank(a.status) - projectStatusRank(b.status);
+    if (statusDelta !== 0) return statusDelta;
     const aRank = projectPriorityRank(projectPriorityLevel(a.body));
     const bRank = projectPriorityRank(projectPriorityLevel(b.body));
     return aRank - bRank || a.title.localeCompare(b.title);
@@ -195,7 +214,7 @@ function projectHours(items: LifeItem[], projectId: string): number {
 
 function areaHours(items: LifeItem[], projects: LifeItem[], areaId: string): number {
   return projects
-    .filter((project) => project.parentId === areaId)
+    .filter((project) => project.parentId === areaId && isOpen(project))
     .reduce((sum, project) => sum + projectHours(items, project.id), 0);
 }
 
@@ -229,6 +248,7 @@ export function PlanScreen({
   onMoveProjectPriority,
   onMoveActionQuadrant,
   onCompleteAction,
+  onSetProjectStatus,
   onAddArea,
   onRemoveArea,
   onOpenProjectsMatrix,
@@ -374,6 +394,7 @@ export function PlanScreen({
           onMovePriority={onMoveProjectPriority}
           onQuickAction={onQuickAction}
           onCompleteAction={onCompleteAction}
+          onSetProjectStatus={onSetProjectStatus}
           onShowMatrix={() => {
             setSelectedProjectId(null);
             setSelectedAreaId(null);
@@ -386,7 +407,9 @@ export function PlanScreen({
 
     if (selectedArea) {
       const areaProjects = sortedProjects(
-        projects.filter((project) => project.parentId === selectedArea.id),
+        projects.filter(
+          (project) => project.parentId === selectedArea.id && isOpen(project),
+        ),
       );
       const openAreaIdeas = inboxIdeas.filter(
         (idea) => idea.parentId === selectedArea.id,
@@ -478,7 +501,7 @@ export function PlanScreen({
         ) : (
           pillars.map((pillar) => {
             const pillarProjects = projects.filter(
-              (project) => project.parentId === pillar.id,
+              (project) => project.parentId === pillar.id && isOpen(project),
             );
             const hours = areaHours(items, projects, pillar.id);
             const pct =
@@ -560,6 +583,7 @@ export function PlanScreen({
         onMovePriority={onMoveProjectPriority}
         onQuickAction={onQuickAction}
         onCompleteAction={onCompleteAction}
+        onSetProjectStatus={onSetProjectStatus}
         onShowMatrix={() => {
           setSelectedProjectId(null);
           setProjectsView('matrix');
@@ -656,7 +680,10 @@ export function PlanScreen({
                     {PROJECT_PRIORITY_META[level].title}
                   </Pill>
                 </View>
-                <Text style={styles.listMeta}>{area?.title ?? 'Unassigned'}</Text>
+                <Text style={styles.listMeta}>
+                  {projectStatusLabel(project.status)} ·{' '}
+                  {area?.title ?? 'Unassigned'}
+                </Text>
                 <Text style={styles.nextLine}>
                   {next
                     ? `Next: ${next.title}`
@@ -687,6 +714,7 @@ function ProjectDetail({
   onMovePriority,
   onQuickAction,
   onCompleteAction,
+  onSetProjectStatus,
   onShowMatrix,
 }: {
   project: LifeItem;
@@ -700,10 +728,16 @@ function ProjectDetail({
   onMovePriority: (project: LifeItem, priority: ProjectPriority) => void;
   onQuickAction: (projectId: string) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onSetProjectStatus: (
+    project: LifeItem,
+    status: 'ACTIVE' | 'PAUSED' | 'DONE',
+  ) => void;
   onShowMatrix: () => void;
 }) {
   const area = pillars.find((pillar) => pillar.id === project.parentId);
   const level = projectPriorityLevel(project.body);
+  const statusLabel = projectStatusLabel(project.status);
+  const isDone = project.status === 'DONE';
   const openProjectActions = childrenOf(items, project.id).filter(
     (item) => item.kind === 'ACTION' && isOpen(item),
   );
@@ -738,8 +772,24 @@ function ProjectDetail({
         </Pill>
       </View>
       <Text style={styles.listMeta}>
-        {area?.title ?? 'Unassigned'} · Active
+        {area?.title ?? 'Unassigned'} · {statusLabel}
       </Text>
+      {isDone ? (
+        <Button
+          disabled={busy}
+          onPress={() => onSetProjectStatus(project, 'ACTIVE')}
+        >
+          Reopen project
+        </Button>
+      ) : (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onPress={() => onSetProjectStatus(project, 'DONE')}
+        >
+          Mark done
+        </Button>
+      )}
 
       <Card>
         <MicroLabel>Outcome</MicroLabel>
@@ -765,7 +815,7 @@ function ProjectDetail({
             </Text>
             <Button
               variant="secondary"
-              disabled={busy}
+              disabled={busy || isDone}
               onPress={() => onCompleteAction(next)}
             >
               Complete
@@ -777,9 +827,11 @@ function ProjectDetail({
             <Text style={styles.cardBody}>
               Active projects need a concrete next move.
             </Text>
-            <Button onPress={() => onQuickAction(project.id)}>
-              Add next action
-            </Button>
+            {!isDone ? (
+              <Button onPress={() => onQuickAction(project.id)}>
+                Add next action
+              </Button>
+            ) : null}
           </>
         )}
       </Card>
@@ -818,9 +870,11 @@ function ProjectDetail({
             </View>
           ))
         )}
-        <Button variant="secondary" onPress={() => onQuickAction(project.id)}>
-          Quick add action
-        </Button>
+        {!isDone ? (
+          <Button variant="secondary" onPress={() => onQuickAction(project.id)}>
+            Quick add action
+          </Button>
+        ) : null}
       </Card>
 
       <Pressable onPress={() => setDetailsOpen(!detailsOpen)}>
@@ -831,12 +885,16 @@ function ProjectDetail({
           </View>
           {detailsOpen ? (
             <View style={{ gap: 10, marginTop: 4 }}>
+              <Text style={styles.fieldLabel}>Status</Text>
+              <Text style={styles.listMeta}>{statusLabel}</Text>
               <Text style={styles.fieldLabel}>Priority</Text>
               <View style={styles.chipRow}>
                 {PROJECT_PRIORITIES.map((option) => (
                   <Pressable
                     key={option}
-                    onPress={() => onMovePriority(project, option)}
+                    onPress={() => {
+                      if (!isDone) onMovePriority(project, option);
+                    }}
                     style={[
                       styles.chip,
                       level === option && styles.chipActive,

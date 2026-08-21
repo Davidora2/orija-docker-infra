@@ -157,7 +157,16 @@ export function LifeOSApp() {
 
   const pillars = useMemo(() => items.filter((i) => i.kind === "PILLAR" && open(i)), [items]);
   const ideas = useMemo(() => items.filter((i) => i.kind === "IDEA" && open(i)), [items]);
-  const projects = useMemo(() => items.filter((i) => i.kind === "PROJECT" && open(i)), [items]);
+  const projects = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          i.kind === "PROJECT" &&
+          i.status !== "ARCHIVED" &&
+          i.status !== "CONVERTED",
+      ),
+    [items],
+  );
   const actions = useMemo(() => items.filter((i) => i.kind === "ACTION"), [items]);
   const openActions = useMemo(() => actions.filter(open), [actions]);
   const doneActions = useMemo(() => actions.filter((i) => i.status === "DONE"), [actions]);
@@ -761,6 +770,11 @@ export function LifeOSApp() {
           onCompleteAction={(action) =>
             void run(async () => {
               await updateLifeItem(action.id, { status: "DONE" });
+            })
+          }
+          onSetProjectStatus={(project, status) =>
+            void run(async () => {
+              await updateLifeItem(project.id, { status });
             })
           }
           onQuickAddAction={(

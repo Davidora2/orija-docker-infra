@@ -1126,4 +1126,51 @@ suite('account and couple household API', () => {
     expect(rent?.categoryId).toBe(housing!.id);
     expect(rent?.categoryName).toBe(housing!.name);
   });
+
+  it('marks a project done and reopens it to active', async () => {
+    const user = await register('project-done@example.com', 'Project Done');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/items',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        kind: 'PROJECT',
+        title: 'Ship Life OS complete',
+        body: { priority: 'HIGH', outcome: 'Users can finish projects' },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const project = created.json<{ id: string; status: string }>();
+    expect(project.status).toBe('ACTIVE');
+
+    const completed = await app.inject({
+      method: 'PATCH',
+      url: `/v1/items/${project.id}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { status: 'DONE' },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json<{ status: string }>().status).toBe('DONE');
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/v1/items?kind=PROJECT',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(listed.statusCode).toBe(200);
+    const listedProjects = listed.json<{ id: string; status: string }[]>();
+    expect(
+      listedProjects.find((item) => item.id === project.id)?.status,
+    ).toBe('DONE');
+
+    const reopened = await app.inject({
+      method: 'PATCH',
+      url: `/v1/items/${project.id}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { status: 'ACTIVE' },
+    });
+    expect(reopened.statusCode).toBe(200);
+    expect(reopened.json<{ status: string }>().status).toBe('ACTIVE');
+  });
 });

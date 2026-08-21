@@ -37,6 +37,21 @@ function open(item: LifeItem) {
   );
 }
 
+/** Plan UX project statuses: Active / Paused / Done (DONE maps to Completed). */
+export type ProjectLifecycleStatus = "ACTIVE" | "PAUSED" | "DONE";
+
+function projectStatusLabel(status: string): string {
+  if (status === "DONE") return "Done";
+  if (status === "PAUSED") return "Paused";
+  return "Active";
+}
+
+function projectStatusRank(status: string): number {
+  if (status === "DONE") return 2;
+  if (status === "PAUSED") return 1;
+  return 0;
+}
+
 type PlanSegment = "areas" | "projects" | "ideas";
 
 type Props = {
@@ -87,6 +102,10 @@ type Props = {
   onMoveProjectPriority: (project: LifeItem, priority: ProjectPriority) => void;
   onMoveAction: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onSetProjectStatus: (
+    project: LifeItem,
+    status: ProjectLifecycleStatus,
+  ) => void;
   onQuickAddAction: (
     projectId: string,
     title: string,
@@ -244,6 +263,9 @@ function Sheet({
 
 function sortedProjects(projects: LifeItem[]) {
   return [...projects].sort((a, b) => {
+    const statusDelta =
+      projectStatusRank(a.status) - projectStatusRank(b.status);
+    if (statusDelta !== 0) return statusDelta;
     const aRank = projectPriorityRank(projectPriorityLevel(a.body));
     const bRank = projectPriorityRank(projectPriorityLevel(b.body));
     return aRank - bRank || a.title.localeCompare(b.title);
@@ -298,7 +320,9 @@ export function PlanPanel(props: Props) {
   const [search, setSearch] = useState("");
   const [filterAreaId, setFilterAreaId] = useState("");
   const [filterPriority, setFilterPriority] = useState<ProjectPriority | "">("");
-  const [filterStatus, setFilterStatus] = useState<"ACTIVE" | "">("ACTIVE");
+  const [filterStatus, setFilterStatus] = useState<"ACTIVE" | "DONE" | "">(
+    "ACTIVE",
+  );
   const [sortBy, setSortBy] = useState<"priority" | "title" | "hours">("priority");
 
   const [quickTitle, setQuickTitle] = useState("");
@@ -367,6 +391,7 @@ export function PlanPanel(props: Props) {
       );
     }
     if (filterStatus === "ACTIVE") list = list.filter((p) => open(p));
+    if (filterStatus === "DONE") list = list.filter((p) => p.status === "DONE");
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(
@@ -414,7 +439,7 @@ export function PlanPanel(props: Props) {
   if (filterStatus) {
     activeFilterChips.push({
       id: "status",
-      label: "Active",
+      label: filterStatus === "DONE" ? "Done" : "Active",
       clear: () => setFilterStatus(""),
     });
   }
@@ -949,6 +974,7 @@ export function PlanPanel(props: Props) {
           onBack={() => setSelectedProjectId(null)}
           onMovePriority={props.onMoveProjectPriority}
           onCompleteAction={props.onCompleteAction}
+          onSetProjectStatus={props.onSetProjectStatus}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -957,7 +983,9 @@ export function PlanPanel(props: Props) {
 
     if (selectedArea) {
       const areaProjects = sortedProjects(
-        projects.filter((project) => project.parentId === selectedArea.id),
+        projects.filter(
+          (project) => project.parentId === selectedArea.id && open(project),
+        ),
       );
       const hours = areaProjects.reduce(
         (sum, project) => sum + projectHours(items, project.id),
@@ -1118,7 +1146,7 @@ export function PlanPanel(props: Props) {
         <div className="space-y-3">
           {pillars.map((pillar, index) => {
             const pillarProjects = projects.filter(
-              (project) => project.parentId === pillar.id,
+              (project) => project.parentId === pillar.id && open(project),
             );
             const hours = pillarProjects.reduce(
               (sum, project) => sum + projectHours(items, project.id),
@@ -1221,6 +1249,7 @@ export function PlanPanel(props: Props) {
           onBack={() => setSelectedProjectId(null)}
           onMovePriority={props.onMoveProjectPriority}
           onCompleteAction={props.onCompleteAction}
+          onSetProjectStatus={props.onSetProjectStatus}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -1232,7 +1261,12 @@ export function PlanPanel(props: Props) {
             when={quickWhen}
             importance={quickImportance}
             urgency={quickUrgency}
-            projects={projects}
+            projects={projects.filter(
+              (project) =>
+                project.status !== "DONE" &&
+                project.status !== "ARCHIVED" &&
+                project.status !== "CONVERTED",
+            )}
             projectId={selectedProject.id}
             detailsOpen={actionDetailsOpen}
             onTitle={setQuickTitle}
@@ -1448,7 +1482,12 @@ export function PlanPanel(props: Props) {
           ) : null}
 
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-            Active projects · {filteredProjects.length}
+            {filterStatus === "DONE"
+              ? "Done projects"
+              : filterStatus === "ACTIVE"
+                ? "Active projects"
+                : "Projects"}{" "}
+            · {filteredProjects.length}
           </p>
 
           {filteredProjects.length === 0 ? (
@@ -1496,6 +1535,7 @@ export function PlanPanel(props: Props) {
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-[#6c7771]">
+                      {projectStatusLabel(project.status)} ·{" "}
                       {area?.title ?? "Unassigned"}
                     </p>
                     <p className="mt-1 text-sm font-medium text-[#14241f]">
@@ -1579,6 +1619,11 @@ export function PlanPanel(props: Props) {
               active={filterStatus === "ACTIVE"}
               onClick={() => setFilterStatus("ACTIVE")}
               label="Active"
+            />
+            <Chip
+              active={filterStatus === "DONE"}
+              onClick={() => setFilterStatus("DONE")}
+              label="Done"
             />
             <Chip
               active={filterStatus === ""}
@@ -1806,6 +1851,7 @@ function ProjectDetailView({
   onBack,
   onMovePriority,
   onCompleteAction,
+  onSetProjectStatus,
   onShowMatrix,
   onOpenAddAction,
 }: {
@@ -1818,11 +1864,17 @@ function ProjectDetailView({
   onBack: () => void;
   onMovePriority: (project: LifeItem, priority: ProjectPriority) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onSetProjectStatus: (
+    project: LifeItem,
+    status: ProjectLifecycleStatus,
+  ) => void;
   onShowMatrix: () => void;
   onOpenAddAction: () => void;
 }) {
   const area = pillars.find((pillar) => pillar.id === project.parentId);
   const level = projectPriorityLevel(project.body);
+  const statusLabel = projectStatusLabel(project.status);
+  const isDone = project.status === "DONE";
   const openActions = items.filter(
     (item) =>
       item.kind === "ACTION" && item.parentId === project.id && open(item),
@@ -1882,14 +1934,14 @@ function ProjectDetailView({
         <div className="min-w-0 flex-1">
           <h2 className="font-serif text-3xl text-[#14241f]">{project.title}</h2>
           <p className="text-sm text-[#6c7771]">
-            Active · {area?.title ?? "Unassigned"}
+            {statusLabel} · {area?.title ?? "Unassigned"}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {PROJECT_PRIORITIES.map((id) => (
               <button
                 key={id}
                 type="button"
-                disabled={busy}
+                disabled={busy || isDone}
                 className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
                   level === id
                     ? "bg-[#14241f] text-white"
@@ -1901,6 +1953,27 @@ function ProjectDetailView({
                 {id === "HIGH" ? " priority" : ""}
               </button>
             ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isDone ? (
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                onClick={() => onSetProjectStatus(project, "ACTIVE")}
+              >
+                Reopen project
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold text-[#14241f] disabled:opacity-50"
+                onClick={() => onSetProjectStatus(project, "DONE")}
+              >
+                Mark done
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1923,7 +1996,7 @@ function ProjectDetailView({
             <button
               type="button"
               className="mt-1 flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px]"
-              disabled={busy}
+              disabled={busy || isDone}
               onClick={() => onCompleteAction(next)}
               aria-label="Complete next action"
             >
@@ -2024,13 +2097,15 @@ function ProjectDetailView({
               </div>
             ),
           )}
-          <button
-            type="button"
-            className="w-full rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white"
-            onClick={onOpenAddAction}
-          >
-            + Add action
-          </button>
+          {!isDone ? (
+            <button
+              type="button"
+              className="w-full rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white"
+              onClick={onOpenAddAction}
+            >
+              + Add action
+            </button>
+          ) : null}
           <button
             type="button"
             className="text-sm font-bold text-[#617a57]"
@@ -2063,8 +2138,29 @@ function ProjectDetailView({
           </p>
           <p>
             <span className="text-[#6c7771]">Status · </span>
-            Active
+            {statusLabel}
           </p>
+          <div className="flex flex-wrap gap-2 pt-2">
+            {isDone ? (
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                onClick={() => onSetProjectStatus(project, "ACTIVE")}
+              >
+                Reopen project
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold disabled:opacity-50"
+                onClick={() => onSetProjectStatus(project, "DONE")}
+              >
+                Mark done
+              </button>
+            )}
+          </div>
         </article>
       ) : null}
     </section>
