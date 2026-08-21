@@ -38,8 +38,10 @@ E14 AI assist             E15 Calendar (post-MVP)
 
 | ID | Feature | Priority | Size | Notes |
 |----|---------|----------|------|-------|
-| F0.1 | Clickable prototype: idea → capacity → Command Centre → weekly review | Must | L | Brief §23 critical path |
-| F0.2 | Design system (tokens, typography, calm executive UI) | Must | M | Whitespace, hierarchy, no gamification |
+| F0.1 | Clickable prototype: idea → capacity → Today → weekly review | Must | L | Align to [UX_IA.md](./UX_IA.md) six-screen set |
+| F0.1a | UX IA lock (nav, onboarding, screen inventory) | Must | S | Done in docs: [UX_IA.md](./UX_IA.md) |
+| F0.1b | Mockups: Onboarding, Today, Plan/Areas, Project, Capacity, Money Overview | Must | M | Before nav rewrite |
+| F0.2 | Design system (tokens, typography, calm editorial UI) | Must | M | Match shipped sage/ink tokens; see UX_IA §8 |
 | F0.3 | ERD + Prisma schema draft | Must | M | From TRD §5 |
 | F0.4 | Estimation workshop using this backlog | Must | S | Story points → sprint plan |
 

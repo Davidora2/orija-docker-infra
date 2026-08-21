@@ -2,6 +2,8 @@
 
 Source brief condensed for planning. Full narrative requirements live here; implementation detail is in [TECHNICAL_REQUIREMENTS.md](./TECHNICAL_REQUIREMENTS.md).
 
+**UX / nav / onboarding lock:** For information architecture, five-tab navigation, onboarding sequence, and the six-screen mockup inventory, use [UX_IA.md](./UX_IA.md). Where labels conflict (e.g. Command vs Today, Budget vs Money, Pillar vs Area), **UX_IA wins for UI**.
+
 ---
 
 ## 1. Overview
@@ -41,26 +43,35 @@ Initial testing: founder workflow (project coordinator, entrepreneur, product de
 
 ## 5. Hierarchy
 
+Day-to-day (UX):
+
 ```
-Vision → Pillar → Goal → Project → Action
+Area → Idea → Project → Action
 ```
 
-Default pillars: Career, Business, App/Product, Wealth, Personal, Creative (rename/add/archive/reorder).
+Planning depth (product model):
+
+```
+Vision → Pillar (Area) → Goal → Project → Action
+```
+
+Default areas: Career, Business, App/Product, Wealth, Personal, Creative (rename/add/archive/reorder).
 
 ## 6. MVP feature areas
 
 | Area | Intent |
 |------|--------|
-| Onboarding | Pillars, visions, goals, availability, planning days, first project/action — short, practical |
-| Command Centre | Primary Move, ≤3 supporting, operational tasks, deadlines, risks, idea inbox, capacity status |
-| Pillars | Health indicators, goals/projects, time, neglect detection |
+| Onboarding | Areas, capacity, idea dump, first project/action — short, practical ([UX_IA.md](./UX_IA.md) §5) |
+| Today (Command) | Primary Move, ≤3 supporting, capacity strip, deadlines/risks cues — nav label **Today** |
+| Areas (Pillars) | Health indicators, goals/projects, time, neglect detection — under **Plan** |
 | Goals | Outcome-based; statuses Draft→Cancelled |
 | Projects | Next action required when Active; effort, risks, milestones |
 | Actions | Duration, energy, schedule, statuses Inbox→Cancelled |
 | Idea Studio | Capture without commitment; triage + convert |
 | Decision Engine | Scored options; guidance score, not auto-decide |
-| Capacity | Weekly hours by category; overcommit warnings |
-| Weekly CEO Review | Results, time, bottlenecks, start/stop/continue, priorities, capacity |
+| Capacity | Weekly hours; optional daily breakdown; overcommit warnings — under **You** |
+| Weekly Review | Results, time, bottlenecks, start/stop/continue, priorities, capacity — under **You** |
+| Money | Overview / Spending / Wealth (replaces “Budget” chrome label) |
 | Scorecard | One-page weekly summary; export later |
 | Notifications | Limited, user-controlled |
 | Calendar | Internal scheduling MVP; Google/Outlook/Apple later |
@@ -68,7 +79,9 @@ Default pillars: Career, Business, App/Product, Wealth, Personal, Creative (rena
 
 ## 7. Critical user flow
 
-Capture idea → evaluate → connect to pillar → create project → next action → estimate time → capacity check → schedule → Command Centre → Weekly CEO Review → Scorecard.
+Capture idea → evaluate → connect to area → create project → next action → estimate time → capacity check → schedule → Today → Weekly Review → Scorecard.
+
+Nav shell: **Today · Plan · Calendar · Money · You** ([UX_IA.md](./UX_IA.md)).
 
 ## 8. Roles
 
@@ -92,6 +105,8 @@ Outcome:
 
 ## 12. First deliverable
 
-Clickable prototype of the critical user flow **before** full development (see backlog F0.1).
+1. **IA locked** — [UX_IA.md](./UX_IA.md) (this package).  
+2. **Mockups** of the six screens in UX_IA §6 before the nav/onboarding rewrite.  
+3. Clickable prototype of the critical user flow (backlog F0.1) aligned to those mockups.
 
-Planning package deliverables (this folder): TRD, prioritized backlog, user stories for estimation.
+Planning package deliverables (this folder): UX IA, TRD, prioritized backlog, user stories for estimation.
