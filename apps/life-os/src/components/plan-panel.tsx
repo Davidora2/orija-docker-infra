@@ -1996,7 +1996,7 @@ function ProjectDetailView({
             <button
               type="button"
               className="mt-1 flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px]"
-              disabled={busy}
+              disabled={busy || isDone}
               onClick={() => onCompleteAction(next)}
               aria-label="Complete next action"
             >
