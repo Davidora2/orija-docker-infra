@@ -62,6 +62,57 @@ type Props = {
   notify: (message: string) => void;
 };
 
+/**
+ * Google.useIdTokenAuthRequest throws via invariantClientId when the Android
+ * client id is undefined. Only mount this subtree when a real client id is set.
+ */
+function GoogleSignInButton({
+  clientId,
+  busy,
+  disabled,
+  run,
+  onSuccess,
+  notify,
+}: {
+  clientId: string;
+  busy: boolean;
+  disabled?: boolean;
+  run: (work: () => Promise<void>) => Promise<void>;
+  onSuccess: (account: Account) => void;
+  notify: (message: string) => void;
+}) {
+  const [googleRequest, , googlePromptAsync] = Google.useIdTokenAuthRequest({
+    clientId,
+    iosClientId: clientId,
+    androidClientId: clientId,
+    webClientId: clientId,
+  });
+
+  return (
+    <ActionButton
+      disabled={disabled || busy || !googleRequest}
+      icon="logo-google"
+      label={busy ? 'Connecting…' : 'Continue with Google'}
+      onPress={() =>
+        void run(async () => {
+          const result = await googlePromptAsync();
+          if (result.type !== 'success') {
+            throw new Error('Google sign-in was cancelled.');
+          }
+          const idToken = result.params.id_token;
+          if (!idToken) {
+            throw new Error('Google did not return an ID token.');
+          }
+          const next = await loginWithGoogle(idToken);
+          onSuccess(next);
+          notify('Signed in with Google.');
+        })
+      }
+      secondary
+    />
+  );
+}
+
 function Icon({
   name,
   size = 18,
@@ -177,13 +228,6 @@ export function AccountSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
-  const [googleRequest, , googlePromptAsync] = Google.useIdTokenAuthRequest({
-    clientId: googleClientId || undefined,
-    iosClientId: googleClientId || undefined,
-    androidClientId: googleClientId || undefined,
-    webClientId: googleClientId || undefined,
-  });
 
   useEffect(() => {
     if (account) {
@@ -525,26 +569,13 @@ export function AccountSheet({
                 {providers?.google &&
                 googleClientId &&
                 (mode === 'login' || mode === 'register') ? (
-                  <ActionButton
-                    disabled={busy || !googleRequest}
-                    icon="logo-google"
-                    label={busy ? 'Connecting…' : 'Continue with Google'}
-                    onPress={() =>
-                      void perform(async () => {
-                        const result = await googlePromptAsync();
-                        if (result.type !== 'success') {
-                          throw new Error('Google sign-in was cancelled.');
-                        }
-                        const idToken = result.params.id_token;
-                        if (!idToken) {
-                          throw new Error('Google did not return an ID token.');
-                        }
-                        const next = await loginWithGoogle(idToken);
-                        onAccountChange(next);
-                        notify('Signed in with Google.');
-                      })
-                    }
-                    secondary
+                  <GoogleSignInButton
+                    busy={busy}
+                    clientId={googleClientId}
+                    disabled={busy}
+                    notify={notify}
+                    onSuccess={onAccountChange}
+                    run={perform}
                   />
                 ) : null}
                 <Text style={styles.serverText}>
