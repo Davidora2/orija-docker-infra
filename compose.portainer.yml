@@ -42,7 +42,7 @@ services:
       MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
       CALENDAR_TOKEN_ENCRYPTION_KEY: ${CALENDAR_TOKEN_ENCRYPTION_KEY:-}
       LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
-      LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
+      LIFE_OS_REPO_REF: ${LIFE_OS_REPO_REF:-refs/heads/cursor/life-os-planning-docs-c38b}
     volumes:
       - life-os-api-src:/opt/life-os
     entrypoint: ["/bin/sh", "-c"]
@@ -83,7 +83,7 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       LIFE_OS_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
-      LIFE_OS_REPO_REF: refs/heads/cursor/life-os-planning-docs-c38b
+      LIFE_OS_REPO_REF: ${LIFE_OS_REPO_REF:-refs/heads/cursor/life-os-planning-docs-c38b}
       NEXT_PUBLIC_API_URL: https://lifeos.orija.store/api
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_IDS:-}
       NEXT_PUBLIC_MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
