@@ -65,8 +65,15 @@ import {
 import {
   PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
-  projectPriorityQuadrant,
+  PROJECT_PRIORITIES,
+  PROJECT_PRIORITY_META,
+  actionBodyWithFlags,
+  actionPriorityQuadrant,
+  flagsFromQuadrant,
+  projectBodyWithPriority,
+  projectPriorityLevel,
   type PriorityQuadrant,
+  type ProjectPriority,
 } from './src/priority-matrix';
 
 const colors = {
@@ -288,7 +295,7 @@ function AppContent() {
   const [tab, setTab] = useState<Tab>('today');
   const [planSegment, setPlanSegment] = useState<PlanSegment>('areas');
   const [youDest, setYouDest] = useState<YouDest>('menu');
-  const [fabKind, setFabKind] = useState<FabKind>('idea');
+  const [fabKind, setFabKind] = useState<FabKind>('action');
   const [account, setAccount] = useState<Account | null>(null);
   const [items, setItems] = useState<LifeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -303,19 +310,27 @@ function AppContent() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [actionMoreOpen, setActionMoreOpen] = useState(false);
   const [ideaTitle, setIdeaTitle] = useState('');
   const [ideaNote, setIdeaNote] = useState('');
   const [ideaPillarId, setIdeaPillarId] = useState<string | null>(null);
+  const [quickActionProjectId, setQuickActionProjectId] = useState<string | null>(
+    null,
+  );
+  const [quickActionImportant, setQuickActionImportant] = useState(true);
+  const [quickActionUrgent, setQuickActionUrgent] = useState(false);
 
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectTitle, setProjectTitle] = useState('');
   const [projectOutcome, setProjectOutcome] = useState('');
   const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
   const [projectPriority, setProjectPriority] =
-    useState<PriorityQuadrant>('SCHEDULE');
+    useState<ProjectPriority>('MEDIUM');
   const [actionTitle, setActionTitle] = useState('');
   const [actionHours, setActionHours] = useState('2');
   const [actionDay, setActionDay] = useState<string>('Fri');
+  const [actionImportantFlag, setActionImportantFlag] = useState(true);
+  const [actionUrgentFlag, setActionUrgentFlag] = useState(false);
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
 
   const [evaluateId, setEvaluateId] = useState<string | null>(null);
@@ -581,10 +596,12 @@ function AppContent() {
     setProjectTitle(idea.title);
     setProjectOutcome(bodyString(idea, 'note'));
     setProjectPillarId(idea.parentId);
-    setProjectPriority('SCHEDULE');
-    setActionTitle(`Advance: ${idea.title}`);
+    setProjectPriority('MEDIUM');
+    setActionTitle(`Next: ${idea.title}`);
     setActionHours('2');
     setActionDay('Fri');
+    setActionImportantFlag(true);
+    setActionUrgentFlag(false);
     setProjectOpen(true);
   }
 
@@ -607,20 +624,26 @@ function AppContent() {
         kind: 'PROJECT',
         title: projectTitle.trim(),
         parentId: projectPillarId,
-        body: {
-          outcome: projectOutcome.trim(),
-          fromIdeaId: sourceIdeaId,
-          priorityQuadrant: projectPriority,
-        },
+        body: projectBodyWithPriority(
+          {
+            outcome: projectOutcome.trim(),
+            fromIdeaId: sourceIdeaId,
+          },
+          projectPriority,
+        ),
       });
       await createLifeItem({
         kind: 'ACTION',
         title: actionTitle.trim(),
         parentId: project.id,
-        body: {
-          hours,
-          day: actionDay,
-        },
+        body: actionBodyWithFlags(
+          {
+            hours,
+            day: actionDay,
+          },
+          actionImportantFlag,
+          actionUrgentFlag,
+        ),
       });
       if (sourceIdeaId) {
         await updateLifeItem(sourceIdeaId, { status: 'CONVERTED' });
@@ -629,8 +652,10 @@ function AppContent() {
       setSourceIdeaId(null);
       setProjectTitle('');
       setProjectOutcome('');
-      setProjectPriority('SCHEDULE');
+      setProjectPriority('MEDIUM');
       setActionTitle('');
+      setActionImportantFlag(true);
+      setActionUrgentFlag(false);
       await reloadItems();
       setTab('plan');
       setPlanSegment('projects');
@@ -638,13 +663,37 @@ function AppContent() {
     });
   }
 
-  async function moveProjectPriority(project: LifeItem, quadrant: PriorityQuadrant) {
+  async function moveProjectPriority(project: LifeItem, priority: ProjectPriority) {
     await run('Update priority', async () => {
       await updateLifeItem(project.id, {
-        body: { ...project.body, priorityQuadrant: quadrant },
+        body: projectBodyWithPriority(project.body, priority),
       });
       await reloadItems();
     });
+  }
+
+  async function moveActionQuadrant(action: LifeItem, quadrant: PriorityQuadrant) {
+    await run('Update action priority', async () => {
+      const { important, urgent } = flagsFromQuadrant(quadrant);
+      await updateLifeItem(action.id, {
+        body: actionBodyWithFlags(action.body, important, urgent),
+      });
+      await reloadItems();
+    });
+  }
+
+  function openQuickCapture(kind: FabKind = 'action') {
+    setFabKind(kind);
+    setActionMoreOpen(false);
+    setIdeaTitle('');
+    setIdeaNote('');
+    setIdeaPillarId(null);
+    setQuickActionProjectId(projects[0]?.id ?? null);
+    setQuickActionImportant(true);
+    setQuickActionUrgent(false);
+    setActionHours('1');
+    setActionDay('Fri');
+    setCaptureOpen(true);
   }
 
   async function completeAction(action: LifeItem) {
@@ -995,7 +1044,7 @@ function AppContent() {
                         style={{ flex: 1 }}
                         onPress={() => openConvert(idea)}
                       >
-                        Make project
+                        Turn into Project
                       </Button>
                     </View>
                     <Button variant="ghost" onPress={() => void archiveItem(idea)}>
@@ -1019,9 +1068,11 @@ function AppContent() {
                   setProjectTitle('');
                   setProjectOutcome('');
                   setProjectPillarId(pillars[0]?.id ?? null);
-                  setProjectPriority('SCHEDULE');
+                  setProjectPriority('MEDIUM');
                   setActionTitle('');
                   setActionHours('2');
+                  setActionImportantFlag(true);
+                  setActionUrgentFlag(false);
                   setProjectOpen(true);
                 }}
               >
@@ -1035,10 +1086,11 @@ function AppContent() {
             )}
 
             {planSegment === 'areas' ? (
+            <>
             <Card>
               <Text style={styles.cardEyebrow}>Your life areas</Text>
               <Text style={styles.cardBody}>
-                Add or remove the areas you want Life OS to track.
+                Areas hold projects. Execution stays on Today — plan structure here.
               </Text>
               <Field
                 label="New area"
@@ -1049,52 +1101,118 @@ function AppContent() {
               <Button disabled={busy} onPress={() => void addLifeArea()}>
                 Add area
               </Button>
-              {pillars.length === 0 ? (
-                <Text style={styles.listMeta}>No areas yet — add one above.</Text>
-              ) : (
-                pillars.map((pillar) => (
-                  <View key={pillar.id} style={styles.listRow}>
-                    <Text style={[styles.listTitle, { flex: 1 }]}>{pillar.title}</Text>
-                    <Button variant="ghost" onPress={() => void removeLifeArea(pillar)}>
-                      Remove
-                    </Button>
-                  </View>
-                ))
-              )}
             </Card>
+            {pillars.length === 0 ? (
+              <EmptyState
+                title="No areas yet"
+                body="Add a life area, then attach projects under it."
+              />
+            ) : (
+              pillars.map((pillar) => {
+                const pillarProjects = projects.filter(
+                  (project) => project.parentId === pillar.id,
+                );
+                const openIdeas = ideas.filter(
+                  (idea) => idea.parentId === pillar.id,
+                );
+                return (
+                  <Card key={pillar.id}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.cardTitle}>{pillar.title}</Text>
+                      <Button variant="ghost" onPress={() => void removeLifeArea(pillar)}>
+                        Remove
+                      </Button>
+                    </View>
+                    <Text style={styles.cardBody}>
+                      {pillarProjects.length} project
+                      {pillarProjects.length === 1 ? '' : 's'}
+                      {openIdeas.length > 0
+                        ? ` · ${openIdeas.length} idea${openIdeas.length === 1 ? '' : 's'}`
+                        : ''}
+                    </Text>
+                    {pillarProjects.length === 0 ? (
+                      <Text style={styles.listMeta}>
+                        No projects — add one from Projects or turn an idea into a project.
+                      </Text>
+                    ) : (
+                      pillarProjects.map((project) => {
+                        const next = childrenOf(items, project.id).find(
+                          (item) => item.kind === 'ACTION' && isOpen(item),
+                        );
+                        const level = projectPriorityLevel(project.body);
+                        return (
+                          <View key={project.id} style={styles.projectBlock}>
+                            <Text style={styles.listTitle}>{project.title}</Text>
+                            <Text style={styles.listMeta}>
+                              {PROJECT_PRIORITY_META[level].title} priority · Next:{' '}
+                              {next
+                                ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
+                                : 'None — add an action'}
+                            </Text>
+                          </View>
+                        );
+                      })
+                    )}
+                  </Card>
+                );
+              })
+            )}
+            </>
             ) : null}
 
             {planSegment === 'projects' ? (
             <>
             <Card>
-              <Text style={styles.cardEyebrow}>Eisenhower</Text>
-              <Text style={styles.cardTitle}>Priority matrix</Text>
+              <Text style={styles.cardEyebrow}>Priority</Text>
+              <Text style={styles.cardTitle}>High · Medium · Low</Text>
               <Text style={styles.cardBody}>
-                Sort projects by urgency and importance. Move items as priorities
-                change.
+                Project priority is High, Medium, or Low. Eisenhower lives on actions
+                (matrix below).
+              </Text>
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Eisenhower</Text>
+              <Text style={styles.cardTitle}>Action matrix</Text>
+              <Text style={styles.cardBody}>
+                View of open actions by Important × Urgent. Move an action to update
+                its flags.
               </Text>
               {PRIORITY_MATRIX_ORDER.map((id) => {
                 const meta = PRIORITY_QUADRANT_META[id];
-                const quadrantProjects = projects.filter(
-                  (project) => projectPriorityQuadrant(project.body) === id,
+                const projectById = new Map(
+                  projects.map((project) => [project.id, project]),
+                );
+                const quadrantActions = capacity.openActions.filter(
+                  (action) =>
+                    actionPriorityQuadrant(
+                      action.body,
+                      projectById.get(action.parentId ?? '')?.body,
+                    ) === id,
                 );
                 return (
                   <View key={id} style={styles.matrixQuadrant}>
                     <Text style={styles.cardEyebrow}>{meta.subtitle}</Text>
                     <Text style={styles.listTitle}>{meta.title}</Text>
                     <Text style={styles.listMeta}>{meta.description}</Text>
-                    {quadrantProjects.length === 0 ? (
-                      <Text style={styles.listMeta}>No projects here.</Text>
+                    {quadrantActions.length === 0 ? (
+                      <Text style={styles.listMeta}>No actions here.</Text>
                     ) : (
-                      quadrantProjects.map((project) => (
-                        <View key={project.id} style={styles.projectBlock}>
-                          <Text style={styles.listTitle}>{project.title}</Text>
+                      quadrantActions.map((action) => (
+                        <View key={action.id} style={styles.projectBlock}>
+                          <Text style={styles.listTitle}>{action.title}</Text>
+                          <Text style={styles.listMeta}>
+                            {bodyNumber(action, 'hours', 1)}h
+                            {bodyString(action, 'day')
+                              ? ` · ${bodyString(action, 'day')}`
+                              : ''}
+                          </Text>
                           <View style={styles.chipRow}>
                             {PRIORITY_MATRIX_ORDER.map((option) => (
                               <Pressable
                                 key={option}
                                 onPress={() =>
-                                  void moveProjectPriority(project, option)
+                                  void moveActionQuadrant(action, option)
                                 }
                                 style={[
                                   styles.chip,
@@ -1120,59 +1238,79 @@ function AppContent() {
               })}
             </Card>
 
-            {pillars.map((pillar) => {
-              const pillarProjects = projects.filter(
-                (project) => project.parentId === pillar.id,
-              );
-              const openCount = pillarProjects.length;
-              return (
-                <Card key={pillar.id}>
-                  <Text style={styles.cardEyebrow}>Area</Text>
-                  <Text style={styles.cardTitle}>{pillar.title}</Text>
-                  <Text style={styles.cardBody}>
-                    {openCount} open project{openCount === 1 ? '' : 's'}
-                  </Text>
-                  {pillarProjects.length === 0 ? (
-                    <Text style={styles.listMeta}>No projects under this area yet.</Text>
-                  ) : (
-                    pillarProjects.map((project) => {
-                      const next = childrenOf(items, project.id).find(
-                        (item) => item.kind === 'ACTION' && isOpen(item),
-                      );
-                      const quadrant = projectPriorityQuadrant(project.body);
-                      const meta = PRIORITY_QUADRANT_META[quadrant];
-                      return (
-                        <View key={project.id} style={styles.projectBlock}>
-                          <Text style={styles.listTitle}>{project.title}</Text>
-                          {bodyString(project, 'outcome') ? (
-                            <Text style={styles.listMeta}>
-                              {bodyString(project, 'outcome')}
-                            </Text>
-                          ) : null}
-                          <Text style={styles.listMeta}>
-                            {meta.title} · {meta.subtitle}
+            {projects.length === 0 ? (
+              <EmptyState
+                title="No projects yet"
+                body="Create a project with a first next action, or turn an idea into a project."
+              />
+            ) : (
+              projects.map((project) => {
+                const next = childrenOf(items, project.id).find(
+                  (item) => item.kind === 'ACTION' && isOpen(item),
+                );
+                const level = projectPriorityLevel(project.body);
+                const area = pillars.find((pillar) => pillar.id === project.parentId);
+                return (
+                  <Card key={project.id}>
+                    <Text style={styles.cardEyebrow}>
+                      {area?.title ?? 'Unassigned'} · {PROJECT_PRIORITY_META[level].title}
+                    </Text>
+                    <Text style={styles.cardTitle}>{project.title}</Text>
+                    {bodyString(project, 'outcome') ? (
+                      <Text style={styles.cardBody}>
+                        {bodyString(project, 'outcome')}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.fieldLabel}>Priority</Text>
+                    <View style={styles.chipRow}>
+                      {PROJECT_PRIORITIES.map((option) => (
+                        <Pressable
+                          key={option}
+                          onPress={() => void moveProjectPriority(project, option)}
+                          style={[
+                            styles.chip,
+                            level === option && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              level === option && styles.chipTextActive,
+                            ]}
+                          >
+                            {PROJECT_PRIORITY_META[option].title}
                           </Text>
-                          <Text style={styles.listMeta}>
-                            Next:{' '}
-                            {next
-                              ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
-                              : 'None — add an action'}
-                          </Text>
-                          {next ? (
-                            <Button
-                              variant="secondary"
-                              onPress={() => void completeAction(next)}
-                            >
-                              Complete next action
-                            </Button>
-                          ) : null}
-                        </View>
-                      );
-                    })
-                  )}
-                </Card>
-              );
-            })}
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.listMeta}>
+                      Next:{' '}
+                      {next
+                        ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
+                        : 'None — add an action'}
+                    </Text>
+                    {next ? (
+                      <Button
+                        variant="secondary"
+                        onPress={() => void completeAction(next)}
+                      >
+                        Complete next action
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        onPress={() => {
+                          setQuickActionProjectId(project.id);
+                          openQuickCapture('action');
+                        }}
+                      >
+                        Add next action
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })
+            )}
             </>
             ) : null}
           </View>
@@ -1402,8 +1540,13 @@ function AppContent() {
         style={[styles.fab, { bottom: 78 + insets.bottom }]}
         onPress={() => {
           tap();
-          setFabKind('idea');
-          setCaptureOpen(true);
+          const defaultKind: FabKind =
+            tab === 'plan' && planSegment === 'ideas'
+              ? 'idea'
+              : tab === 'money'
+                ? 'spend'
+                : 'action';
+          openQuickCapture(defaultKind);
         }}
       >
         <Icon name="add" color={colors.acidInk} size={28} />
@@ -1440,12 +1583,14 @@ function AppContent() {
                 },
               ]}
             >
-              <Text style={styles.sectionTitle}>Capture</Text>
+              <Text style={styles.sectionTitle}>
+                {fabKind === 'action' ? 'Quick add action' : 'Capture'}
+              </Text>
               <View style={styles.chipRow}>
                 {(
                   [
-                    ['idea', 'Idea'],
                     ['action', 'Action'],
+                    ['idea', 'Idea'],
                     ['project', 'Project'],
                     ['spend', 'Spend'],
                   ] as const
@@ -1459,9 +1604,11 @@ function AppContent() {
                         setProjectTitle('');
                         setProjectOutcome('');
                         setProjectPillarId(pillars[0]?.id ?? null);
-                        setProjectPriority('SCHEDULE');
+                        setProjectPriority('MEDIUM');
                         setActionTitle('');
                         setActionHours('2');
+                        setActionImportantFlag(true);
+                        setActionUrgentFlag(false);
                         setProjectOpen(true);
                         return;
                       }
@@ -1472,6 +1619,7 @@ function AppContent() {
                         return;
                       }
                       setFabKind(id);
+                      setActionMoreOpen(false);
                     }}
                     style={[styles.chip, fabKind === id && styles.chipActive]}
                   >
@@ -1488,7 +1636,8 @@ function AppContent() {
               </View>
               {fabKind === 'action' ? (
                 <Text style={styles.cardBody}>
-                  Quick actions land as open actions. Add estimate below.
+                  Title and estimate are enough. Use More options for project,
+                  Important/Urgent, and day.
                 </Text>
               ) : null}
               <Field
@@ -1499,10 +1648,10 @@ function AppContent() {
               />
               {fabKind === 'idea' ? (
               <Field
-                label="Note"
+                label="Note (optional)"
                 value={ideaNote}
                 onChangeText={setIdeaNote}
-                placeholder="Context, why it matters"
+                placeholder="Context — classification can wait"
                 multiline
               />
               ) : (
@@ -1513,32 +1662,172 @@ function AppContent() {
                 keyboardType="decimal-pad"
               />
               )}
-              <Text style={styles.fieldLabel}>
-                {fabKind === 'action' ? 'Area (optional)' : 'Area (optional)'}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.chipRow}>
-                  {pillars.map((pillar) => (
-                    <Pressable
-                      key={pillar.id}
-                      onPress={() => setIdeaPillarId(pillar.id)}
-                      style={[
-                        styles.chip,
-                        ideaPillarId === pillar.id && styles.chipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          ideaPillarId === pillar.id && styles.chipTextActive,
-                        ]}
-                      >
-                        {pillar.title}
+              {fabKind === 'action' ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    onPress={() => setActionMoreOpen((open) => !open)}
+                  >
+                    {actionMoreOpen ? 'Hide options' : 'More options'}
+                  </Button>
+                  {actionMoreOpen ? (
+                    <>
+                      <Text style={styles.fieldLabel}>Project (optional)</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <View style={styles.chipRow}>
+                          <Pressable
+                            onPress={() => setQuickActionProjectId(null)}
+                            style={[
+                              styles.chip,
+                              quickActionProjectId == null && styles.chipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                quickActionProjectId == null && styles.chipTextActive,
+                              ]}
+                            >
+                              Inbox
+                            </Text>
+                          </Pressable>
+                          {projects.map((project) => (
+                            <Pressable
+                              key={project.id}
+                              onPress={() => setQuickActionProjectId(project.id)}
+                              style={[
+                                styles.chip,
+                                quickActionProjectId === project.id && styles.chipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.chipText,
+                                  quickActionProjectId === project.id &&
+                                    styles.chipTextActive,
+                                ]}
+                              >
+                                {project.title}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </ScrollView>
+                      <Text style={styles.fieldLabel}>Important</Text>
+                      <View style={styles.chipRow}>
+                        {(
+                          [
+                            [true, 'Yes'],
+                            [false, 'No'],
+                          ] as const
+                        ).map(([value, label]) => (
+                          <Pressable
+                            key={label}
+                            onPress={() => setQuickActionImportant(value)}
+                            style={[
+                              styles.chip,
+                              quickActionImportant === value && styles.chipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                quickActionImportant === value && styles.chipTextActive,
+                              ]}
+                            >
+                              {label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <Text style={styles.fieldLabel}>Urgent</Text>
+                      <View style={styles.chipRow}>
+                        {(
+                          [
+                            [true, 'Yes'],
+                            [false, 'No'],
+                          ] as const
+                        ).map(([value, label]) => (
+                          <Pressable
+                            key={label}
+                            onPress={() => setQuickActionUrgent(value)}
+                            style={[
+                              styles.chip,
+                              quickActionUrgent === value && styles.chipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                quickActionUrgent === value && styles.chipTextActive,
+                              ]}
+                            >
+                              {label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <Text style={styles.listMeta}>
+                        Matrix:{' '}
+                        {
+                          PRIORITY_QUADRANT_META[
+                            actionPriorityQuadrant({
+                              important: quickActionImportant,
+                              urgent: quickActionUrgent,
+                            })
+                          ].title
+                        }
                       </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
+                      <Text style={styles.fieldLabel}>Day</Text>
+                      <View style={styles.chipRow}>
+                        {WEEK_DAYS.map((day) => (
+                          <Pressable
+                            key={day}
+                            onPress={() => setActionDay(day)}
+                            style={[styles.chip, actionDay === day && styles.chipActive]}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                actionDay === day && styles.chipTextActive,
+                              ]}
+                            >
+                              {day}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.fieldLabel}>Area (optional)</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.chipRow}>
+                      {pillars.map((pillar) => (
+                        <Pressable
+                          key={pillar.id}
+                          onPress={() => setIdeaPillarId(pillar.id)}
+                          style={[
+                            styles.chip,
+                            ideaPillarId === pillar.id && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              ideaPillarId === pillar.id && styles.chipTextActive,
+                            ]}
+                          >
+                            {pillar.title}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </>
+              )}
               <View style={styles.row}>
                 <Button
                   variant="secondary"
@@ -1561,15 +1850,22 @@ function AppContent() {
                         await createLifeItem({
                           kind: 'ACTION',
                           title: ideaTitle.trim(),
-                          parentId: ideaPillarId,
-                          body: {
-                            hours: Number.isFinite(hours) && hours > 0 ? hours : 1,
-                            note: ideaNote.trim(),
-                          },
+                          parentId: quickActionProjectId,
+                          body: actionBodyWithFlags(
+                            {
+                              hours:
+                                Number.isFinite(hours) && hours > 0 ? hours : 1,
+                              day: actionMoreOpen ? actionDay : undefined,
+                              note: ideaNote.trim() || undefined,
+                            },
+                            quickActionImportant,
+                            quickActionUrgent,
+                          ),
                         });
                         setIdeaTitle('');
                         setIdeaNote('');
-                        setIdeaPillarId(null);
+                        setQuickActionProjectId(null);
+                        setActionMoreOpen(false);
                         setCaptureOpen(false);
                         await reloadItems();
                         setTab('today');
@@ -1703,7 +1999,7 @@ function AppContent() {
               onChangeText={setProjectOutcome}
               multiline
             />
-            <Text style={styles.fieldLabel}>Pillar</Text>
+            <Text style={styles.fieldLabel}>Area</Text>
             <View style={styles.chipRow}>
               {pillars.map((pillar) => (
                 <Pressable
@@ -1725,12 +2021,13 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.fieldLabel}>Priority matrix</Text>
+            <Text style={styles.fieldLabel}>Project priority</Text>
             <Text style={styles.listMeta}>
-              {PRIORITY_QUADRANT_META[projectPriority].description}
+              High / Medium / Low for the project. Eisenhower is set on the first
+              action below.
             </Text>
             <View style={styles.chipRow}>
-              {PRIORITY_MATRIX_ORDER.map((id) => (
+              {PROJECT_PRIORITIES.map((id) => (
                 <Pressable
                   key={id}
                   onPress={() => setProjectPriority(id)}
@@ -1742,7 +2039,7 @@ function AppContent() {
                       projectPriority === id && styles.chipTextActive,
                     ]}
                   >
-                    {PRIORITY_QUADRANT_META[id].title}
+                    {PROJECT_PRIORITY_META[id].title}
                   </Text>
                 </Pressable>
               ))}
@@ -1758,6 +2055,71 @@ function AppContent() {
               onChangeText={setActionHours}
               keyboardType="decimal-pad"
             />
+            <Text style={styles.fieldLabel}>Action · Important</Text>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  [true, 'Yes'],
+                  [false, 'No'],
+                ] as const
+              ).map(([value, label]) => (
+                <Pressable
+                  key={label}
+                  onPress={() => setActionImportantFlag(value)}
+                  style={[
+                    styles.chip,
+                    actionImportantFlag === value && styles.chipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      actionImportantFlag === value && styles.chipTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.fieldLabel}>Action · Urgent</Text>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  [true, 'Yes'],
+                  [false, 'No'],
+                ] as const
+              ).map(([value, label]) => (
+                <Pressable
+                  key={label}
+                  onPress={() => setActionUrgentFlag(value)}
+                  style={[
+                    styles.chip,
+                    actionUrgentFlag === value && styles.chipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      actionUrgentFlag === value && styles.chipTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.listMeta}>
+              Matrix:{' '}
+              {
+                PRIORITY_QUADRANT_META[
+                  actionPriorityQuadrant({
+                    important: actionImportantFlag,
+                    urgent: actionUrgentFlag,
+                  })
+                ].title
+              }
+            </Text>
             <Text style={styles.fieldLabel}>Day</Text>
             <View style={styles.chipRow}>
               {WEEK_DAYS.map((day) => (
