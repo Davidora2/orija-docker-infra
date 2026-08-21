@@ -2,7 +2,7 @@
 
 Source brief condensed for planning. Full narrative requirements live here; implementation detail is in [TECHNICAL_REQUIREMENTS.md](./TECHNICAL_REQUIREMENTS.md).
 
-**UX / nav / onboarding lock:** For information architecture, five-tab navigation, onboarding sequence, and the six-screen mockup inventory, use [UX_IA.md](./UX_IA.md). Where labels conflict (e.g. Command vs Today, Budget vs Money, Pillar vs Area), **UX_IA wins for UI**.
+**UX / nav / onboarding lock:** For information architecture, five-tab navigation, onboarding sequence, and the six-screen mockup inventory, use [UX_IA.md](./UX_IA.md). For Plan tab functional behavior (Areas/Projects/Ideas, Project H/M/L vs Action Eisenhower, Capacity Σ Actions), use [PLAN_UX.md](./PLAN_UX.md). Where labels conflict (e.g. Command vs Today, Budget vs Money, Pillar vs Area), **UX_IA wins for UI**. Where Plan entity rules conflict with older brief wording, **PLAN_UX wins**.
 
 ---
 
