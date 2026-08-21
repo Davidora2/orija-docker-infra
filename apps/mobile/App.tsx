@@ -48,12 +48,11 @@ import {
   subscribeSyncStatus,
   type SyncPhase,
 } from './src/offline';
+import { PlanScreen } from './src/plan-screen';
 import {
   WEEK_DAYS,
   bodyNumber,
   bodyString,
-  childrenOf,
-  ideaScore,
   isOpen,
   ofKind,
   primaryAction,
@@ -63,7 +62,6 @@ import {
   weeklyCapacityHours,
 } from './src/life-data';
 import {
-  PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
   PROJECT_PRIORITIES,
   PROJECT_PRIORITY_META,
@@ -71,7 +69,6 @@ import {
   actionPriorityQuadrant,
   flagsFromQuadrant,
   projectBodyWithPriority,
-  projectPriorityLevel,
   type PriorityQuadrant,
   type ProjectPriority,
 } from './src/priority-matrix';
@@ -506,7 +503,6 @@ function AppContent() {
   }, [incomingUrl]);
 
   const pillars = useMemo(() => ofKind(items, 'PILLAR').filter(isOpen), [items]);
-  const ideas = useMemo(() => ofKind(items, 'IDEA').filter(isOpen), [items]);
   const projects = useMemo(() => ofKind(items, 'PROJECT').filter(isOpen), [items]);
   const actions = useMemo(() => ofKind(items, 'ACTION'), [items]);
   const doneActions = useMemo(
@@ -682,13 +678,18 @@ function AppContent() {
     });
   }
 
-  function openQuickCapture(kind: FabKind = 'action') {
+  function openQuickCapture(
+    kind: FabKind = 'action',
+    projectId?: string | null,
+  ) {
     setFabKind(kind);
     setActionMoreOpen(false);
     setIdeaTitle('');
     setIdeaNote('');
     setIdeaPillarId(null);
-    setQuickActionProjectId(projects[0]?.id ?? null);
+    setQuickActionProjectId(
+      projectId !== undefined ? projectId : (projects[0]?.id ?? null),
+    );
     setQuickActionImportant(true);
     setQuickActionUrgent(false);
     setActionHours('1');
@@ -1001,319 +1002,54 @@ function AppContent() {
           </View>
         ) : null}
 
-        {tab === 'plan' && planSegment === 'ideas' ? (
-          <View style={styles.stack}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Ideas</Text>
-              <Button onPress={() => setCaptureOpen(true)}>Capture</Button>
-            </View>
-            {ideas.length === 0 ? (
-              <EmptyState
-                title="No open ideas"
-                body="Capture something rough. Evaluate it, then convert the winners into projects."
-              />
-            ) : (
-              ideas.map((idea) => {
-                const score = ideaScore(idea);
-                return (
-                  <Card key={idea.id}>
-                    <View style={styles.rowBetween}>
-                      <Text style={styles.cardTitle}>{idea.title}</Text>
-                      <Pill tone={score > 0 ? 'sage' : 'amber'}>
-                        {score > 0 ? `Score ${score}` : 'Unevaluated'}
-                      </Pill>
-                    </View>
-                    {bodyString(idea, 'note') ? (
-                      <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
-                    ) : null}
-                    <View style={styles.row}>
-                      <Button
-                        variant="secondary"
-                        style={{ flex: 1 }}
-                        onPress={() => {
-                          setEvaluateId(idea.id);
-                          setImpact(bodyNumber(idea, 'impact', 3) || 3);
-                          setEffort(bodyNumber(idea, 'effort', 2) || 2);
-                          setAlignment(bodyNumber(idea, 'alignment', 3) || 3);
-                          setTiming(bodyNumber(idea, 'timing', 3) || 3);
-                        }}
-                      >
-                        Evaluate
-                      </Button>
-                      <Button
-                        style={{ flex: 1 }}
-                        onPress={() => openConvert(idea)}
-                      >
-                        Turn into Project
-                      </Button>
-                    </View>
-                    <Button variant="ghost" onPress={() => void archiveItem(idea)}>
-                      Archive
-                    </Button>
-                  </Card>
-                );
-              })
-            )}
-          </View>
-        ) : null}
-
-        {tab === 'plan' && (planSegment === 'areas' || planSegment === 'projects') ? (
-          <View style={styles.stack}>
-            {planSegment === 'projects' ? (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Projects</Text>
-              <Button
-                onPress={() => {
-                  setSourceIdeaId(null);
-                  setProjectTitle('');
-                  setProjectOutcome('');
-                  setProjectPillarId(pillars[0]?.id ?? null);
-                  setProjectPriority('MEDIUM');
-                  setActionTitle('');
-                  setActionHours('2');
-                  setActionImportantFlag(true);
-                  setActionUrgentFlag(false);
-                  setProjectOpen(true);
-                }}
-              >
-                New project
-              </Button>
-            </View>
-            ) : (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Areas</Text>
-            </View>
-            )}
-
-            {planSegment === 'areas' ? (
-            <>
-            <Card>
-              <Text style={styles.cardEyebrow}>Your life areas</Text>
-              <Text style={styles.cardBody}>
-                Areas hold projects. Execution stays on Today — plan structure here.
-              </Text>
-              <Field
-                label="New area"
-                value={areaTitle}
-                onChangeText={setAreaTitle}
-                placeholder="e.g. Fitness, Side project"
-              />
-              <Button disabled={busy} onPress={() => void addLifeArea()}>
-                Add area
-              </Button>
-            </Card>
-            {pillars.length === 0 ? (
-              <EmptyState
-                title="No areas yet"
-                body="Add a life area, then attach projects under it."
-              />
-            ) : (
-              pillars.map((pillar) => {
-                const pillarProjects = projects.filter(
-                  (project) => project.parentId === pillar.id,
-                );
-                const openIdeas = ideas.filter(
-                  (idea) => idea.parentId === pillar.id,
-                );
-                return (
-                  <Card key={pillar.id}>
-                    <View style={styles.rowBetween}>
-                      <Text style={styles.cardTitle}>{pillar.title}</Text>
-                      <Button variant="ghost" onPress={() => void removeLifeArea(pillar)}>
-                        Remove
-                      </Button>
-                    </View>
-                    <Text style={styles.cardBody}>
-                      {pillarProjects.length} project
-                      {pillarProjects.length === 1 ? '' : 's'}
-                      {openIdeas.length > 0
-                        ? ` · ${openIdeas.length} idea${openIdeas.length === 1 ? '' : 's'}`
-                        : ''}
-                    </Text>
-                    {pillarProjects.length === 0 ? (
-                      <Text style={styles.listMeta}>
-                        No projects — add one from Projects or turn an idea into a project.
-                      </Text>
-                    ) : (
-                      pillarProjects.map((project) => {
-                        const next = childrenOf(items, project.id).find(
-                          (item) => item.kind === 'ACTION' && isOpen(item),
-                        );
-                        const level = projectPriorityLevel(project.body);
-                        return (
-                          <View key={project.id} style={styles.projectBlock}>
-                            <Text style={styles.listTitle}>{project.title}</Text>
-                            <Text style={styles.listMeta}>
-                              {PROJECT_PRIORITY_META[level].title} priority · Next:{' '}
-                              {next
-                                ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
-                                : 'None — add an action'}
-                            </Text>
-                          </View>
-                        );
-                      })
-                    )}
-                  </Card>
-                );
-              })
-            )}
-            </>
-            ) : null}
-
-            {planSegment === 'projects' ? (
-            <>
-            <Card>
-              <Text style={styles.cardEyebrow}>Priority</Text>
-              <Text style={styles.cardTitle}>High · Medium · Low</Text>
-              <Text style={styles.cardBody}>
-                Project priority is High, Medium, or Low. Eisenhower lives on actions
-                (matrix below).
-              </Text>
-            </Card>
-
-            <Card>
-              <Text style={styles.cardEyebrow}>Eisenhower</Text>
-              <Text style={styles.cardTitle}>Action matrix</Text>
-              <Text style={styles.cardBody}>
-                View of open actions by Important × Urgent. Move an action to update
-                its flags.
-              </Text>
-              {PRIORITY_MATRIX_ORDER.map((id) => {
-                const meta = PRIORITY_QUADRANT_META[id];
-                const projectById = new Map(
-                  projects.map((project) => [project.id, project]),
-                );
-                const quadrantActions = capacity.openActions.filter(
-                  (action) =>
-                    actionPriorityQuadrant(
-                      action.body,
-                      projectById.get(action.parentId ?? '')?.body,
-                    ) === id,
-                );
-                return (
-                  <View key={id} style={styles.matrixQuadrant}>
-                    <Text style={styles.cardEyebrow}>{meta.subtitle}</Text>
-                    <Text style={styles.listTitle}>{meta.title}</Text>
-                    <Text style={styles.listMeta}>{meta.description}</Text>
-                    {quadrantActions.length === 0 ? (
-                      <Text style={styles.listMeta}>No actions here.</Text>
-                    ) : (
-                      quadrantActions.map((action) => (
-                        <View key={action.id} style={styles.projectBlock}>
-                          <Text style={styles.listTitle}>{action.title}</Text>
-                          <Text style={styles.listMeta}>
-                            {bodyNumber(action, 'hours', 1)}h
-                            {bodyString(action, 'day')
-                              ? ` · ${bodyString(action, 'day')}`
-                              : ''}
-                          </Text>
-                          <View style={styles.chipRow}>
-                            {PRIORITY_MATRIX_ORDER.map((option) => (
-                              <Pressable
-                                key={option}
-                                onPress={() =>
-                                  void moveActionQuadrant(action, option)
-                                }
-                                style={[
-                                  styles.chip,
-                                  id === option && styles.chipActive,
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.chipText,
-                                    id === option && styles.chipTextActive,
-                                  ]}
-                                >
-                                  {PRIORITY_QUADRANT_META[option].title}
-                                </Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        </View>
-                      ))
-                    )}
-                  </View>
-                );
-              })}
-            </Card>
-
-            {projects.length === 0 ? (
-              <EmptyState
-                title="No projects yet"
-                body="Create a project with a first next action, or turn an idea into a project."
-              />
-            ) : (
-              projects.map((project) => {
-                const next = childrenOf(items, project.id).find(
-                  (item) => item.kind === 'ACTION' && isOpen(item),
-                );
-                const level = projectPriorityLevel(project.body);
-                const area = pillars.find((pillar) => pillar.id === project.parentId);
-                return (
-                  <Card key={project.id}>
-                    <Text style={styles.cardEyebrow}>
-                      {area?.title ?? 'Unassigned'} · {PROJECT_PRIORITY_META[level].title}
-                    </Text>
-                    <Text style={styles.cardTitle}>{project.title}</Text>
-                    {bodyString(project, 'outcome') ? (
-                      <Text style={styles.cardBody}>
-                        {bodyString(project, 'outcome')}
-                      </Text>
-                    ) : null}
-                    <Text style={styles.fieldLabel}>Priority</Text>
-                    <View style={styles.chipRow}>
-                      {PROJECT_PRIORITIES.map((option) => (
-                        <Pressable
-                          key={option}
-                          onPress={() => void moveProjectPriority(project, option)}
-                          style={[
-                            styles.chip,
-                            level === option && styles.chipActive,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.chipText,
-                              level === option && styles.chipTextActive,
-                            ]}
-                          >
-                            {PROJECT_PRIORITY_META[option].title}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <Text style={styles.listMeta}>
-                      Next:{' '}
-                      {next
-                        ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
-                        : 'None — add an action'}
-                    </Text>
-                    {next ? (
-                      <Button
-                        variant="secondary"
-                        onPress={() => void completeAction(next)}
-                      >
-                        Complete next action
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        onPress={() => {
-                          setQuickActionProjectId(project.id);
-                          openQuickCapture('action');
-                        }}
-                      >
-                        Add next action
-                      </Button>
-                    )}
-                  </Card>
-                );
-              })
-            )}
-            </>
-            ) : null}
-          </View>
+        {tab === 'plan' ? (
+          <PlanScreen
+            planSegment={planSegment}
+            pillars={pillars}
+            projects={projects}
+            allIdeas={ofKind(items, 'IDEA')}
+            items={items}
+            openActions={capacity.openActions}
+            availableHours={capacity.available}
+            busy={busy}
+            areaTitle={areaTitle}
+            onAreaTitleChange={setAreaTitle}
+            onNewProject={() => {
+              setSourceIdeaId(null);
+              setProjectTitle('');
+              setProjectOutcome('');
+              setProjectPillarId(pillars[0]?.id ?? null);
+              setProjectPriority('MEDIUM');
+              setActionTitle('');
+              setActionHours('2');
+              setActionImportantFlag(true);
+              setActionUrgentFlag(false);
+              setProjectOpen(true);
+            }}
+            onCaptureIdea={() => openQuickCapture('idea')}
+            onQuickAction={(projectId) => {
+              openQuickCapture('action', projectId);
+            }}
+            onEvaluate={(idea) => {
+              setEvaluateId(idea.id);
+              setImpact(bodyNumber(idea, 'impact', 3) || 3);
+              setEffort(bodyNumber(idea, 'effort', 2) || 2);
+              setAlignment(bodyNumber(idea, 'alignment', 3) || 3);
+              setTiming(bodyNumber(idea, 'timing', 3) || 3);
+            }}
+            onConvert={(idea) => openConvert(idea)}
+            onArchiveIdea={(idea) => void archiveItem(idea)}
+            onMoveProjectPriority={(project, priority) =>
+              void moveProjectPriority(project, priority)
+            }
+            onMoveActionQuadrant={(action, quadrant) =>
+              void moveActionQuadrant(action, quadrant)
+            }
+            onCompleteAction={(action) => void completeAction(action)}
+            onAddArea={() => void addLifeArea()}
+            onRemoveArea={(pillar) => void removeLifeArea(pillar)}
+            onOpenProjectsMatrix={() => setPlanSegment('projects')}
+          />
         ) : null}
 
         {tab === 'money' ? (

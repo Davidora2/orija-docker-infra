@@ -1,0 +1,1164 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import type { LifeItem } from './api';
+import {
+  bodyNumber,
+  bodyString,
+  childrenOf,
+  ideaScore,
+  isOpen,
+} from './life-data';
+import {
+  PRIORITY_MATRIX_ORDER,
+  PRIORITY_QUADRANT_META,
+  PROJECT_PRIORITIES,
+  PROJECT_PRIORITY_META,
+  actionPriorityQuadrant,
+  projectPriorityLevel,
+  projectPriorityRank,
+  type PriorityQuadrant,
+  type ProjectPriority,
+} from './priority-matrix';
+
+const colors = {
+  ink: '#14241F',
+  inkSoft: '#24362F',
+  canvas: '#F4F5F0',
+  paper: '#FFFFFF',
+  line: '#DDE2DD',
+  muted: '#6C7771',
+  sage: '#DBE8D7',
+  sageDeep: '#617A57',
+  amberSoft: '#FFF3E8',
+  danger: '#C9634F',
+  acid: '#D6F57A',
+};
+
+const serif = Platform.select({
+  ios: 'Georgia',
+  android: 'serif',
+  default: 'Georgia',
+});
+
+const QUADRANT_TONE: Record<
+  PriorityQuadrant,
+  { bg: string; border: string }
+> = {
+  DO_FIRST: { bg: '#F8E4DF', border: '#E8C4BC' },
+  SCHEDULE: { bg: '#EEF3EA', border: '#C9D6C4' },
+  DELEGATE: { bg: '#F7F1E4', border: '#E4D5B5' },
+  ELIMINATE: { bg: '#F7F8F5', border: '#DDE2DD' },
+};
+
+type PlanSegment = 'areas' | 'projects' | 'ideas';
+type ProjectsView = 'list' | 'matrix';
+type IdeasTab = 'inbox' | 'evaluated';
+
+type Props = {
+  planSegment: PlanSegment;
+  pillars: LifeItem[];
+  projects: LifeItem[];
+  allIdeas: LifeItem[];
+  items: LifeItem[];
+  openActions: LifeItem[];
+  availableHours: number;
+  busy: boolean;
+  onNewProject: () => void;
+  onCaptureIdea: () => void;
+  onQuickAction: (projectId: string) => void;
+  onEvaluate: (idea: LifeItem) => void;
+  onConvert: (idea: LifeItem) => void;
+  onArchiveIdea: (idea: LifeItem) => void;
+  onMoveProjectPriority: (project: LifeItem, priority: ProjectPriority) => void;
+  onMoveActionQuadrant: (action: LifeItem, quadrant: PriorityQuadrant) => void;
+  onCompleteAction: (action: LifeItem) => void;
+  onAddArea: (title: string) => void;
+  onRemoveArea: (pillar: LifeItem) => void;
+  onOpenProjectsMatrix: () => void;
+  areaTitle: string;
+  onAreaTitleChange: (value: string) => void;
+  /** When parent switches to Projects for matrix, prefer matrix view */
+  preferMatrix?: boolean;
+};
+
+function MicroLabel({ children }: { children: ReactNode }) {
+  return <Text style={styles.micro}>{children}</Text>;
+}
+
+function Pill({
+  children,
+  tone = 'sage',
+}: {
+  children: ReactNode;
+  tone?: 'sage' | 'amber' | 'ink' | 'danger';
+}) {
+  return (
+    <View
+      style={[
+        styles.pill,
+        tone === 'amber' && styles.pillAmber,
+        tone === 'ink' && styles.pillInk,
+        tone === 'danger' && styles.pillDanger,
+      ]}
+    >
+      <Text
+        style={[
+          styles.pillText,
+          tone === 'amber' && styles.pillTextAmber,
+          tone === 'ink' && styles.pillTextInk,
+          tone === 'danger' && styles.pillTextDanger,
+        ]}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+function Card({ children }: { children: ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const clamped = Math.max(0, Math.min(100, value));
+  return (
+    <View style={styles.progressTrack}>
+      <View
+        style={[
+          styles.progressFill,
+          { width: `${clamped}%` },
+          clamped > 100 ? styles.progressWarn : null,
+        ]}
+      />
+    </View>
+  );
+}
+
+function Button({
+  children,
+  onPress,
+  variant = 'primary',
+  disabled,
+  style,
+}: {
+  children: ReactNode;
+  onPress: () => void;
+  variant?: 'primary' | 'secondary' | 'ghost';
+  disabled?: boolean;
+  style?: object;
+}) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.button,
+        variant === 'secondary' && styles.buttonSecondary,
+        variant === 'ghost' && styles.buttonGhost,
+        disabled && { opacity: 0.45 },
+        style,
+      ]}
+    >
+      <Text
+        style={[
+          styles.buttonText,
+          variant === 'secondary' && styles.buttonTextSecondary,
+          variant === 'ghost' && styles.buttonTextGhost,
+        ]}
+      >
+        {children}
+      </Text>
+    </Pressable>
+  );
+}
+
+function sortedProjects(projects: LifeItem[]): LifeItem[] {
+  return [...projects].sort((a, b) => {
+    const aRank = projectPriorityRank(projectPriorityLevel(a.body));
+    const bRank = projectPriorityRank(projectPriorityLevel(b.body));
+    return aRank - bRank || a.title.localeCompare(b.title);
+  });
+}
+
+function projectHours(items: LifeItem[], projectId: string): number {
+  return childrenOf(items, projectId)
+    .filter((item) => item.kind === 'ACTION' && isOpen(item))
+    .reduce((sum, action) => sum + bodyNumber(action, 'hours', 1), 0);
+}
+
+function areaHours(items: LifeItem[], projects: LifeItem[], areaId: string): number {
+  return projects
+    .filter((project) => project.parentId === areaId)
+    .reduce((sum, project) => sum + projectHours(items, project.id), 0);
+}
+
+function areaHealth(
+  activeCount: number,
+  hours: number,
+  available: number,
+): { label: string; tone: 'sage' | 'amber' | 'danger' } {
+  if (activeCount === 0) return { label: 'Quiet', tone: 'amber' };
+  const share = available > 0 ? hours / available : 0;
+  if (share >= 0.45) return { label: 'Needs attention', tone: 'amber' };
+  if (activeCount >= 1 && hours === 0) return { label: 'Needs attention', tone: 'amber' };
+  return { label: 'On track', tone: 'sage' };
+}
+
+export function PlanScreen({
+  planSegment,
+  pillars,
+  projects,
+  allIdeas,
+  items,
+  openActions,
+  availableHours,
+  busy,
+  onNewProject,
+  onCaptureIdea,
+  onQuickAction,
+  onEvaluate,
+  onConvert,
+  onArchiveIdea,
+  onMoveProjectPriority,
+  onMoveActionQuadrant,
+  onCompleteAction,
+  onAddArea,
+  onRemoveArea,
+  onOpenProjectsMatrix,
+  areaTitle,
+  onAreaTitleChange,
+  preferMatrix = false,
+}: Props) {
+  const [projectsView, setProjectsView] = useState<ProjectsView>(
+    preferMatrix ? 'matrix' : 'list',
+  );
+  const [ideasTab, setIdeasTab] = useState<IdeasTab>('inbox');
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [movingActionId, setMovingActionId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    if (preferMatrix) setProjectsView('matrix');
+  }, [preferMatrix]);
+
+  useEffect(() => {
+    setSelectedProjectId(null);
+    setSelectedAreaId(null);
+    setDetailsOpen(false);
+    setMovingActionId(null);
+  }, [planSegment]);
+
+  const inboxIdeas = useMemo(
+    () =>
+      allIdeas.filter(
+        (idea) =>
+          idea.status !== 'EVALUATED' &&
+          idea.status !== 'CONVERTED' &&
+          idea.status !== 'ARCHIVED' &&
+          idea.status !== 'DONE',
+      ),
+    [allIdeas],
+  );
+  const evaluatedIdeas = useMemo(
+    () => allIdeas.filter((idea) => idea.status === 'EVALUATED'),
+    [allIdeas],
+  );
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+  const selectedArea = pillars.find((p) => p.id === selectedAreaId) ?? null;
+
+  if (planSegment === 'ideas') {
+    const list = ideasTab === 'inbox' ? inboxIdeas : evaluatedIdeas;
+    return (
+      <View style={styles.stack}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Ideas</Text>
+          <Button onPress={onCaptureIdea}>Capture</Button>
+        </View>
+        <View style={styles.toggleRow}>
+          {(
+            [
+              ['inbox', 'Inbox'],
+              ['evaluated', 'Evaluated'],
+            ] as const
+          ).map(([id, label]) => (
+            <Pressable
+              key={id}
+              onPress={() => setIdeasTab(id)}
+              style={[styles.toggleChip, ideasTab === id && styles.toggleChipActive]}
+            >
+              <Text
+                style={[
+                  styles.toggleChipText,
+                  ideasTab === id && styles.toggleChipTextActive,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        {list.length === 0 ? (
+          <Card>
+            <Text style={styles.cardTitle}>
+              {ideasTab === 'inbox' ? 'Inbox is clear' : 'Nothing evaluated yet'}
+            </Text>
+            <Text style={styles.cardBody}>
+              {ideasTab === 'inbox'
+                ? 'Capture something rough. Evaluate winners, then turn them into projects.'
+                : 'Score an idea from Inbox to move it here.'}
+            </Text>
+          </Card>
+        ) : (
+          list.map((idea) => {
+            const score = ideaScore(idea);
+            return (
+              <Card key={idea.id}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.cardTitle}>{idea.title}</Text>
+                  <Pill tone={score > 0 ? 'sage' : 'amber'}>
+                    {score > 0 ? `Score ${score}` : 'Unevaluated'}
+                  </Pill>
+                </View>
+                {bodyString(idea, 'note') ? (
+                  <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
+                ) : null}
+                <View style={styles.row}>
+                  {ideasTab === 'inbox' ? (
+                    <Button
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() => onEvaluate(idea)}
+                    >
+                      Evaluate
+                    </Button>
+                  ) : null}
+                  <Button style={{ flex: 1 }} onPress={() => onConvert(idea)}>
+                    Turn into project
+                  </Button>
+                </View>
+                <Button variant="ghost" onPress={() => onArchiveIdea(idea)}>
+                  Archive
+                </Button>
+              </Card>
+            );
+          })
+        )}
+      </View>
+    );
+  }
+
+  if (planSegment === 'areas') {
+    if (selectedProject) {
+      return (
+        <ProjectDetail
+          project={selectedProject}
+          pillars={pillars}
+          items={items}
+          detailsOpen={detailsOpen}
+          setDetailsOpen={setDetailsOpen}
+          busy={busy}
+          backLabel="← Area"
+          onBack={() => {
+            setSelectedProjectId(null);
+            setDetailsOpen(false);
+          }}
+          onMovePriority={onMoveProjectPriority}
+          onQuickAction={onQuickAction}
+          onCompleteAction={onCompleteAction}
+          onShowMatrix={() => {
+            setSelectedProjectId(null);
+            setSelectedAreaId(null);
+            setProjectsView('matrix');
+            onOpenProjectsMatrix();
+          }}
+        />
+      );
+    }
+
+    if (selectedArea) {
+      const areaProjects = sortedProjects(
+        projects.filter((project) => project.parentId === selectedArea.id),
+      );
+      const openAreaIdeas = inboxIdeas.filter(
+        (idea) => idea.parentId === selectedArea.id,
+      );
+      const hours = areaHours(items, projects, selectedArea.id);
+      return (
+        <View style={styles.stack}>
+          <Pressable
+            onPress={() => setSelectedAreaId(null)}
+            style={styles.backRow}
+          >
+            <Text style={styles.backText}>← Areas</Text>
+          </Pressable>
+          <Text style={styles.sectionTitle}>{selectedArea.title}</Text>
+          <Text style={styles.cardBody}>
+            {areaProjects.length} active project
+            {areaProjects.length === 1 ? '' : 's'} · {hours.toFixed(1)}h this week
+          </Text>
+          <MicroLabel>Projects</MicroLabel>
+          {areaProjects.length === 0 ? (
+            <Card>
+              <Text style={styles.cardBody}>
+                No projects yet — add one from Projects or convert an idea.
+              </Text>
+              <Button onPress={onNewProject}>New project</Button>
+            </Card>
+          ) : (
+            areaProjects.map((project) => {
+              const next = childrenOf(items, project.id).find(
+                (item) => item.kind === 'ACTION' && isOpen(item),
+              );
+              const level = projectPriorityLevel(project.body);
+              return (
+                <Pressable
+                  key={project.id}
+                  onPress={() => {
+                    setSelectedProjectId(project.id);
+                    setDetailsOpen(false);
+                  }}
+                >
+                  <Card>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.listTitle}>{project.title}</Text>
+                      <Pill>{PROJECT_PRIORITY_META[level].title}</Pill>
+                    </View>
+                    <Text style={styles.listMeta}>
+                      Next:{' '}
+                      {next
+                        ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
+                        : 'Define next action'}
+                    </Text>
+                  </Card>
+                </Pressable>
+              );
+            })
+          )}
+          {openAreaIdeas.length > 0 ? (
+            <>
+              <MicroLabel>Open ideas</MicroLabel>
+              {openAreaIdeas.map((idea) => (
+                <Card key={idea.id}>
+                  <Text style={styles.listTitle}>{idea.title}</Text>
+                  <Button variant="secondary" onPress={() => onConvert(idea)}>
+                    Turn into project
+                  </Button>
+                </Card>
+              ))}
+            </>
+          ) : null}
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.stack}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Areas</Text>
+        </View>
+        <Text style={styles.lede}>
+          Life domains with active load. Tap an area to see its projects.
+        </Text>
+        {pillars.length === 0 ? (
+          <Card>
+            <Text style={styles.cardTitle}>No areas yet</Text>
+            <Text style={styles.cardBody}>
+              Add a life area, then attach projects under it.
+            </Text>
+          </Card>
+        ) : (
+          pillars.map((pillar) => {
+            const pillarProjects = projects.filter(
+              (project) => project.parentId === pillar.id,
+            );
+            const hours = areaHours(items, projects, pillar.id);
+            const pct =
+              availableHours > 0
+                ? Math.round((hours / availableHours) * 100)
+                : 0;
+            const health = areaHealth(
+              pillarProjects.length,
+              hours,
+              availableHours,
+            );
+            return (
+              <Pressable
+                key={pillar.id}
+                onPress={() => setSelectedAreaId(pillar.id)}
+              >
+                <Card>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.cardTitle}>{pillar.title}</Text>
+                    <Pill tone={health.tone}>{health.label}</Pill>
+                  </View>
+                  <Text style={styles.statLine}>
+                    {pillarProjects.length} active project
+                    {pillarProjects.length === 1 ? '' : 's'}
+                  </Text>
+                  <Text style={styles.statLine}>
+                    {hours.toFixed(1)}h this week · {pct}% of capacity
+                  </Text>
+                  <ProgressBar value={pct} />
+                </Card>
+              </Pressable>
+            );
+          })
+        )}
+        <Card>
+          <MicroLabel>Add area</MicroLabel>
+          <TextInput
+            value={areaTitle}
+            onChangeText={onAreaTitleChange}
+            placeholder="e.g. Fitness, Side project"
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+          />
+          <Button disabled={busy} onPress={() => onAddArea(areaTitle)}>
+            Add area
+          </Button>
+          {pillars.length > 0 ? (
+            <View style={{ gap: 6, marginTop: 4 }}>
+              {pillars.map((pillar) => (
+                <View key={`rm-${pillar.id}`} style={styles.rowBetween}>
+                  <Text style={styles.listMeta}>{pillar.title}</Text>
+                  <Button variant="ghost" onPress={() => onRemoveArea(pillar)}>
+                    Remove
+                  </Button>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </Card>
+      </View>
+    );
+  }
+
+  // Projects segment
+  if (selectedProject) {
+    return (
+      <ProjectDetail
+        project={selectedProject}
+        pillars={pillars}
+        items={items}
+        detailsOpen={detailsOpen}
+        setDetailsOpen={setDetailsOpen}
+        busy={busy}
+        backLabel="← Projects"
+        onBack={() => {
+          setSelectedProjectId(null);
+          setDetailsOpen(false);
+        }}
+        onMovePriority={onMoveProjectPriority}
+        onQuickAction={onQuickAction}
+        onCompleteAction={onCompleteAction}
+        onShowMatrix={() => {
+          setSelectedProjectId(null);
+          setProjectsView('matrix');
+        }}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.stack}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Projects</Text>
+        <Button onPress={onNewProject}>New</Button>
+      </View>
+      <View style={styles.toggleRow}>
+        {(
+          [
+            ['list', 'List'],
+            ['matrix', 'Matrix'],
+          ] as const
+        ).map(([id, label]) => (
+          <Pressable
+            key={id}
+            onPress={() => {
+              setProjectsView(id);
+              setMovingActionId(null);
+            }}
+            style={[styles.toggleChip, projectsView === id && styles.toggleChipActive]}
+          >
+            <Text
+              style={[
+                styles.toggleChipText,
+                projectsView === id && styles.toggleChipTextActive,
+              ]}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {projectsView === 'matrix' ? (
+        <ActionMatrixView
+          openActions={openActions}
+          projects={projects}
+          movingActionId={movingActionId}
+          onSelectAction={(id) =>
+            setMovingActionId((current) => (current === id ? null : id))
+          }
+          onPlaceInQuadrant={(quadrant) => {
+            const action = openActions.find((a) => a.id === movingActionId);
+            if (!action) return;
+            onMoveActionQuadrant(action, quadrant);
+            setMovingActionId(null);
+          }}
+        />
+      ) : projects.length === 0 ? (
+        <Card>
+          <Text style={styles.cardTitle}>No projects yet</Text>
+          <Text style={styles.cardBody}>
+            Create a project with a first next action, or turn an idea into a
+            project.
+          </Text>
+          <Button onPress={onNewProject}>New project</Button>
+        </Card>
+      ) : (
+        sortedProjects(projects).map((project) => {
+          const next = childrenOf(items, project.id).find(
+            (item) => item.kind === 'ACTION' && isOpen(item),
+          );
+          const level = projectPriorityLevel(project.body);
+          const area = pillars.find((pillar) => pillar.id === project.parentId);
+          const hours = projectHours(items, project.id);
+          return (
+            <Pressable
+              key={project.id}
+              onPress={() => {
+                setSelectedProjectId(project.id);
+                setDetailsOpen(false);
+              }}
+            >
+              <Card>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.cardTitle}>{project.title}</Text>
+                  <Pill
+                    tone={
+                      level === 'HIGH'
+                        ? 'danger'
+                        : level === 'MEDIUM'
+                          ? 'amber'
+                          : 'sage'
+                    }
+                  >
+                    {PROJECT_PRIORITY_META[level].title}
+                  </Pill>
+                </View>
+                <Text style={styles.listMeta}>{area?.title ?? 'Unassigned'}</Text>
+                <Text style={styles.nextLine}>
+                  {next
+                    ? `Next: ${next.title}`
+                    : 'Define next action'}
+                </Text>
+                <Text style={styles.listMeta}>
+                  {hours.toFixed(1)}h this week
+                  {next ? ` · ${bodyNumber(next, 'hours', 1)}h next` : ''}
+                </Text>
+              </Card>
+            </Pressable>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
+function ProjectDetail({
+  project,
+  pillars,
+  items,
+  detailsOpen,
+  setDetailsOpen,
+  busy,
+  backLabel,
+  onBack,
+  onMovePriority,
+  onQuickAction,
+  onCompleteAction,
+  onShowMatrix,
+}: {
+  project: LifeItem;
+  pillars: LifeItem[];
+  items: LifeItem[];
+  detailsOpen: boolean;
+  setDetailsOpen: (open: boolean) => void;
+  busy: boolean;
+  backLabel: string;
+  onBack: () => void;
+  onMovePriority: (project: LifeItem, priority: ProjectPriority) => void;
+  onQuickAction: (projectId: string) => void;
+  onCompleteAction: (action: LifeItem) => void;
+  onShowMatrix: () => void;
+}) {
+  const area = pillars.find((pillar) => pillar.id === project.parentId);
+  const level = projectPriorityLevel(project.body);
+  const openProjectActions = childrenOf(items, project.id).filter(
+    (item) => item.kind === 'ACTION' && isOpen(item),
+  );
+  const doneProjectActions = childrenOf(items, project.id).filter(
+    (item) => item.kind === 'ACTION' && item.status === 'DONE',
+  );
+  const next = openProjectActions[0] ?? null;
+  const totalActions = openProjectActions.length + doneProjectActions.length;
+  const progress =
+    totalActions === 0
+      ? 0
+      : Math.round((doneProjectActions.length / totalActions) * 100);
+  const hours = openProjectActions.reduce(
+    (sum, action) => sum + bodyNumber(action, 'hours', 1),
+    0,
+  );
+  const outcome = bodyString(project, 'outcome');
+
+  return (
+    <View style={styles.stack}>
+      <Pressable onPress={onBack} style={styles.backRow}>
+        <Text style={styles.backText}>{backLabel}</Text>
+      </Pressable>
+      <View style={styles.rowBetween}>
+        <Text style={[styles.sectionTitle, { flex: 1 }]}>{project.title}</Text>
+        <Pill
+          tone={
+            level === 'HIGH' ? 'danger' : level === 'MEDIUM' ? 'amber' : 'sage'
+          }
+        >
+          {PROJECT_PRIORITY_META[level].title}
+        </Pill>
+      </View>
+      <Text style={styles.listMeta}>
+        {area?.title ?? 'Unassigned'} · Active
+      </Text>
+
+      <Card>
+        <MicroLabel>Outcome</MicroLabel>
+        <Text style={styles.outcomeText}>
+          {outcome || 'Add an outcome so this project has a clear finish line.'}
+        </Text>
+      </Card>
+
+      <Card>
+        <MicroLabel>Next action</MicroLabel>
+        {next ? (
+          <>
+            <Text style={styles.cardTitle}>{next.title}</Text>
+            <Text style={styles.listMeta}>
+              {bodyNumber(next, 'hours', 1)}h
+              {bodyString(next, 'day') ? ` · ${bodyString(next, 'day')}` : ''}
+              {' · '}
+              {
+                PRIORITY_QUADRANT_META[
+                  actionPriorityQuadrant(next.body, project.body)
+                ].title
+              }
+            </Text>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onPress={() => onCompleteAction(next)}
+            >
+              Complete
+            </Button>
+          </>
+        ) : (
+          <>
+            <Text style={styles.cardTitle}>Define next action</Text>
+            <Text style={styles.cardBody}>
+              Active projects need a concrete next move.
+            </Text>
+            <Button onPress={() => onQuickAction(project.id)}>
+              Add next action
+            </Button>
+          </>
+        )}
+      </Card>
+
+      <Card>
+        <MicroLabel>Progress</MicroLabel>
+        <Text style={styles.cardTitle}>{progress}%</Text>
+        <ProgressBar value={progress} />
+        <Text style={styles.listMeta}>
+          {doneProjectActions.length} done · {openProjectActions.length} open ·{' '}
+          {hours.toFixed(1)}h remaining
+        </Text>
+      </Card>
+
+      <Card>
+        <View style={styles.rowBetween}>
+          <MicroLabel>Actions</MicroLabel>
+          <Button variant="ghost" onPress={onShowMatrix}>
+            Matrix view
+          </Button>
+        </View>
+        {openProjectActions.length === 0 ? (
+          <Text style={styles.cardBody}>No open actions.</Text>
+        ) : (
+          openProjectActions.slice(0, 5).map((action) => (
+            <View key={action.id} style={styles.actionPreview}>
+              <Text style={styles.listTitle}>{action.title}</Text>
+              <Text style={styles.listMeta}>
+                {bodyNumber(action, 'hours', 1)}h ·{' '}
+                {
+                  PRIORITY_QUADRANT_META[
+                    actionPriorityQuadrant(action.body, project.body)
+                  ].title
+                }
+              </Text>
+            </View>
+          ))
+        )}
+        <Button variant="secondary" onPress={() => onQuickAction(project.id)}>
+          Quick add action
+        </Button>
+      </Card>
+
+      <Pressable onPress={() => setDetailsOpen(!detailsOpen)}>
+        <Card>
+          <View style={styles.rowBetween}>
+            <MicroLabel>Details</MicroLabel>
+            <Text style={styles.listMeta}>{detailsOpen ? 'Hide' : 'Show'}</Text>
+          </View>
+          {detailsOpen ? (
+            <View style={{ gap: 10, marginTop: 4 }}>
+              <Text style={styles.fieldLabel}>Priority</Text>
+              <View style={styles.chipRow}>
+                {PROJECT_PRIORITIES.map((option) => (
+                  <Pressable
+                    key={option}
+                    onPress={() => onMovePriority(project, option)}
+                    style={[
+                      styles.chip,
+                      level === option && styles.chipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        level === option && styles.chipTextActive,
+                      ]}
+                    >
+                      {PROJECT_PRIORITY_META[option].title}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {bodyString(project, 'fromIdeaId') ? (
+                <Text style={styles.listMeta}>Converted from an idea</Text>
+              ) : null}
+            </View>
+          ) : null}
+        </Card>
+      </Pressable>
+    </View>
+  );
+}
+
+function ActionMatrixView({
+  openActions,
+  projects,
+  movingActionId,
+  onSelectAction,
+  onPlaceInQuadrant,
+}: {
+  openActions: LifeItem[];
+  projects: LifeItem[];
+  movingActionId: string | null;
+  onSelectAction: (id: string) => void;
+  onPlaceInQuadrant: (quadrant: PriorityQuadrant) => void;
+}) {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+
+  return (
+    <View style={styles.stack}>
+      <Card>
+        <MicroLabel>Priority matrix</MicroLabel>
+        <Text style={styles.cardTitle}>Actions by focus</Text>
+        <Text style={styles.cardBody}>
+          {movingActionId
+            ? 'Tap a quadrant to place the selected action.'
+            : 'Tap an action, then tap a quadrant to move it. Long-press also selects.'}
+        </Text>
+      </Card>
+      <View style={styles.matrixGrid}>
+        {PRIORITY_MATRIX_ORDER.map((id) => {
+          const meta = PRIORITY_QUADRANT_META[id];
+          const tone = QUADRANT_TONE[id];
+          const quadrantActions = openActions.filter(
+            (action) =>
+              actionPriorityQuadrant(
+                action.body,
+                projectById.get(action.parentId ?? '')?.body,
+              ) === id,
+          );
+          const hours = quadrantActions.reduce(
+            (sum, action) => sum + bodyNumber(action, 'hours', 1),
+            0,
+          );
+          return (
+            <Pressable
+              key={id}
+              onPress={() => {
+                if (movingActionId) onPlaceInQuadrant(id);
+              }}
+              style={[
+                styles.matrixCell,
+                { backgroundColor: tone.bg, borderColor: tone.border },
+                movingActionId ? styles.matrixCellDrop : null,
+              ]}
+            >
+              <Text style={styles.micro}>{meta.subtitle}</Text>
+              <Text style={styles.matrixTitle}>{meta.title}</Text>
+              <Text style={styles.matrixHours}>
+                {quadrantActions.length} · {hours.toFixed(1)}h
+              </Text>
+              <Text style={styles.matrixDesc} numberOfLines={2}>
+                {meta.description}
+              </Text>
+              {quadrantActions.length === 0 ? (
+                <Text style={styles.listMeta}>No actions here.</Text>
+              ) : (
+                quadrantActions.map((action) => {
+                  const project = projectById.get(action.parentId ?? '');
+                  const selected = movingActionId === action.id;
+                  return (
+                    <Pressable
+                      key={action.id}
+                      onPress={() => onSelectAction(action.id)}
+                      onLongPress={() => onSelectAction(action.id)}
+                      style={[
+                        styles.actionChip,
+                        selected && styles.actionChipSelected,
+                      ]}
+                    >
+                      <Text style={styles.listTitle} numberOfLines={2}>
+                        {action.title}
+                      </Text>
+                      <Text style={styles.listMeta}>
+                        {bodyNumber(action, 'hours', 1)}h
+                        {project ? ` · ${project.title}` : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  stack: { gap: 12 },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionTitle: {
+    fontFamily: serif,
+    fontSize: 26,
+    color: colors.ink,
+    flex: 1,
+  },
+  lede: { color: colors.muted, lineHeight: 20, marginBottom: 4 },
+  card: {
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.line,
+    gap: 10,
+  },
+  cardTitle: {
+    fontFamily: serif,
+    fontSize: 22,
+    color: colors.ink,
+  },
+  cardBody: { color: colors.muted, lineHeight: 20, fontSize: 14 },
+  micro: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.sageDeep,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  row: { flexDirection: 'row', gap: 10 },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  listTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
+  listMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  nextLine: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  statLine: { color: colors.inkSoft, fontSize: 14 },
+  outcomeText: {
+    fontFamily: serif,
+    fontSize: 20,
+    color: colors.ink,
+    lineHeight: 28,
+  },
+  pill: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.sage,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  pillAmber: { backgroundColor: colors.amberSoft },
+  pillInk: { backgroundColor: colors.ink },
+  pillDanger: { backgroundColor: '#F8E4DF' },
+  pillText: { color: colors.sageDeep, fontSize: 11, fontWeight: '700' },
+  pillTextAmber: { color: '#8A5A16' },
+  pillTextInk: { color: colors.acid },
+  pillTextDanger: { color: colors.danger },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.line,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.sageDeep,
+  },
+  progressWarn: { backgroundColor: colors.danger },
+  button: {
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  buttonSecondary: {
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  buttonGhost: { backgroundColor: 'transparent' },
+  buttonText: { color: colors.paper, fontWeight: '700', fontSize: 13 },
+  buttonTextSecondary: { color: colors.ink },
+  buttonTextGhost: { color: colors.muted },
+  toggleRow: { flexDirection: 'row', gap: 8 },
+  toggleChip: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    paddingVertical: 10,
+  },
+  toggleChipActive: {
+    backgroundColor: colors.sageDeep,
+    borderColor: colors.sageDeep,
+  },
+  toggleChipText: { fontSize: 13, fontWeight: '700', color: colors.ink },
+  toggleChipTextActive: { color: colors.paper },
+  backRow: { paddingVertical: 4 },
+  backText: { color: colors.sageDeep, fontWeight: '700', fontSize: 14 },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.paper,
+  },
+  chipActive: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  chipText: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  chipTextActive: { color: colors.paper },
+  actionPreview: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    gap: 2,
+  },
+  matrixGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  matrixCell: {
+    width: '47.5%',
+    flexGrow: 1,
+    minWidth: 150,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
+  },
+  matrixCellDrop: {
+    borderStyle: 'dashed',
+  },
+  matrixTitle: {
+    fontFamily: serif,
+    fontSize: 18,
+    color: colors.ink,
+  },
+  matrixHours: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.sageDeep,
+  },
+  matrixDesc: {
+    fontSize: 11,
+    color: colors.muted,
+    lineHeight: 15,
+  },
+  actionChip: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 8,
+    gap: 2,
+    marginTop: 4,
+  },
+  actionChipSelected: {
+    borderColor: colors.ink,
+    borderWidth: 2,
+    backgroundColor: colors.paper,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    color: colors.ink,
+    backgroundColor: colors.paper,
+  },
+});
