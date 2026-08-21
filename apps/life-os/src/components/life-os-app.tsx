@@ -27,11 +27,17 @@ import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import {
-  PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
+  PROJECT_PRIORITIES,
+  PROJECT_PRIORITY_META,
+  actionBodyWithFlags,
+  actionPriorityQuadrant,
+  flagsFromQuadrant,
   priorityRank,
-  projectPriorityQuadrant,
-  type PriorityQuadrant,
+  projectBodyWithPriority,
+  projectPriorityLevel,
+  projectPriorityRank,
+  type ProjectPriority,
 } from "../lib/priority-matrix";
 
 function num(item: LifeItem, key: string, fallback = 0) {
@@ -93,9 +99,11 @@ export function LifeOSApp() {
   const [projectOutcome, setProjectOutcome] = useState("");
   const [projectPillarId, setProjectPillarId] = useState("");
   const [projectPriority, setProjectPriority] =
-    useState<PriorityQuadrant>("SCHEDULE");
+    useState<ProjectPriority>("MEDIUM");
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
+  const [actionImportantFlag, setActionImportantFlag] = useState(true);
+  const [actionUrgentFlag, setActionUrgentFlag] = useState(false);
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
@@ -164,13 +172,25 @@ export function LifeOSApp() {
     if (openActions.length === 0) return null;
     const projectById = new Map(projects.map((project) => [project.id, project]));
     return [...openActions].sort((a, b) => {
+      const aProject = projectById.get(a.parentId ?? "");
+      const bProject = projectById.get(b.parentId ?? "");
       const aRank = priorityRank(
-        projectPriorityQuadrant(projectById.get(a.parentId ?? "")?.body),
+        actionPriorityQuadrant(a.body, aProject?.body),
       );
       const bRank = priorityRank(
-        projectPriorityQuadrant(projectById.get(b.parentId ?? "")?.body),
+        actionPriorityQuadrant(b.body, bProject?.body),
       );
-      return aRank - bRank || a.sortOrder - b.sortOrder;
+      const aProjectRank = projectPriorityRank(
+        projectPriorityLevel(aProject?.body),
+      );
+      const bProjectRank = projectPriorityRank(
+        projectPriorityLevel(bProject?.body),
+      );
+      return (
+        aRank - bRank ||
+        aProjectRank - bProjectRank ||
+        a.sortOrder - b.sortOrder
+      );
     })[0];
   }, [openActions, projects]);
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
@@ -549,9 +569,10 @@ export function LifeOSApp() {
                   {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
                   {(() => {
                     const parent = projects.find((p) => p.id === primary.parentId);
-                    if (!parent) return "";
                     const meta =
-                      PRIORITY_QUADRANT_META[projectPriorityQuadrant(parent.body)];
+                      PRIORITY_QUADRANT_META[
+                        actionPriorityQuadrant(primary.body, parent?.body)
+                      ];
                     return ` · ${meta.title}`;
                   })()}
                 </p>
@@ -636,12 +657,15 @@ export function LifeOSApp() {
                   setProjectTitle(idea.title);
                   setProjectOutcome(str(idea, "note"));
                   setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
-                  setActionTitle(`Advance: ${idea.title}`);
+                  setProjectPriority("MEDIUM");
+                  setActionTitle(`Next: ${idea.title}`);
+                  setActionImportantFlag(true);
+                  setActionUrgentFlag(false);
                   setTab("plan");
                   setPlanSegment("projects");
                 }}
               >
-                Convert to project
+                Turn into Project
               </button>
             </article>
           ))}
@@ -650,10 +674,11 @@ export function LifeOSApp() {
 
       {tab === "plan" && (planSegment === "areas" || planSegment === "projects") ? (
         <section className="space-y-4">
+          {planSegment === "areas" ? (
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
             <h2 className="font-serif text-2xl">Life areas</h2>
             <p className="text-sm text-[#6c7771]">
-              Add or remove the areas you want Life OS to track.
+              Areas hold projects. Today stays execution-only.
             </p>
             <div className="flex gap-2">
               <input
@@ -685,36 +710,52 @@ export function LifeOSApp() {
             {pillars.length === 0 ? (
               <p className="text-sm text-[#6c7771]">No areas yet — add one above.</p>
             ) : (
-              pillars.map((pillar) => (
-                <div
-                  key={pillar.id}
-                  className="flex items-center justify-between border-t border-[#dde2dd] pt-3"
-                >
-                  <p className="font-semibold">{pillar.title}</p>
-                  <button
-                    type="button"
-                    className="text-xs font-bold text-[#c9634f]"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        await updateLifeItem(pillar.id, { status: "ARCHIVED" });
-                      })
-                    }
+              pillars.map((pillar) => {
+                const pillarProjects = projects.filter(
+                  (project) => project.parentId === pillar.id,
+                );
+                return (
+                  <div
+                    key={pillar.id}
+                    className="border-t border-[#dde2dd] pt-3"
                   >
-                    Remove
-                  </button>
-                </div>
-              ))
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold">{pillar.title}</p>
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-[#c9634f]"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await updateLifeItem(pillar.id, { status: "ARCHIVED" });
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <p className="text-sm text-[#6c7771]">
+                      {pillarProjects.length} project
+                      {pillarProjects.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                );
+              })
             )}
           </article>
+          ) : null}
 
+          {planSegment === "projects" ? (
+          <>
           <PriorityMatrixPanel
+            actions={openActions}
             projects={projects}
             busy={busy}
-            onMove={(project, quadrant) =>
+            onMove={(action, quadrant) =>
               void run(async () => {
-                await updateLifeItem(project.id, {
-                  body: { ...project.body, priorityQuadrant: quadrant },
+                const { important, urgent } = flagsFromQuadrant(quadrant);
+                await updateLifeItem(action.id, {
+                  body: actionBodyWithFlags(action.body, important, urgent),
                 });
               })
             }
@@ -748,24 +789,23 @@ export function LifeOSApp() {
             </select>
             <label className="block space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                Priority matrix
+                Project priority
               </span>
               <select
                 className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
                 value={projectPriority}
                 onChange={(e) =>
-                  setProjectPriority(e.target.value as PriorityQuadrant)
+                  setProjectPriority(e.target.value as ProjectPriority)
                 }
               >
-                {PRIORITY_MATRIX_ORDER.map((id) => (
+                {PROJECT_PRIORITIES.map((id) => (
                   <option key={id} value={id}>
-                    {PRIORITY_QUADRANT_META[id].title} —{" "}
-                    {PRIORITY_QUADRANT_META[id].subtitle}
+                    {PROJECT_PRIORITY_META[id].title}
                   </option>
                 ))}
               </select>
               <span className="block text-sm text-[#6c7771]">
-                {PRIORITY_QUADRANT_META[projectPriority].description}
+                High / Medium / Low only. Eisenhower is on the first action.
               </span>
             </label>
             <input
@@ -785,6 +825,47 @@ export function LifeOSApp() {
                 onChange={(e) => setActionHours(e.target.value)}
               />
             </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Important
+                </span>
+                <select
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  value={actionImportantFlag ? "yes" : "no"}
+                  onChange={(e) =>
+                    setActionImportantFlag(e.target.value === "yes")
+                  }
+                >
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Urgent
+                </span>
+                <select
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  value={actionUrgentFlag ? "yes" : "no"}
+                  onChange={(e) => setActionUrgentFlag(e.target.value === "yes")}
+                >
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+            </div>
+            <p className="text-sm text-[#6c7771]">
+              Matrix:{" "}
+              {
+                PRIORITY_QUADRANT_META[
+                  actionPriorityQuadrant({
+                    important: actionImportantFlag,
+                    urgent: actionUrgentFlag,
+                  })
+                ].title
+              }
+            </p>
             <button
               className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
               type="button"
@@ -802,21 +883,27 @@ export function LifeOSApp() {
                     kind: "PROJECT",
                     title: projectTitle.trim(),
                     parentId: projectPillarId || null,
-                    body: {
-                      outcome: projectOutcome.trim(),
-                      priorityQuadrant: projectPriority,
-                    },
+                    body: projectBodyWithPriority(
+                      { outcome: projectOutcome.trim() },
+                      projectPriority,
+                    ),
                   });
                   await createLifeItem({
                     kind: "ACTION",
                     title: actionTitle.trim(),
                     parentId: project.id,
-                    body: { hours, day: "Fri" },
+                    body: actionBodyWithFlags(
+                      { hours, day: "Fri" },
+                      actionImportantFlag,
+                      actionUrgentFlag,
+                    ),
                   });
                   setProjectTitle("");
                   setProjectOutcome("");
-                  setProjectPriority("SCHEDULE");
+                  setProjectPriority("MEDIUM");
                   setActionTitle("");
+                  setActionImportantFlag(true);
+                  setActionUrgentFlag(false);
                 })
               }
             >
@@ -839,13 +926,12 @@ export function LifeOSApp() {
                         item.parentId === project.id &&
                         open(item),
                     );
-                    const quadrant = projectPriorityQuadrant(project.body);
-                    const meta = PRIORITY_QUADRANT_META[quadrant];
+                    const level = projectPriorityLevel(project.body);
                     return (
                       <div key={project.id} className="mt-3 border-t border-[#dde2dd] pt-3">
                         <p className="font-semibold">{project.title}</p>
                         <p className="text-sm text-[#6c7771]">
-                          {meta.title} · {meta.subtitle}
+                          {PROJECT_PRIORITY_META[level].title} priority
                         </p>
                         <p className="text-sm text-[#6c7771]">
                           Next: {next ? `${next.title} (${num(next, "hours", 1)}h)` : "None"}
@@ -854,23 +940,22 @@ export function LifeOSApp() {
                           Priority
                           <select
                             className="mt-1 w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm font-normal normal-case tracking-normal text-[#14241f]"
-                            value={quadrant}
+                            value={level}
                             disabled={busy}
                             onChange={(e) =>
                               void run(async () => {
                                 await updateLifeItem(project.id, {
-                                  body: {
-                                    ...project.body,
-                                    priorityQuadrant: e.target
-                                      .value as PriorityQuadrant,
-                                  },
+                                  body: projectBodyWithPriority(
+                                    project.body,
+                                    e.target.value as ProjectPriority,
+                                  ),
                                 });
                               })
                             }
                           >
-                            {PRIORITY_MATRIX_ORDER.map((id) => (
+                            {PROJECT_PRIORITIES.map((id) => (
                               <option key={id} value={id}>
-                                {PRIORITY_QUADRANT_META[id].title}
+                                {PROJECT_PRIORITY_META[id].title}
                               </option>
                             ))}
                           </select>
@@ -882,6 +967,8 @@ export function LifeOSApp() {
               </article>
             );
           })}
+          </>
+          ) : null}
         </section>
       ) : null}
 
