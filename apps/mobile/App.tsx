@@ -1,0 +1,2147 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Linking from 'expo-linking';
+import { StatusBar } from 'expo-status-bar';
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { AccountSheet } from './src/account-sheet';
+import { BudgetScreen } from './src/budget-screen';
+import { CalendarScreen } from './src/calendar-screen';
+import { OnboardingSheet } from './src/onboarding-sheet';
+import {
+  ApiError,
+  createLifeItem,
+  getAccount,
+  loadSession,
+  pingApi,
+  syncPendingChanges,
+  updateLifeItem,
+  type Account,
+  type LifeItem,
+} from './src/api';
+import {
+  getSyncPhase,
+  loadCachedAccount,
+  loadCachedItems,
+  loadOutbox,
+  setSyncPhase,
+  subscribeSyncStatus,
+  type SyncPhase,
+} from './src/offline';
+import {
+  WEEK_DAYS,
+  bodyNumber,
+  bodyString,
+  childrenOf,
+  ideaScore,
+  isOpen,
+  ofKind,
+  primaryAction,
+  projectRisks,
+  refreshAllItems,
+  supportingActions,
+  weeklyCapacityHours,
+} from './src/life-data';
+import {
+  PRIORITY_MATRIX_ORDER,
+  PRIORITY_QUADRANT_META,
+  projectPriorityQuadrant,
+  type PriorityQuadrant,
+} from './src/priority-matrix';
+
+const colors = {
+  ink: '#14241F',
+  inkSoft: '#24362F',
+  canvas: '#F4F5F0',
+  paper: '#FFFFFF',
+  line: '#DDE2DD',
+  muted: '#6C7771',
+  sage: '#DBE8D7',
+  sageDeep: '#617A57',
+  acid: '#D6F57A',
+  acidInk: '#2F431E',
+  amber: '#F2C66D',
+  amberSoft: '#FFF3E8',
+  danger: '#C9634F',
+};
+
+const serif = Platform.select({
+  ios: 'Georgia',
+  android: 'serif',
+  default: 'Georgia',
+});
+
+type Tab = 'today' | 'plan' | 'calendar' | 'money' | 'you';
+type PlanSegment = 'areas' | 'projects' | 'ideas';
+type YouDest = 'menu' | 'capacity' | 'review' | 'household' | 'integrations' | 'settings';
+type FabKind = 'idea' | 'action' | 'project' | 'spend';
+
+function tap(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
+  if (Platform.OS !== 'web') void Haptics.impactAsync(style);
+}
+
+function successTap() {
+  if (Platform.OS !== 'web') {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+}
+
+function Icon({
+  name,
+  size = 18,
+  color = colors.ink,
+}: {
+  name: React.ComponentProps<typeof Ionicons>['name'];
+  size?: number;
+  color?: string;
+}) {
+  return <Ionicons name={name} size={size} color={color} />;
+}
+
+function Button({
+  children,
+  onPress,
+  variant = 'primary',
+  style,
+  disabled,
+}: {
+  children: ReactNode;
+  onPress: () => void;
+  variant?: 'primary' | 'secondary' | 'acid' | 'ghost';
+  style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={() => {
+        tap();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.button,
+        variant === 'secondary' && styles.buttonSecondary,
+        variant === 'acid' && styles.buttonAcid,
+        variant === 'ghost' && styles.buttonGhost,
+        pressed && styles.buttonPressed,
+        disabled && styles.buttonDisabled,
+        style,
+      ]}
+    >
+      {typeof children === 'string' ? (
+        <Text
+          style={[
+            styles.buttonText,
+            variant === 'secondary' && styles.buttonTextSecondary,
+            variant === 'acid' && styles.buttonTextAcid,
+            variant === 'ghost' && styles.buttonTextGhost,
+          ]}
+        >
+          {children}
+        </Text>
+      ) : (
+        children
+      )}
+    </Pressable>
+  );
+}
+
+function Pill({
+  children,
+  tone = 'sage',
+}: {
+  children: ReactNode;
+  tone?: 'sage' | 'amber' | 'ink' | 'danger';
+}) {
+  return (
+    <View
+      style={[
+        styles.pill,
+        tone === 'amber' && styles.pillAmber,
+        tone === 'ink' && styles.pillInk,
+        tone === 'danger' && styles.pillDanger,
+      ]}
+    >
+      <Text
+        style={[
+          styles.pillText,
+          tone === 'amber' && styles.pillTextAmber,
+          tone === 'ink' && styles.pillTextInk,
+          tone === 'danger' && styles.pillTextDanger,
+        ]}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+function Card({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return <View style={[styles.card, style]}>{children}</View>;
+}
+
+function ProgressBar({ value, warning = false }: { value: number; warning?: boolean }) {
+  return (
+    <View style={styles.progressTrack}>
+      <View
+        style={[
+          styles.progressFill,
+          { width: `${Math.min(Math.max(value, 0), 100)}%` },
+          warning && styles.progressFillWarning,
+        ]}
+      />
+    </View>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  multiline,
+  keyboardType,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+  keyboardType?: 'default' | 'decimal-pad' | 'number-pad';
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        multiline={multiline}
+        keyboardType={keyboardType}
+        style={[styles.input, multiline && styles.inputMultiline]}
+      />
+    </View>
+  );
+}
+
+function EmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+}) {
+  return (
+    <Card style={styles.emptyCard}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyBody}>{body}</Text>
+      {action}
+    </Card>
+  );
+}
+
+function firstName(account: Account | null): string {
+  return account?.user.displayName?.trim().split(/\s+/)[0] || 'there';
+}
+
+function todayLabel(): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  }).format(new Date());
+}
+
+function AppContent() {
+  const insets = useSafeAreaInsets();
+  const incomingUrl = Linking.useURL();
+  const [tab, setTab] = useState<Tab>('today');
+  const [planSegment, setPlanSegment] = useState<PlanSegment>('areas');
+  const [youDest, setYouDest] = useState<YouDest>('menu');
+  const [fabKind, setFabKind] = useState<FabKind>('idea');
+  const [account, setAccount] = useState<Account | null>(null);
+  const [items, setItems] = useState<LifeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [syncPhase, setSyncPhaseState] = useState<SyncPhase>(getSyncPhase());
+  const [pendingCount, setPendingCount] = useState(0);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [ideaTitle, setIdeaTitle] = useState('');
+  const [ideaNote, setIdeaNote] = useState('');
+  const [ideaPillarId, setIdeaPillarId] = useState<string | null>(null);
+
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [projectTitle, setProjectTitle] = useState('');
+  const [projectOutcome, setProjectOutcome] = useState('');
+  const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
+  const [projectPriority, setProjectPriority] =
+    useState<PriorityQuadrant>('SCHEDULE');
+  const [actionTitle, setActionTitle] = useState('');
+  const [actionHours, setActionHours] = useState('2');
+  const [actionDay, setActionDay] = useState<string>('Fri');
+  const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
+
+  const [evaluateId, setEvaluateId] = useState<string | null>(null);
+  const [impact, setImpact] = useState(3);
+  const [effort, setEffort] = useState(2);
+  const [alignment, setAlignment] = useState(3);
+  const [timing, setTiming] = useState(3);
+
+  const [availableHoursInput, setAvailableHoursInput] = useState('11');
+  const [areaTitle, setAreaTitle] = useState('');
+  const needsOnboarding = Boolean(
+    account && !account.user.onboardingCompletedAt,
+  );
+
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  const applyVisionHours = useCallback((nextItems: LifeItem[]) => {
+    const vision = ofKind(nextItems, 'VISION').find((item) =>
+      Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
+    );
+    if (vision) {
+      setAvailableHoursInput(String(bodyNumber(vision, 'availableHours', 11)));
+    }
+  }, []);
+
+  const flushSync = useCallback(async () => {
+    const reachable = await pingApi();
+    if (!reachable) {
+      setOnline(false);
+      await setSyncPhase('offline');
+      return;
+    }
+    setOnline(true);
+    const result = await syncPendingChanges((nextItems) => {
+      setItems(nextItems);
+      applyVisionHours(nextItems);
+    });
+    if (result.remaining === 0) {
+      notify('Synced');
+    }
+  }, [applyVisionHours, notify]);
+
+  const load = useCallback(
+    async (mode: 'boot' | 'refresh' = 'boot') => {
+      if (mode === 'refresh') setRefreshing(true);
+      else setLoading(true);
+      try {
+        const reachable = await pingApi();
+        setOnline(reachable);
+        if (!reachable) await setSyncPhase('offline');
+
+        const nextAccount = await getAccount();
+        setAccount(nextAccount);
+        if (!nextAccount) {
+          const session = await loadSession();
+          const cachedAccount = await loadCachedAccount();
+          if (session && cachedAccount) {
+            setAccount(cachedAccount);
+            const cachedItems = (await loadCachedItems()) ?? [];
+            setItems(cachedItems);
+            applyVisionHours(cachedItems);
+            setOnline(false);
+            await setSyncPhase('offline');
+            notify('Offline — showing last saved data.');
+            return;
+          }
+          setItems([]);
+          setAccountOpen(true);
+          return;
+        }
+        try {
+          const nextItems = await refreshAllItems();
+          setItems(nextItems);
+          applyVisionHours(nextItems);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) throw error;
+          const cachedItems = (await loadCachedItems()) ?? [];
+          setItems(cachedItems);
+          applyVisionHours(cachedItems);
+          setOnline(false);
+          await setSyncPhase('offline');
+          notify('Offline — showing cached life items.');
+        }
+        if (reachable) {
+          void flushSync();
+        }
+      } catch (error) {
+        setOnline(false);
+        await setSyncPhase('offline');
+        if (error instanceof ApiError && error.status === 401) {
+          setAccount(null);
+          setItems([]);
+          setAccountOpen(true);
+        } else {
+          const session = await loadSession();
+          const cachedAccount = await loadCachedAccount();
+          const cachedItems = (await loadCachedItems()) ?? [];
+          if (session && cachedAccount) {
+            setAccount(cachedAccount);
+            setItems(cachedItems);
+            applyVisionHours(cachedItems);
+            notify('Offline — using last known session.');
+          } else {
+            notify(
+              error instanceof Error
+                ? error.message
+                : 'Could not load Life OS data.',
+            );
+          }
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        setPendingCount((await loadOutbox()).length);
+      }
+    },
+    [applyVisionHours, flushSync, notify],
+  );
+
+  useEffect(() => {
+    void load('boot');
+  }, [load]);
+
+  useEffect(() => {
+    return subscribeSyncStatus((phase, meta) => {
+      setSyncPhaseState(phase);
+      setPendingCount(meta.pendingCount);
+      setOnline(phase !== 'offline');
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!online) return;
+    const timer = setInterval(() => {
+      void flushSync().catch(() => undefined);
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [online, flushSync]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!incomingUrl) return;
+    try {
+      const parsed = Linking.parse(incomingUrl);
+      const token =
+        typeof parsed.queryParams?.token === 'string'
+          ? parsed.queryParams.token
+          : null;
+      if (token) {
+        setInviteToken(token);
+        setAccountOpen(true);
+      }
+    } catch {
+      // ignore malformed deep links
+    }
+  }, [incomingUrl]);
+
+  const pillars = useMemo(() => ofKind(items, 'PILLAR').filter(isOpen), [items]);
+  const ideas = useMemo(() => ofKind(items, 'IDEA').filter(isOpen), [items]);
+  const projects = useMemo(() => ofKind(items, 'PROJECT').filter(isOpen), [items]);
+  const actions = useMemo(() => ofKind(items, 'ACTION'), [items]);
+  const doneActions = useMemo(
+    () => actions.filter((item) => item.status === 'DONE'),
+    [actions],
+  );
+  const capacity = useMemo(() => weeklyCapacityHours(items), [items]);
+  const primary = useMemo(() => primaryAction(items), [items]);
+  const supporting = useMemo(
+    () => supportingActions(items, primary?.id),
+    [items, primary?.id],
+  );
+  const risks = useMemo(() => projectRisks(items), [items]);
+
+  async function run(label: string, work: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await work();
+      successTap();
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : `${label} failed. Try again.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reloadItems() {
+    const nextItems = await refreshAllItems();
+    setItems(nextItems);
+  }
+
+  async function saveIdea() {
+    if (!ideaTitle.trim()) {
+      notify('Give the idea a title.');
+      return;
+    }
+    await run('Save idea', async () => {
+      await createLifeItem({
+        kind: 'IDEA',
+        title: ideaTitle.trim(),
+        parentId: ideaPillarId,
+        body: {
+          note: ideaNote.trim(),
+          impact: 0,
+          effort: 0,
+          alignment: 0,
+          timing: 0,
+        },
+      });
+      setIdeaTitle('');
+      setIdeaNote('');
+      setIdeaPillarId(null);
+      setCaptureOpen(false);
+      await reloadItems();
+      setTab('plan');
+      setPlanSegment('ideas');
+      notify('Idea saved to your account.');
+    });
+  }
+
+  async function saveEvaluation() {
+    if (!evaluateId) return;
+    await run('Evaluate idea', async () => {
+      const existing = items.find((item) => item.id === evaluateId);
+      if (!existing) throw new Error('Idea not found.');
+      await updateLifeItem(evaluateId, {
+        status: 'EVALUATED',
+        body: {
+          ...existing.body,
+          impact,
+          effort,
+          alignment,
+          timing,
+          score: impact + alignment + timing - effort,
+        },
+      });
+      setEvaluateId(null);
+      await reloadItems();
+      notify('Evaluation saved.');
+    });
+  }
+
+  function openConvert(idea: LifeItem) {
+    setSourceIdeaId(idea.id);
+    setProjectTitle(idea.title);
+    setProjectOutcome(bodyString(idea, 'note'));
+    setProjectPillarId(idea.parentId);
+    setProjectPriority('SCHEDULE');
+    setActionTitle(`Advance: ${idea.title}`);
+    setActionHours('2');
+    setActionDay('Fri');
+    setProjectOpen(true);
+  }
+
+  async function saveProject() {
+    if (!projectTitle.trim()) {
+      notify('Project needs a title.');
+      return;
+    }
+    if (!actionTitle.trim()) {
+      notify('Add a first next action.');
+      return;
+    }
+    const hours = Number(actionHours);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      notify('Action hours must be a positive number.');
+      return;
+    }
+    await run('Create project', async () => {
+      const project = await createLifeItem({
+        kind: 'PROJECT',
+        title: projectTitle.trim(),
+        parentId: projectPillarId,
+        body: {
+          outcome: projectOutcome.trim(),
+          fromIdeaId: sourceIdeaId,
+          priorityQuadrant: projectPriority,
+        },
+      });
+      await createLifeItem({
+        kind: 'ACTION',
+        title: actionTitle.trim(),
+        parentId: project.id,
+        body: {
+          hours,
+          day: actionDay,
+        },
+      });
+      if (sourceIdeaId) {
+        await updateLifeItem(sourceIdeaId, { status: 'CONVERTED' });
+      }
+      setProjectOpen(false);
+      setSourceIdeaId(null);
+      setProjectTitle('');
+      setProjectOutcome('');
+      setProjectPriority('SCHEDULE');
+      setActionTitle('');
+      await reloadItems();
+      setTab('plan');
+      setPlanSegment('projects');
+      notify('Project and next action saved.');
+    });
+  }
+
+  async function moveProjectPriority(project: LifeItem, quadrant: PriorityQuadrant) {
+    await run('Update priority', async () => {
+      await updateLifeItem(project.id, {
+        body: { ...project.body, priorityQuadrant: quadrant },
+      });
+      await reloadItems();
+    });
+  }
+
+  async function completeAction(action: LifeItem) {
+    await run('Complete action', async () => {
+      await updateLifeItem(action.id, { status: 'DONE' });
+      await reloadItems();
+      notify('Action completed.');
+    });
+  }
+
+  async function updateActionHours(action: LifeItem, nextHours: number) {
+    await run('Update action hours', async () => {
+      const hours = Math.max(0.5, nextHours);
+      await updateLifeItem(action.id, {
+        body: {
+          ...action.body,
+          hours,
+        },
+      });
+      await reloadItems();
+      notify(`Action set to ${hours.toFixed(1)}h.`);
+    });
+  }
+
+  async function saveCapacityPreference() {
+    const hours = Number(availableHoursInput);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      notify('Available hours must be a positive number.');
+      return;
+    }
+    await run('Save capacity', async () => {
+      const vision = ofKind(items, 'VISION').find((item) =>
+        Object.prototype.hasOwnProperty.call(item.body, 'availableHours'),
+      );
+      if (vision) {
+        await updateLifeItem(vision.id, {
+          body: { ...vision.body, availableHours: hours },
+        });
+      } else {
+        await createLifeItem({
+          kind: 'VISION',
+          title: 'Weekly capacity',
+          body: { availableHours: hours },
+        });
+      }
+      await reloadItems();
+      notify('Weekly capacity updated.');
+    });
+  }
+
+  async function archiveItem(item: LifeItem) {
+    await run('Archive', async () => {
+      await updateLifeItem(item.id, { status: 'ARCHIVED' });
+      await reloadItems();
+    });
+  }
+
+  async function addLifeArea() {
+    const title = areaTitle.trim();
+    if (!title) {
+      notify('Name the life area.');
+      return;
+    }
+    await run('Add area', async () => {
+      await createLifeItem({
+        kind: 'PILLAR',
+        title,
+        body: { icon: 'compass-outline' },
+        sortOrder: pillars.length,
+      });
+      setAreaTitle('');
+      await reloadItems();
+      notify('Life area added.');
+    });
+  }
+
+  async function removeLifeArea(area: LifeItem) {
+    await run('Remove area', async () => {
+      await updateLifeItem(area.id, { status: 'ARCHIVED' });
+      await reloadItems();
+      notify(`${area.title} removed.`);
+    });
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.boot}>
+        <ActivityIndicator color={colors.ink} size="large" />
+        <Text style={styles.bootText}>Loading your Life OS…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!account) {
+    return (
+      <SafeAreaView style={styles.boot}>
+        <Text style={styles.brandMark}>Life OS</Text>
+        <Text style={styles.bootTitle}>Sign in to use your account</Text>
+        <Text style={styles.bootText}>
+          Ideas, projects, capacity and reviews sync to {`lifeos.orija.store`} so
+          phone and desktop share one source of truth.
+        </Text>
+        {!online ? (
+          <Pill tone="danger">Server unreachable — check your tunnel</Pill>
+        ) : null}
+        <Button onPress={() => setAccountOpen(true)} style={{ marginTop: 18 }}>
+          Sign in or create account
+        </Button>
+        <AccountSheet
+          visible={accountOpen}
+          account={null}
+          initialInviteToken={inviteToken ?? undefined}
+          notify={notify}
+          onClose={() => setAccountOpen(false)}
+          onAccountChange={(next) => {
+            setAccount(next);
+            if (next) void load('refresh');
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="dark" />
+      <View style={styles.topBar}>
+        <View>
+          <Text style={styles.brandMark}>Life OS</Text>
+          <Text style={styles.topMeta}>
+            {todayLabel()} ·{' '}
+            {syncPhase === 'syncing'
+              ? 'Syncing…'
+              : syncPhase === 'synced' && pendingCount === 0
+                ? online
+                  ? 'Synced'
+                  : 'Offline'
+                : !online || syncPhase === 'offline'
+                  ? pendingCount > 0
+                    ? `Offline · ${pendingCount} queued`
+                    : 'Offline'
+                  : 'Online'}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => {
+            tap();
+            setAccountOpen(true);
+          }}
+          style={styles.avatarButton}
+        >
+          <Text style={styles.avatarText}>
+            {account.user.displayName.slice(0, 1).toUpperCase()}
+          </Text>
+        </Pressable>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: 108 + insets.bottom },
+        ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load('refresh')} />
+        }
+      >
+        {tab === 'today' ? (
+          <View style={styles.stack}>
+            <Text style={styles.cardEyebrow}>COMMAND</Text>
+            <Text style={styles.greeting}>Good focus, {firstName(account)}.</Text>
+            <Text style={styles.lede}>
+              Available · planned · remaining — pick your primary move for today.
+            </Text>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Primary Move</Text>
+              {primary ? (
+                <>
+                  <Text style={styles.cardTitle}>{primary.title}</Text>
+                  <Text style={styles.cardBody}>
+                    {bodyNumber(primary, 'hours', 1)}h
+                    {bodyString(primary, 'day')
+                      ? ` · ${bodyString(primary, 'day')}`
+                      : ''}
+                  </Text>
+                  <View style={styles.row}>
+                    <Button
+                      onPress={() => void completeAction(primary)}
+                      disabled={busy}
+                      style={{ flex: 1 }}
+                    >
+                      Mark done
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onPress={() => {
+                        setTab('you');
+                        setYouDest('capacity');
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      Capacity
+                    </Button>
+                  </View>
+                </>
+              ) : (
+                <EmptyState
+                  title="No primary move yet"
+                  body="Capture an idea and convert it into a project with a next action."
+                  action={
+                    <Button onPress={() => setCaptureOpen(true)} style={{ marginTop: 12 }}>
+                      Capture idea
+                    </Button>
+                  }
+                />
+              )}
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Supporting actions</Text>
+              {supporting.length === 0 ? (
+                <Text style={styles.cardBody}>No other open actions this week.</Text>
+              ) : (
+                supporting.map((action) => (
+                  <Pressable
+                    key={action.id}
+                    onPress={() => void completeAction(action)}
+                    style={styles.listRow}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.listTitle}>{action.title}</Text>
+                      <Text style={styles.listMeta}>
+                        {bodyNumber(action, 'hours', 1)}h
+                        {bodyString(action, 'day')
+                          ? ` · ${bodyString(action, 'day')}`
+                          : ''}
+                      </Text>
+                    </View>
+                    <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                  </Pressable>
+                ))
+              )}
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Capacity pulse</Text>
+              <Text style={styles.cardTitle}>
+                {capacity.planned.toFixed(1)}h / {capacity.available}h
+              </Text>
+              <ProgressBar
+                value={(capacity.planned / Math.max(capacity.available, 0.1)) * 100}
+                warning={capacity.planned > capacity.available}
+              />
+              <Text style={styles.cardBody}>
+                {capacity.planned > capacity.available
+                  ? 'Over capacity — reduce scope in Capacity.'
+                  : 'Within capacity for this week.'}
+              </Text>
+            </Card>
+
+            <Card>
+              <Text style={styles.cardEyebrow}>Risks</Text>
+              {risks.length === 0 ? (
+                <Text style={styles.cardBody}>No active risks detected.</Text>
+              ) : (
+                risks.map((risk) => (
+                  <View key={risk} style={styles.riskRow}>
+                    <Icon name="warning-outline" color={colors.danger} />
+                    <Text style={[styles.cardBody, { flex: 1 }]}>{risk}</Text>
+                  </View>
+                ))
+              )}
+            </Card>
+          </View>
+        ) : null}
+
+
+        {tab === 'plan' ? (
+          <View style={styles.segmentRow}>
+            {(
+              [
+                ['areas', 'Areas'],
+                ['projects', 'Projects'],
+                ['ideas', 'Ideas'],
+              ] as const
+            ).map(([id, label]) => (
+              <Pressable
+                key={id}
+                onPress={() => {
+                  tap();
+                  setPlanSegment(id);
+                }}
+                style={[styles.segmentChip, planSegment === id && styles.segmentChipActive]}
+              >
+                <Text
+                  style={[
+                    styles.segmentChipText,
+                    planSegment === id && styles.segmentChipTextActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {tab === 'plan' && planSegment === 'ideas' ? (
+          <View style={styles.stack}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Ideas</Text>
+              <Button onPress={() => setCaptureOpen(true)}>Capture</Button>
+            </View>
+            {ideas.length === 0 ? (
+              <EmptyState
+                title="No open ideas"
+                body="Capture something rough. Evaluate it, then convert the winners into projects."
+              />
+            ) : (
+              ideas.map((idea) => {
+                const score = ideaScore(idea);
+                return (
+                  <Card key={idea.id}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.cardTitle}>{idea.title}</Text>
+                      <Pill tone={score > 0 ? 'sage' : 'amber'}>
+                        {score > 0 ? `Score ${score}` : 'Unevaluated'}
+                      </Pill>
+                    </View>
+                    {bodyString(idea, 'note') ? (
+                      <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
+                    ) : null}
+                    <View style={styles.row}>
+                      <Button
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        onPress={() => {
+                          setEvaluateId(idea.id);
+                          setImpact(bodyNumber(idea, 'impact', 3) || 3);
+                          setEffort(bodyNumber(idea, 'effort', 2) || 2);
+                          setAlignment(bodyNumber(idea, 'alignment', 3) || 3);
+                          setTiming(bodyNumber(idea, 'timing', 3) || 3);
+                        }}
+                      >
+                        Evaluate
+                      </Button>
+                      <Button
+                        style={{ flex: 1 }}
+                        onPress={() => openConvert(idea)}
+                      >
+                        Make project
+                      </Button>
+                    </View>
+                    <Button variant="ghost" onPress={() => void archiveItem(idea)}>
+                      Archive
+                    </Button>
+                  </Card>
+                );
+              })
+            )}
+          </View>
+        ) : null}
+
+        {tab === 'plan' && (planSegment === 'areas' || planSegment === 'projects') ? (
+          <View style={styles.stack}>
+            {planSegment === 'projects' ? (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Projects</Text>
+              <Button
+                onPress={() => {
+                  setSourceIdeaId(null);
+                  setProjectTitle('');
+                  setProjectOutcome('');
+                  setProjectPillarId(pillars[0]?.id ?? null);
+                  setProjectPriority('SCHEDULE');
+                  setActionTitle('');
+                  setActionHours('2');
+                  setProjectOpen(true);
+                }}
+              >
+                New project
+              </Button>
+            </View>
+            ) : (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Areas</Text>
+            </View>
+            )}
+
+            {planSegment === 'areas' ? (
+            <Card>
+              <Text style={styles.cardEyebrow}>Your life areas</Text>
+              <Text style={styles.cardBody}>
+                Add or remove the areas you want Life OS to track.
+              </Text>
+              <Field
+                label="New area"
+                value={areaTitle}
+                onChangeText={setAreaTitle}
+                placeholder="e.g. Fitness, Side project"
+              />
+              <Button disabled={busy} onPress={() => void addLifeArea()}>
+                Add area
+              </Button>
+              {pillars.length === 0 ? (
+                <Text style={styles.listMeta}>No areas yet — add one above.</Text>
+              ) : (
+                pillars.map((pillar) => (
+                  <View key={pillar.id} style={styles.listRow}>
+                    <Text style={[styles.listTitle, { flex: 1 }]}>{pillar.title}</Text>
+                    <Button variant="ghost" onPress={() => void removeLifeArea(pillar)}>
+                      Remove
+                    </Button>
+                  </View>
+                ))
+              )}
+            </Card>
+            ) : null}
+
+            {planSegment === 'projects' ? (
+            <>
+            <Card>
+              <Text style={styles.cardEyebrow}>Eisenhower</Text>
+              <Text style={styles.cardTitle}>Priority matrix</Text>
+              <Text style={styles.cardBody}>
+                Sort projects by urgency and importance. Move items as priorities
+                change.
+              </Text>
+              {PRIORITY_MATRIX_ORDER.map((id) => {
+                const meta = PRIORITY_QUADRANT_META[id];
+                const quadrantProjects = projects.filter(
+                  (project) => projectPriorityQuadrant(project.body) === id,
+                );
+                return (
+                  <View key={id} style={styles.matrixQuadrant}>
+                    <Text style={styles.cardEyebrow}>{meta.subtitle}</Text>
+                    <Text style={styles.listTitle}>{meta.title}</Text>
+                    <Text style={styles.listMeta}>{meta.description}</Text>
+                    {quadrantProjects.length === 0 ? (
+                      <Text style={styles.listMeta}>No projects here.</Text>
+                    ) : (
+                      quadrantProjects.map((project) => (
+                        <View key={project.id} style={styles.projectBlock}>
+                          <Text style={styles.listTitle}>{project.title}</Text>
+                          <View style={styles.chipRow}>
+                            {PRIORITY_MATRIX_ORDER.map((option) => (
+                              <Pressable
+                                key={option}
+                                onPress={() =>
+                                  void moveProjectPriority(project, option)
+                                }
+                                style={[
+                                  styles.chip,
+                                  id === option && styles.chipActive,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.chipText,
+                                    id === option && styles.chipTextActive,
+                                  ]}
+                                >
+                                  {PRIORITY_QUADRANT_META[option].title}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                );
+              })}
+            </Card>
+
+            {pillars.map((pillar) => {
+              const pillarProjects = projects.filter(
+                (project) => project.parentId === pillar.id,
+              );
+              const openCount = pillarProjects.length;
+              return (
+                <Card key={pillar.id}>
+                  <Text style={styles.cardEyebrow}>Area</Text>
+                  <Text style={styles.cardTitle}>{pillar.title}</Text>
+                  <Text style={styles.cardBody}>
+                    {openCount} open project{openCount === 1 ? '' : 's'}
+                  </Text>
+                  {pillarProjects.length === 0 ? (
+                    <Text style={styles.listMeta}>No projects under this area yet.</Text>
+                  ) : (
+                    pillarProjects.map((project) => {
+                      const next = childrenOf(items, project.id).find(
+                        (item) => item.kind === 'ACTION' && isOpen(item),
+                      );
+                      const quadrant = projectPriorityQuadrant(project.body);
+                      const meta = PRIORITY_QUADRANT_META[quadrant];
+                      return (
+                        <View key={project.id} style={styles.projectBlock}>
+                          <Text style={styles.listTitle}>{project.title}</Text>
+                          {bodyString(project, 'outcome') ? (
+                            <Text style={styles.listMeta}>
+                              {bodyString(project, 'outcome')}
+                            </Text>
+                          ) : null}
+                          <Text style={styles.listMeta}>
+                            {meta.title} · {meta.subtitle}
+                          </Text>
+                          <Text style={styles.listMeta}>
+                            Next:{' '}
+                            {next
+                              ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
+                              : 'None — add an action'}
+                          </Text>
+                          {next ? (
+                            <Button
+                              variant="secondary"
+                              onPress={() => void completeAction(next)}
+                            >
+                              Complete next action
+                            </Button>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  )}
+                </Card>
+              );
+            })}
+            </>
+            ) : null}
+          </View>
+        ) : null}
+
+        {tab === 'money' ? (
+          <BudgetScreen account={account!} notify={notify} />
+        ) : null}
+
+        {tab === 'calendar' ? <CalendarScreen notify={notify} /> : null}
+
+
+        {tab === 'you' && youDest === 'menu' ? (
+          <View style={styles.stack}>
+            <Text style={styles.sectionTitle}>You</Text>
+            <Text style={styles.lede}>
+              Capacity, review, household, integrations, and settings.
+            </Text>
+            {(
+              [
+                ['capacity', 'Capacity', 'Weekly hours and load', 'speedometer-outline'],
+                ['review', 'Weekly Review', 'CEO-style check-in', 'stats-chart-outline'],
+                ['household', 'Household', 'Partner link and shared space', 'people-outline'],
+                ['integrations', 'Integrations', 'Calendar sync connectors', 'extension-puzzle-outline'],
+                ['settings', 'Settings', 'Account, currency, notifications', 'settings-outline'],
+              ] as const
+            ).map(([id, title, body, icon]) => (
+              <Pressable
+                key={id}
+                style={styles.youRow}
+                onPress={() => {
+                  tap();
+                  if (id === 'settings' || id === 'household' || id === 'integrations') {
+                    setAccountOpen(true);
+                    setYouDest('menu');
+                  } else {
+                    setYouDest(id);
+                  }
+                }}
+              >
+                <Icon name={icon} color={colors.sageDeep} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>{title}</Text>
+                  <Text style={styles.listMeta}>{body}</Text>
+                </View>
+                <Icon name="chevron-forward" color={colors.muted} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {tab === 'you' && youDest === 'capacity' ? (
+          <View style={styles.stack}>
+            <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
+              <Icon name="chevron-back" color={colors.sageDeep} />
+              <Text style={styles.backText}>You</Text>
+            </Pressable>
+            <Text style={styles.sectionTitle}>Capacity</Text>
+            <Card>
+              <Text style={styles.cardEyebrow}>This week</Text>
+              <Text style={styles.cardTitle}>
+                {capacity.planned.toFixed(1)}h planned / {capacity.available}h available
+              </Text>
+              <ProgressBar
+                value={(capacity.planned / Math.max(capacity.available, 0.1)) * 100}
+                warning={capacity.planned > capacity.available}
+              />
+              {capacity.planned > capacity.available ? (
+                <Pill tone="danger">Overcommitted — reduce action hours below</Pill>
+              ) : (
+                <Pill>Healthy load</Pill>
+              )}
+            </Card>
+
+            <Card>
+              <Field
+                label="Available hours / week"
+                value={availableHoursInput}
+                onChangeText={setAvailableHoursInput}
+                keyboardType="decimal-pad"
+              />
+              <Button onPress={() => void saveCapacityPreference()} disabled={busy}>
+                Save capacity preference
+              </Button>
+            </Card>
+
+            {capacity.openActions.length === 0 ? (
+              <EmptyState
+                title="No scheduled actions"
+                body="Create a project with a next action to plan the week."
+              />
+            ) : (
+              capacity.openActions.map((action) => (
+                <Card key={action.id}>
+                  <Text style={styles.listTitle}>{action.title}</Text>
+                  <Text style={styles.listMeta}>
+                    {bodyNumber(action, 'hours', 1)}h
+                    {bodyString(action, 'day')
+                      ? ` · ${bodyString(action, 'day')}`
+                      : ' · unscheduled'}
+                  </Text>
+                  <View style={styles.row}>
+                    <Button
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() =>
+                        void updateActionHours(
+                          action,
+                          bodyNumber(action, 'hours', 1) - 1,
+                        )
+                      }
+                    >
+                      −1h
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      style={{ flex: 1 }}
+                      onPress={() =>
+                        void updateActionHours(
+                          action,
+                          bodyNumber(action, 'hours', 1) + 1,
+                        )
+                      }
+                    >
+                      +1h
+                    </Button>
+                    <Button
+                      style={{ flex: 1 }}
+                      onPress={() => void completeAction(action)}
+                    >
+                      Done
+                    </Button>
+                  </View>
+                </Card>
+              ))
+            )}
+          </View>
+        ) : null}
+
+        {tab === 'you' && youDest === 'review' ? (
+          <View style={styles.stack}>
+            <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
+              <Icon name="chevron-back" color={colors.sageDeep} />
+              <Text style={styles.backText}>You</Text>
+            </Pressable>
+            <Text style={styles.sectionTitle}>Weekly Review</Text>
+            <Card>
+              <Text style={styles.cardEyebrow}>Scorecard</Text>
+              <Text style={styles.cardTitle}>
+                {doneActions.length} completed · {capacity.openActions.length} still open
+              </Text>
+              <Text style={styles.cardBody}>
+                Planned load {capacity.planned.toFixed(1)}h against {capacity.available}h
+                available. Completion rate{' '}
+                {actions.length === 0
+                  ? '0'
+                  : Math.round((doneActions.length / actions.length) * 100)}
+                %.
+              </Text>
+            </Card>
+            <Card>
+              <Text style={styles.cardEyebrow}>Open actions to close</Text>
+              {capacity.openActions.length === 0 ? (
+                <Text style={styles.cardBody}>
+                  Nothing open — capture the next idea or enjoy the clear week.
+                </Text>
+              ) : (
+                capacity.openActions.map((action) => (
+                  <Pressable
+                    key={action.id}
+                    style={styles.listRow}
+                    onPress={() => void completeAction(action)}
+                  >
+                    <Text style={[styles.listTitle, { flex: 1 }]}>{action.title}</Text>
+                    <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                  </Pressable>
+                ))
+              )}
+            </Card>
+            {risks.length > 0 ? (
+              <Card>
+                <Text style={styles.cardEyebrow}>Carry into next week</Text>
+                {risks.map((risk) => (
+                  <Text key={risk} style={styles.cardBody}>
+                    • {risk}
+                  </Text>
+                ))}
+              </Card>
+            ) : null}
+          </View>
+        ) : null}
+      </ScrollView>
+
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        {(
+          [
+            ['today', 'Today', 'sunny-outline'],
+            ['plan', 'Plan', 'layers-outline'],
+            ['calendar', 'Calendar', 'calendar-outline'],
+            ['money', 'Money', 'wallet-outline'],
+            ['you', 'You', 'person-outline'],
+          ] as const
+        ).map(([id, label, icon]) => (
+          <Pressable
+            key={id}
+            onPress={() => {
+              tap();
+              setTab(id);
+              if (id === 'you') setYouDest('menu');
+              if (id === 'plan' && planSegment == null) setPlanSegment('areas');
+            }}
+            style={styles.tabItem}
+          >
+            <Icon
+              name={icon}
+              color={tab === id ? colors.ink : colors.muted}
+              size={20}
+            />
+            <Text style={[styles.tabLabel, tab === id && styles.tabLabelActive]}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <Pressable
+        style={[styles.fab, { bottom: 78 + insets.bottom }]}
+        onPress={() => {
+          tap();
+          setFabKind('idea');
+          setCaptureOpen(true);
+        }}
+      >
+        <Icon name="add" color={colors.acidInk} size={28} />
+      </Pressable>
+
+      {toast ? (
+        <View style={[styles.toast, { bottom: 120 + insets.bottom }]}>
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      ) : null}
+
+      <Modal
+        visible={captureOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCaptureOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.modalDismiss} onPress={() => setCaptureOpen(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={[
+              styles.modalSheetWrap,
+              Platform.OS === 'android' ? { marginBottom: keyboardHeight } : null,
+            ]}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={[
+                styles.modalCard,
+                {
+                  paddingBottom: Math.max(insets.bottom, 16) + 12,
+                },
+              ]}
+            >
+              <Text style={styles.sectionTitle}>Capture</Text>
+              <View style={styles.chipRow}>
+                {(
+                  [
+                    ['idea', 'Idea'],
+                    ['action', 'Action'],
+                    ['project', 'Project'],
+                    ['spend', 'Spend'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <Pressable
+                    key={id}
+                    onPress={() => {
+                      if (id === 'project') {
+                        setCaptureOpen(false);
+                        setSourceIdeaId(null);
+                        setProjectTitle('');
+                        setProjectOutcome('');
+                        setProjectPillarId(pillars[0]?.id ?? null);
+                        setProjectPriority('SCHEDULE');
+                        setActionTitle('');
+                        setActionHours('2');
+                        setProjectOpen(true);
+                        return;
+                      }
+                      if (id === 'spend') {
+                        setCaptureOpen(false);
+                        setTab('money');
+                        notify('Add spending under Money → Spending.');
+                        return;
+                      }
+                      setFabKind(id);
+                    }}
+                    style={[styles.chip, fabKind === id && styles.chipActive]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        fabKind === id && styles.chipTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {fabKind === 'action' ? (
+                <Text style={styles.cardBody}>
+                  Quick actions land as open actions. Add estimate below.
+                </Text>
+              ) : null}
+              <Field
+                label="Title"
+                value={ideaTitle}
+                onChangeText={setIdeaTitle}
+                placeholder={fabKind === 'action' ? 'What will you do?' : 'What showed up?'}
+              />
+              {fabKind === 'idea' ? (
+              <Field
+                label="Note"
+                value={ideaNote}
+                onChangeText={setIdeaNote}
+                placeholder="Context, why it matters"
+                multiline
+              />
+              ) : (
+              <Field
+                label="Hours"
+                value={actionHours}
+                onChangeText={setActionHours}
+                keyboardType="decimal-pad"
+              />
+              )}
+              <Text style={styles.fieldLabel}>
+                {fabKind === 'action' ? 'Area (optional)' : 'Area (optional)'}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.chipRow}>
+                  {pillars.map((pillar) => (
+                    <Pressable
+                      key={pillar.id}
+                      onPress={() => setIdeaPillarId(pillar.id)}
+                      style={[
+                        styles.chip,
+                        ideaPillarId === pillar.id && styles.chipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          ideaPillarId === pillar.id && styles.chipTextActive,
+                        ]}
+                      >
+                        {pillar.title}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+              <View style={styles.row}>
+                <Button
+                  variant="secondary"
+                  style={{ flex: 1 }}
+                  onPress={() => setCaptureOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  style={{ flex: 1 }}
+                  disabled={busy}
+                  onPress={() => {
+                    if (fabKind === 'action') {
+                      void run('Save action', async () => {
+                        if (!ideaTitle.trim()) {
+                          notify('Give the action a title.');
+                          return;
+                        }
+                        const hours = Number(actionHours);
+                        await createLifeItem({
+                          kind: 'ACTION',
+                          title: ideaTitle.trim(),
+                          parentId: ideaPillarId,
+                          body: {
+                            hours: Number.isFinite(hours) && hours > 0 ? hours : 1,
+                            note: ideaNote.trim(),
+                          },
+                        });
+                        setIdeaTitle('');
+                        setIdeaNote('');
+                        setIdeaPillarId(null);
+                        setCaptureOpen(false);
+                        await reloadItems();
+                        setTab('today');
+                        notify('Action saved.');
+                      });
+                      return;
+                    }
+                    void saveIdea();
+                  }}
+                >
+                  {fabKind === 'action' ? 'Save action' : 'Save idea'}
+                </Button>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!evaluateId}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEvaluateId(null)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.modalDismiss} onPress={() => setEvaluateId(null)} />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
+              styles.modalCard,
+              {
+                paddingBottom: Math.max(insets.bottom, 16) + 12,
+              },
+            ]}
+            style={
+              Platform.OS === 'android' ? { marginBottom: keyboardHeight } : undefined
+            }
+          >
+            <Text style={styles.sectionTitle}>Evaluate idea</Text>
+            <Text style={styles.cardBody}>
+              Score each dimension 1–5. Higher impact/alignment/timing is better;
+              higher effort is costlier.
+            </Text>
+            {(
+              [
+                ['Impact', impact, setImpact],
+                ['Effort', effort, setEffort],
+                ['Alignment', alignment, setAlignment],
+                ['Timing', timing, setTiming],
+              ] as const
+            ).map(([label, value, setter]) => (
+              <View key={label} style={styles.scoreRow}>
+                <Text style={styles.fieldLabel}>{label}</Text>
+                <View style={styles.chipRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable
+                      key={n}
+                      onPress={() => setter(n)}
+                      style={[styles.scoreChip, value === n && styles.chipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          value === n && styles.chipTextActive,
+                        ]}
+                      >
+                        {n}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ))}
+            <Pill tone="ink">
+              Score {impact + alignment + timing - effort}
+            </Pill>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => setEvaluateId(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                style={{ flex: 1 }}
+                disabled={busy}
+                onPress={() => void saveEvaluation()}
+              >
+                Save scores
+              </Button>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={projectOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setProjectOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable style={styles.modalDismiss} onPress={() => setProjectOpen(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={[
+              styles.modalSheetWrap,
+              Platform.OS === 'android' ? { marginBottom: keyboardHeight } : null,
+            ]}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={[
+                styles.modalCard,
+                {
+                  paddingBottom: Math.max(insets.bottom, 16) + 12,
+                },
+              ]}
+            >
+              <Text style={styles.sectionTitle}>Create project</Text>
+            <Field
+              label="Project title"
+              value={projectTitle}
+              onChangeText={setProjectTitle}
+            />
+            <Field
+              label="Outcome"
+              value={projectOutcome}
+              onChangeText={setProjectOutcome}
+              multiline
+            />
+            <Text style={styles.fieldLabel}>Pillar</Text>
+            <View style={styles.chipRow}>
+              {pillars.map((pillar) => (
+                <Pressable
+                  key={pillar.id}
+                  onPress={() => setProjectPillarId(pillar.id)}
+                  style={[
+                    styles.chip,
+                    projectPillarId === pillar.id && styles.chipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      projectPillarId === pillar.id && styles.chipTextActive,
+                    ]}
+                  >
+                    {pillar.title}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.fieldLabel}>Priority matrix</Text>
+            <Text style={styles.listMeta}>
+              {PRIORITY_QUADRANT_META[projectPriority].description}
+            </Text>
+            <View style={styles.chipRow}>
+              {PRIORITY_MATRIX_ORDER.map((id) => (
+                <Pressable
+                  key={id}
+                  onPress={() => setProjectPriority(id)}
+                  style={[styles.chip, projectPriority === id && styles.chipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      projectPriority === id && styles.chipTextActive,
+                    ]}
+                  >
+                    {PRIORITY_QUADRANT_META[id].title}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Field
+              label="First next action"
+              value={actionTitle}
+              onChangeText={setActionTitle}
+            />
+            <Field
+              label="Hours"
+              value={actionHours}
+              onChangeText={setActionHours}
+              keyboardType="decimal-pad"
+            />
+            <Text style={styles.fieldLabel}>Day</Text>
+            <View style={styles.chipRow}>
+              {WEEK_DAYS.map((day) => (
+                <Pressable
+                  key={day}
+                  onPress={() => setActionDay(day)}
+                  style={[styles.chip, actionDay === day && styles.chipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      actionDay === day && styles.chipTextActive,
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => setProjectOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                style={{ flex: 1 }}
+                disabled={busy}
+                onPress={() => void saveProject()}
+              >
+                Save project
+              </Button>
+            </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <AccountSheet
+        visible={accountOpen}
+        account={account}
+        initialInviteToken={inviteToken ?? undefined}
+        notify={notify}
+        onClose={() => setAccountOpen(false)}
+        onAccountChange={(next) => {
+          setAccount(next);
+          if (next) void load('refresh');
+          else {
+            setItems([]);
+            setAccountOpen(true);
+          }
+        }}
+      />
+
+      <OnboardingSheet
+        visible={needsOnboarding}
+        notify={notify}
+        onComplete={(next) => {
+          setAccount(next);
+          void load('refresh');
+          notify('Your life areas are set.');
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.canvas },
+  boot: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    gap: 12,
+  },
+  bootTitle: {
+    fontFamily: serif,
+    fontSize: 28,
+    color: colors.ink,
+    textAlign: 'center',
+  },
+  bootText: {
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 20,
+    fontSize: 14,
+  },
+  brandMark: {
+    fontFamily: serif,
+    fontSize: 22,
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  topBar: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  topMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  avatarButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: colors.acid, fontWeight: '700' },
+  content: { paddingHorizontal: 16, paddingTop: 4 },
+  stack: { gap: 12 },
+  greeting: {
+    fontFamily: serif,
+    fontSize: 30,
+    color: colors.ink,
+    marginBottom: 4,
+  },
+  lede: { color: colors.muted, marginBottom: 8, lineHeight: 20 },
+  card: {
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.line,
+    gap: 10,
+  },
+  cardEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.sageDeep,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  cardTitle: {
+    fontFamily: serif,
+    fontSize: 22,
+    color: colors.ink,
+  },
+  cardBody: { color: colors.muted, lineHeight: 20, fontSize: 14 },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionTitle: {
+    fontFamily: serif,
+    fontSize: 26,
+    color: colors.ink,
+    flex: 1,
+  },
+  row: { flexDirection: 'row', gap: 10 },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  listTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
+  listMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  projectBlock: {
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  matrixQuadrant: {
+    gap: 6,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  riskRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  emptyCard: { alignItems: 'flex-start' },
+  emptyTitle: { fontFamily: serif, fontSize: 20, color: colors.ink },
+  emptyBody: { color: colors.muted, lineHeight: 20 },
+  button: {
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  buttonSecondary: {
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  buttonAcid: { backgroundColor: colors.acid },
+  buttonGhost: { backgroundColor: 'transparent' },
+  buttonPressed: { opacity: 0.88 },
+  buttonDisabled: { opacity: 0.45 },
+  buttonText: { color: colors.paper, fontWeight: '700', fontSize: 13 },
+  buttonTextSecondary: { color: colors.ink },
+  buttonTextAcid: { color: colors.acidInk },
+  buttonTextGhost: { color: colors.muted },
+  pill: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.sage,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  pillAmber: { backgroundColor: colors.amberSoft },
+  pillInk: { backgroundColor: colors.ink },
+  pillDanger: { backgroundColor: '#F8E4DF' },
+  pillText: { color: colors.sageDeep, fontSize: 11, fontWeight: '700' },
+  pillTextAmber: { color: '#8A5A16' },
+  pillTextInk: { color: colors.acid },
+  pillTextDanger: { color: colors.danger },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.line,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.sageDeep,
+  },
+  progressFillWarning: { backgroundColor: colors.danger },
+  field: { gap: 6 },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    color: colors.ink,
+    backgroundColor: colors.paper,
+  },
+  inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
+  tabBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.paper,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    flexDirection: 'row',
+    paddingTop: 8,
+  },
+  tabItem: { flex: 1, alignItems: 'center', gap: 4 },
+  tabLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
+  tabLabelActive: { color: colors.ink },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  segmentChip: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    paddingVertical: 10,
+  },
+  segmentChipActive: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  segmentChipText: {
+    color: colors.ink,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  segmentChipTextActive: {
+    color: colors.acid,
+  },
+  youRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  backText: {
+    color: colors.sageDeep,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  fab: {
+    position: 'absolute',
+    right: 18,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.acid,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+  },
+  toast: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    padding: 12,
+  },
+  toastText: { color: colors.paper, textAlign: 'center', fontWeight: '600' },
+  modalWrap: {
+    flex: 1,
+    backgroundColor: 'rgba(20,36,31,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalDismiss: {
+    flex: 1,
+  },
+  modalSheetWrap: {
+    maxHeight: '92%',
+  },
+  modalCard: {
+    backgroundColor: colors.canvas,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 18,
+    gap: 12,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.paper,
+  },
+  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipText: { color: colors.ink, fontWeight: '600', fontSize: 12 },
+  chipTextActive: { color: colors.acid },
+  scoreRow: { gap: 8 },
+  scoreChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper,
+  },
+});
