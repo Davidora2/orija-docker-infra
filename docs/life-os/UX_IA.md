@@ -3,7 +3,7 @@
 **Status:** Locked for mockups (docs-only; no UI rewrite in this pass)  
 **Audience:** Design + engineering  
 **Supersedes for nav / journey / screen inventory:** informal Command-centric labels in shipped UI and older brief wording where they conflict  
-**Related:** [PRODUCT_BRIEF.md](./PRODUCT_BRIEF.md) · [USER_STORIES.md](./USER_STORIES.md) · [FEATURE_BACKLOG.md](./FEATURE_BACKLOG.md)
+**Related:** [PLAN_UX.md](./PLAN_UX.md) (Plan functional ticket) · [PRODUCT_BRIEF.md](./PRODUCT_BRIEF.md) · [USER_STORIES.md](./USER_STORIES.md) · [FEATURE_BACKLOG.md](./FEATURE_BACKLOG.md)
 
 ---
 
@@ -38,16 +38,26 @@ Plan → Execute → Review
 
 ### Hierarchy (day-to-day)
 
+Committed work:
+
 ```
-Area → Idea → Project → Action
+Area → Project → Action
+```
+
+Ideas precede commitment (inbox path):
+
+```
+Idea → Project → Action
 ```
 
 | Layer | Role | Who lives here day-to-day |
 |-------|------|---------------------------|
 | **Area** | Life domain (Career, Wealth, Health…) | Planning |
 | **Idea** | Captured possibility; not yet committed | Capture / evaluate |
-| **Project** | Outcome that needs several steps | Planning |
-| **Action** | Concrete next move with estimate / due | **Daily execution** |
+| **Project** | Outcome that needs several steps; priority **High/Medium/Low** | Planning |
+| **Action** | Concrete next move with estimate / due; **Important×Urgent → Eisenhower** | **Daily execution** |
+
+**Plan vs Today:** Plan decides what exists/matters; Today executes. Full Plan functional rules (matrix-as-Action-view, Capacity Σ Actions, Global +): [PLAN_UX.md](./PLAN_UX.md).
 
 Deeper structure (visions, goals, milestones) remains available for planning; users should not need it to run a normal day.
 
@@ -90,8 +100,10 @@ Do **not** put everything in bottom nav. Secondary destinations live inside Plan
 | Segment | Shows | Primary CTAs |
 |---------|-------|--------------|
 | **Areas** | Life areas + health / neglect signals | Open area → projects & ideas |
-| **Projects** | Active / paused projects across areas | Open project · add project |
+| **Projects** | Active / paused projects across areas (priority H/M/L; Actions matrix is a view) | Open project · add project · list/matrix toggle |
 | **Ideas** | Inbox of unclassified captures | Capture · Evaluate · Convert |
+
+Functional detail for Plan (fields, Quick Add, Eisenhower on Actions, migration off project-level matrix): **[PLAN_UX.md](./PLAN_UX.md)**.
 
 ### Money segments
 
@@ -215,11 +227,14 @@ These are the only screens that must be mocked before implementation. Specs belo
   - **Next action** required when Active (empty → prompt to add)
   - Action list with estimates
   - Optional: milestones, effort, risks (collapsed / secondary)
-  - Importance control: simple for MVP of this screen; full Eisenhower later
+  - Project priority: **High / Medium / Low** only (not Eisenhower)
+  - Actions on the project carry Important×Urgent; Eisenhower matrix is an Actions view — see [PLAN_UX.md](./PLAN_UX.md)
 - **AC:**
   - [ ] Active project without next action shows clear repair CTA  
   - [ ] Convert-from-idea provenance visible if created from Idea  
   - [ ] Time sum of actions visible vs capacity (link, not full Capacity UI)  
+  - [ ] Project form never asks for Do First / Schedule / Delegate / Eliminate  
+
 
 ### 6.5 Capacity
 
@@ -321,17 +336,19 @@ Motion (when implemented): subtle presence (sheet rise, segment crossfade, prima
 - Generating image mockups in-repo  
 - Portainer / production deploys  
 - Changing API contracts solely for rename (labels can change first; ids may lag)  
-- Full Eisenhower on first-action onboarding  
+- Full Eisenhower on first-action onboarding (Important×Urgent on Actions comes with Plan UX implementation — [PLAN_UX.md](./PLAN_UX.md))  
 - New product surfaces beyond the inventory above  
+
 
 ---
 
 ## 10. Next steps
 
-1. **Mockups** for the six screens in §6 (Onboarding, Today, Plan/Areas, Project, Capacity, Money Overview)  
+1. **Mockups** for the six screens in §6 (Onboarding, Today, Plan/Areas, Project, Capacity, Money Overview) — Plan mockups follow [PLAN_UX.md](./PLAN_UX.md)  
 2. Engineering spike: map route/tab ids (`command` → `today`, `budget` → `money`) without breaking deep links  
-3. Update [USER_STORIES.md](./USER_STORIES.md) nav/onboarding stories to match this IA in a follow-up  
-4. Implement nav shell + onboarding sequence against mockups  
+3. Engineering spike: migrate Eisenhower from Project → Action Important×Urgent ([PLAN_UX.md](./PLAN_UX.md) §13)  
+4. Update [USER_STORIES.md](./USER_STORIES.md) nav/onboarding stories to match this IA in a follow-up  
+5. Implement nav shell + onboarding sequence against mockups  
 
 ---
 
@@ -339,6 +356,7 @@ Motion (when implemented): subtle presence (sheet rise, segment crossfade, prima
 
 - [ ] Five tabs only: Today, Plan, Calendar, Money, You  
 - [ ] Plan has Areas | Projects | Ideas  
+- [ ] Plan functional ticket locked in [PLAN_UX.md](./PLAN_UX.md)  
 - [ ] Money has Overview | Spending | Wealth  
 - [ ] Onboarding matches §5 order  
 - [ ] Six screens specified for mockups  
