@@ -276,14 +276,14 @@ export function PriorityScreen({
         <Pressable
           style={[
             styles.filterChip,
-            (activeFilterCount || filterOpen) && styles.filterChipActive,
+            (activeFilterCount > 0 || filterOpen) && styles.filterChipActive,
           ]}
           onPress={() => setFilterOpen(true)}
         >
           <Text
             style={[
               styles.filterChipText,
-              (activeFilterCount || filterOpen) && styles.filterChipTextActive,
+              (activeFilterCount > 0 || filterOpen) && styles.filterChipTextActive,
             ]}
           >
             Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
