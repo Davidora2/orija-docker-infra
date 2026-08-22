@@ -18,6 +18,10 @@ const davidBudgets = [
     id: 'personal-full',
     ownerUserId: davidId,
     visibility: 'PRIVATE',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+    recurringCount: 8,
+    recurringTotalCents: 87540,
   },
 ];
 
@@ -29,8 +33,8 @@ assert.equal(
 
 assert.equal(
   pickDefaultBudgetId(davidBudgets, davidId, { storedId: 'shared-empty' }),
-  'shared-empty',
-  'stored preference should be respected when still valid',
+  'personal-full',
+  'stored empty shared budget should not hide populated personal budget',
 );
 
 assert.equal(

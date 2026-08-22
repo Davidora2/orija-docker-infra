@@ -304,8 +304,18 @@ export function registerOnboardingAndBudgetRoutes(
   app.get('/v1/budgets', { preHandler: auth.authenticate }, async (request) => {
     const userId = (request as { authUser: AuthUser }).authUser.id;
     return sql`
-      SELECT b.*
+      SELECT
+        b.*,
+        COALESCE(recurring_stats.recurring_count, 0) AS recurring_count,
+        COALESCE(recurring_stats.recurring_total_cents, 0) AS recurring_total_cents
       FROM budgets b
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS recurring_count,
+          COALESCE(SUM(amount_cents), 0)::bigint AS recurring_total_cents
+        FROM recurring_outgoings ro
+        WHERE ro.budget_id = b.id AND ro.active = TRUE
+      ) recurring_stats ON TRUE
       WHERE
         b.owner_user_id = ${userId}
         OR (

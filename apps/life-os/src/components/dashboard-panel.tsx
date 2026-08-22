@@ -107,6 +107,9 @@ export function DashboardPanel({
       0,
     );
   const monthOutgoingsCents = month?.totals.expenseCents ?? 0;
+  const recurringMonthlyCents = month?.totals.recurringCents ?? 0;
+  const hasCategoryPlan = plannedCents > 0;
+  const hasOutgoings = monthOutgoingsCents > 0;
   const recordedIncomeCents = month?.totals.incomeCents ?? 0;
   const expectedPayCents = month?.totals.expectedPayCents ?? null;
   const hasCashflowBasis = expectedPayCents != null || recordedIncomeCents > 0;
@@ -266,26 +269,34 @@ export function DashboardPanel({
                 Plan vs month total
               </p>
               <h4 className="mt-2 font-serif text-2xl">
-                {plannedCents > 0
+                {hasCategoryPlan
                   ? formatMoney(
                       Math.abs(plannedCents - monthOutgoingsCents),
                       currency,
                     )
-                  : "No category plan"}
+                  : hasOutgoings
+                    ? formatMoney(monthOutgoingsCents, currency)
+                    : "No outgoings yet"}
               </h4>
               <p className="mt-1 text-sm text-[#6c7771]">
-                {plannedCents > 0
+                {hasCategoryPlan
                   ? `${
                       monthOutgoingsCents <= plannedCents ? "Under" : "Over"
                     } the category plan`
-                  : "Set category amounts in Spending"}
+                  : hasOutgoings
+                    ? `${formatMoney(recurringMonthlyCents, currency)} from regular bills this month`
+                    : "Add recurring bills or category amounts in Spending"}
               </p>
             </div>
             <CapacityRing
               used={monthOutgoingsCents / 100}
-              capacity={plannedCents / 100}
+              capacity={hasCategoryPlan ? plannedCents / 100 : monthOutgoingsCents / 100}
               size={92}
-              label="Monthly outgoings against category plan"
+              label={
+                hasCategoryPlan
+                  ? "Monthly outgoings against category plan"
+                  : "Monthly outgoings from bills and entries"
+              }
               colors={{ used: "#617a57", track: "#e8ece7" }}
             />
           </div>

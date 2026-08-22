@@ -73,12 +73,19 @@ export type BudgetListItem = {
   createdAt?: string;
   payFrequency?: string | null;
   typicalPayCents?: number | null;
+  recurringCount?: number | null;
+  recurringTotalCents?: number | null;
 };
 
-function isThinPersonalBudget(budget: BudgetListItem): boolean {
+/** Budget with no pay schedule and no active recurring outgoings. */
+function isThinBudget(budget: BudgetListItem): boolean {
+  const recurringCount = budget.recurringCount ?? 0;
+  const recurringTotal = budget.recurringTotalCents ?? 0;
   return (
     !budget.payFrequency &&
-    (budget.typicalPayCents == null || budget.typicalPayCents <= 0)
+    (budget.typicalPayCents == null || budget.typicalPayCents <= 0) &&
+    recurringCount <= 0 &&
+    recurringTotal <= 0
   );
 }
 
@@ -86,6 +93,10 @@ function personalBudgetRichness(budget: BudgetListItem): number {
   let score = 0;
   if (budget.typicalPayCents != null && budget.typicalPayCents > 0) score += 1000;
   if (budget.payFrequency) score += 100;
+  const recurringTotal = budget.recurringTotalCents ?? 0;
+  if (recurringTotal > 0) score += 500 + recurringTotal / 1000;
+  const recurringCount = budget.recurringCount ?? 0;
+  if (recurringCount > 0) score += 50 + recurringCount;
   if (budget.createdAt) {
     const created = Date.parse(budget.createdAt);
     if (Number.isFinite(created)) score += -created / 1e15;
@@ -130,10 +141,8 @@ export function pickDefaultBudgetId(
       if (
         storedBudget &&
         stored !== bestOwnedPrivate.id &&
-        storedBudget.ownerUserId === userId &&
-        storedBudget.visibility === "PRIVATE" &&
-        isThinPersonalBudget(storedBudget) &&
-        !isThinPersonalBudget(bestOwnedPrivate)
+        isThinBudget(storedBudget) &&
+        !isThinBudget(bestOwnedPrivate)
       ) {
         return bestOwnedPrivate.id;
       }

@@ -966,6 +966,8 @@ export type Budget = {
   payFrequency?: 'weekly' | 'biweekly' | 'four_weekly' | 'monthly' | null;
   nextPayDate?: string | null;
   typicalPayCents?: number | null;
+  recurringCount?: number | null;
+  recurringTotalCents?: number | null;
   categories?: BudgetCategory[];
   entries?: BudgetEntry[];
   recurring?: RecurringOutgoing[];
@@ -1065,6 +1067,14 @@ function mapBudget(raw: Record<string, unknown>): Budget {
     typicalPayCents:
       raw.typicalPayCents != null || raw.typical_pay_cents != null
         ? Number(raw.typicalPayCents ?? raw.typical_pay_cents)
+        : null,
+    recurringCount:
+      raw.recurringCount != null || raw.recurring_count != null
+        ? Number(raw.recurringCount ?? raw.recurring_count)
+        : null,
+    recurringTotalCents:
+      raw.recurringTotalCents != null || raw.recurring_total_cents != null
+        ? Number(raw.recurringTotalCents ?? raw.recurring_total_cents)
         : null,
     categories: Array.isArray(raw.categories)
       ? (raw.categories as Record<string, unknown>[]).map((category) => ({
