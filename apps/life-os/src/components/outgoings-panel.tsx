@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addBudgetEntry,
   createBudgetCategory,
@@ -42,6 +42,7 @@ type Props = {
   preferredCurrency?: string;
   onError: (message: string) => void;
   onChanged: () => void;
+  focusDailyExpense?: number;
 };
 
 export function OutgoingsPanel({
@@ -49,6 +50,7 @@ export function OutgoingsPanel({
   preferredCurrency,
   onError,
   onChanged,
+  focusDailyExpense = 0,
 }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -99,6 +101,8 @@ export function OutgoingsPanel({
   );
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categories, setCategories] = useState(budget.categories ?? []);
+  const dailyExpenseRef = useRef<HTMLElement>(null);
+  const dailyAmountRef = useRef<HTMLInputElement>(null);
 
   const displayCurrency =
     preferredCurrency || data?.currency || budget.currency || "GBP";
@@ -138,6 +142,17 @@ export function OutgoingsPanel({
       onError(error instanceof Error ? error.message : "Could not load outgoings."),
     );
   }, [load, onError, budget.currency, preferredCurrency]);
+
+  useEffect(() => {
+    if (focusDailyExpense <= 0) return;
+    window.setTimeout(() => {
+      dailyExpenseRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      dailyAmountRef.current?.focus();
+    }, 100);
+  }, [focusDailyExpense]);
 
   const selectedDay = useMemo(
     () => data?.days.find((day) => day.date === selectedDate) ?? null,
@@ -717,7 +732,10 @@ export function OutgoingsPanel({
         ) : null}
       </article>
 
-      <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+      <article
+        className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3"
+        ref={dailyExpenseRef}
+      >
         <h4 className="font-semibold">Pay schedule</h4>
         <p className="text-sm text-[#6c7771]">
           Recommendations use your payday rhythm and frequent spends.
@@ -805,6 +823,7 @@ export function OutgoingsPanel({
             <input
               className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
               placeholder={`Amount (${symbol})`}
+              ref={dailyAmountRef}
               value={dailyAmount}
               onChange={(e) => setDailyAmount(e.target.value)}
             />

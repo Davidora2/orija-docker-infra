@@ -285,6 +285,84 @@ suite('account and couple household API', () => {
     expect(replay.json<{ error: string }>().error).toBe('invalid_refresh_token');
   });
 
+  it('persists resumable onboarding progress without completing early', async () => {
+    const user = await register('onboarding-progress@example.com', 'Progress User');
+    const initial = user.account as {
+      user: {
+        onboardingCompletedAt: string | null;
+        onboardingStep: string | null;
+      };
+    };
+    expect(initial.user.onboardingCompletedAt).toBeNull();
+    expect(initial.user.onboardingStep).toBe('welcome');
+
+    const progress = await app.inject({
+      method: 'PATCH',
+      url: '/v1/onboarding/progress',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { step: 'areas' },
+    });
+    expect(progress.statusCode).toBe(200);
+    expect(
+      progress.json<{ user: { onboardingStep: string } }>().user.onboardingStep,
+    ).toBe('areas');
+
+    const areas = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Health', icon: 'fitness-outline' }],
+        preferredCurrency: 'GBP',
+        complete: false,
+        nextStep: 'capacity',
+      },
+    });
+    expect(areas.statusCode).toBe(200);
+    expect(
+      areas.json<{
+        user: {
+          onboardingCompletedAt: string | null;
+          onboardingStep: string | null;
+        };
+      }>().user,
+    ).toMatchObject({
+      onboardingCompletedAt: null,
+      onboardingStep: 'capacity',
+    });
+
+    const complete = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Health', icon: 'fitness-outline' }],
+        complete: true,
+      },
+    });
+    expect(complete.statusCode).toBe(200);
+    const completedUser = complete.json<{
+      user: {
+        onboardingCompletedAt: string | null;
+        onboardingStep: string | null;
+      };
+    }>().user;
+    expect(completedUser.onboardingCompletedAt).toBeTruthy();
+    expect(completedUser.onboardingStep).toBeNull();
+
+    const ignored = await app.inject({
+      method: 'PATCH',
+      url: '/v1/onboarding/progress',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { step: 'ideas' },
+    });
+    expect(ignored.statusCode).toBe(200);
+    expect(
+      ignored.json<{ user: { onboardingStep: string | null } }>().user
+        .onboardingStep,
+    ).toBeNull();
+  });
+
   it('completes onboarding areas and supports personal + shared budgets', async () => {
     const owner = await register('budget-owner@example.com', 'Budget Owner');
     const partner = await register('budget-partner@example.com', 'Budget Partner');
