@@ -795,14 +795,16 @@ function AppContent() {
 
   async function completeAction(action: LifeItem) {
     const nextStatus = toggledActionStatus(action.status);
-    if (nextStatus === 'DONE' && primary?.id === action.id) {
-      setStickyPrimaryId(action.id);
-    }
     await run(
       nextStatus === 'DONE' ? 'Complete action' : 'Reopen action',
       async () => {
         await updateLifeItem(action.id, { status: nextStatus });
         await reloadItems();
+        if (nextStatus === 'DONE' && primary?.id === action.id) {
+          setStickyPrimaryId(action.id);
+        } else if (nextStatus !== 'DONE' && stickyPrimaryId === action.id) {
+          setStickyPrimaryId(null);
+        }
         notify(
           nextStatus === 'DONE' ? 'Action completed.' : 'Action reopened.',
         );

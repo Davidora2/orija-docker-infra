@@ -237,8 +237,7 @@ export function LifeOSApp() {
 
   useEffect(() => {
     if (!stickyPrimaryId) return;
-    const sticky = actions.find((item) => item.id === stickyPrimaryId);
-    if (!sticky || sticky.status !== "DONE") {
+    if (!actions.some((item) => item.id === stickyPrimaryId)) {
       setStickyPrimaryId(null);
     }
   }, [actions, stickyPrimaryId]);
@@ -648,12 +647,13 @@ export function LifeOSApp() {
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      if (primary.status !== "DONE") {
-                        setStickyPrimaryId(primary.id);
-                      }
-                      await updateLifeItem(primary.id, {
+                      const wasDone = primary.status === "DONE";
+                      const id = primary.id;
+                      await updateLifeItem(id, {
                         status: toggledActionStatus(primary.status),
                       });
+                      if (wasDone) setStickyPrimaryId(null);
+                      else setStickyPrimaryId(id);
                     })
                   }
                 >
