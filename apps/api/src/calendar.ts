@@ -12,10 +12,11 @@ import {
 } from './budget-cashflow.js';
 import { listRecurring } from './budget-cashflow.js';
 import { ApiError } from './errors.js';
+import { projectTargetDate } from './priority-matrix.js';
 
 export type CalendarEvent = {
   id: string;
-  type: 'task' | 'payment' | 'payday';
+  type: 'task' | 'payment' | 'payday' | 'milestone';
   date: string;
   title: string;
   amountCents: number | null;
@@ -100,7 +101,9 @@ export async function loadCalendarEvents(
   const year = options.year ?? now.getUTCFullYear();
   const month = options.month ?? now.getUTCMonth() + 1;
   const typeSet = new Set(
-    (options.types ?? ['task', 'payment', 'payday']).map((value) => value.trim()),
+    (options.types ?? ['task', 'payment', 'payday', 'milestone']).map((value) =>
+      value.trim(),
+    ),
   );
   const areaFilter = options.areaIds ?? [];
 
@@ -197,6 +200,34 @@ export async function loadCalendarEvents(
         status: action.status,
         source: 'action',
         meta: { hours: body.hours ?? null },
+      });
+    }
+  }
+
+  if (typeSet.has('milestone')) {
+    const projects = items.filter(
+      (item) =>
+        item.kind === 'PROJECT' &&
+        item.status !== 'DONE' &&
+        item.status !== 'CONVERTED' &&
+        item.status !== 'CANCELLED',
+    );
+    for (const project of projects) {
+      const due = projectTargetDate(project.body ?? {});
+      if (!due || due < rangeStart || due > rangeEnd) continue;
+      const area = areaFor(project.id);
+      if (areaFilter.length && (!area || !areaFilter.includes(area.id))) continue;
+      events.push({
+        id: `milestone:${project.id}`,
+        type: 'milestone',
+        date: due,
+        title: `Deadline · ${project.title}`,
+        amountCents: null,
+        areaId: area?.id ?? null,
+        areaTitle: area?.title ?? null,
+        status: project.status,
+        source: 'project',
+        meta: { projectId: project.id, targetDate: due },
       });
     }
   }
@@ -354,7 +385,7 @@ export function registerCalendarRoutes(
       })
       .parse(request.query);
 
-    const typeList = (query.types ?? 'task,payment,payday')
+    const typeList = (query.types ?? 'task,payment,payday,milestone')
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean);
@@ -417,6 +448,8 @@ export function registerCalendarRoutes(
         tasks: loaded.events.filter((event) => event.type === 'task').length,
         payments: loaded.events.filter((event) => event.type === 'payment').length,
         paydays: loaded.events.filter((event) => event.type === 'payday').length,
+        milestones: loaded.events.filter((event) => event.type === 'milestone')
+          .length,
       },
     };
   });

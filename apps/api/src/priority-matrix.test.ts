@@ -11,9 +11,13 @@ import {
   migrateProjectBody,
   priorityRank,
   projectBodyWithPriority,
+  projectBodyWithTargetDate,
   projectPriorityFromLegacyQuadrant,
   projectPriorityLevel,
   projectPriorityQuadrant,
+  projectTargetDate,
+  isProjectDeadlineOverdue,
+  normalizeProjectDeadlineBody,
   quadrantFromFlags,
   quadrantFromLevels,
 } from './priority-matrix.js';
@@ -145,6 +149,30 @@ describe('project High/Medium/Low', () => {
   it('projectPriorityQuadrant still resolves for legacy callers', () => {
     expect(projectPriorityQuadrant({ priorityQuadrant: 'DO_FIRST' })).toBe('DO_FIRST');
     expect(projectPriorityQuadrant({ priority: 'HIGH' })).toBe('DO_FIRST');
+  });
+
+  it('reads and writes project targetDate deadlines', () => {
+    expect(projectTargetDate({ targetDate: '2026-09-01' })).toBe('2026-09-01');
+    expect(projectTargetDate({ deadline: '2026-09-02' })).toBe('2026-09-02');
+    expect(projectTargetDate({ dueAt: '2026-09-03T12:00:00Z' })).toBe('2026-09-03');
+    expect(
+      projectBodyWithTargetDate({ outcome: 'Ship', deadline: 'old' }, '2026-10-01'),
+    ).toEqual({ outcome: 'Ship', targetDate: '2026-10-01' });
+    expect(
+      projectBodyWithTargetDate({ outcome: 'Ship', targetDate: '2026-10-01' }, null),
+    ).toEqual({ outcome: 'Ship' });
+    expect(
+      normalizeProjectDeadlineBody({ deadline: '2026-11-01', priority: 'HIGH' }),
+    ).toEqual({ priority: 'HIGH', targetDate: '2026-11-01' });
+    expect(
+      normalizeProjectDeadlineBody({ targetDate: null, priority: 'LOW' }),
+    ).toEqual({ priority: 'LOW' });
+    expect(
+      isProjectDeadlineOverdue({ targetDate: '2020-01-01' }, 'ACTIVE', '2026-08-22'),
+    ).toBe(true);
+    expect(
+      isProjectDeadlineOverdue({ targetDate: '2020-01-01' }, 'DONE', '2026-08-22'),
+    ).toBe(false);
   });
 });
 

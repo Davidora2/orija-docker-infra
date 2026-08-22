@@ -71,6 +71,8 @@ import {
   actionPriorityQuadrant,
   levelsFromQuadrant,
   projectBodyWithPriority,
+  projectBodyWithTargetDate,
+  projectPriorityLevel,
   quadrantFromLevels,
   type PriorityLevel,
   type PriorityQuadrant,
@@ -327,6 +329,7 @@ function AppContent() {
   const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
   const [projectPriority, setProjectPriority] =
     useState<ProjectPriority>('MEDIUM');
+  const [projectTargetDate, setProjectTargetDate] = useState('');
   const [actionTitle, setActionTitle] = useState('');
   const [actionHours, setActionHours] = useState('2');
   const [actionDay, setActionDay] = useState<string>('Fri');
@@ -632,10 +635,13 @@ function AppContent() {
         title: projectTitle.trim(),
         parentId: projectPillarId,
         body: projectBodyWithPriority(
-          {
-            outcome: projectOutcome.trim(),
-            fromIdeaId: sourceIdeaId,
-          },
+          projectBodyWithTargetDate(
+            {
+              outcome: projectOutcome.trim(),
+              fromIdeaId: sourceIdeaId,
+            },
+            projectTargetDate.trim() || null,
+          ),
           projectPriority,
         ),
       });
@@ -660,6 +666,7 @@ function AppContent() {
       setProjectTitle('');
       setProjectOutcome('');
       setProjectPriority('MEDIUM');
+      setProjectTargetDate('');
       setActionTitle('');
       setActionImportance('HIGH');
       setActionUrgency('LOW');
@@ -1033,6 +1040,7 @@ function AppContent() {
               setProjectOutcome('');
               setProjectPillarId(pillars[0]?.id ?? null);
               setProjectPriority('MEDIUM');
+              setProjectTargetDate('');
               setActionTitle('');
               setActionHours('2');
               setActionImportance('HIGH');
@@ -1067,6 +1075,22 @@ function AppContent() {
                   status === 'DONE'
                     ? 'Project marked done.'
                     : 'Project reopened.',
+                );
+              })
+            }
+            onSetProjectDeadline={(project, targetDate) =>
+              void run('Update project deadline', async () => {
+                await updateLifeItem(project.id, {
+                  body: projectBodyWithPriority(
+                    projectBodyWithTargetDate(project.body, targetDate),
+                    projectPriorityLevel(project.body),
+                  ),
+                });
+                await reloadItems();
+                notify(
+                  targetDate
+                    ? `Deadline set to ${targetDate}.`
+                    : 'Deadline cleared.',
                 );
               })
             }
@@ -1752,6 +1776,11 @@ function AppContent() {
               value={projectOutcome}
               onChangeText={setProjectOutcome}
               multiline
+            />
+            <Field
+              label="Deadline (optional, YYYY-MM-DD)"
+              value={projectTargetDate}
+              onChangeText={setProjectTargetDate}
             />
             <Text style={styles.fieldLabel}>Area</Text>
             <View style={styles.chipRow}>

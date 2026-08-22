@@ -1173,4 +1173,103 @@ suite('account and couple household API', () => {
     expect(reopened.statusCode).toBe(200);
     expect(reopened.json<{ status: string }>().status).toBe('ACTIVE');
   });
+
+  it('sets and clears a project deadline via body.targetDate', async () => {
+    const user = await register('project-deadline@example.com', 'Project Deadline');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/items',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        kind: 'PROJECT',
+        title: 'Deadline project',
+        body: { priority: 'MEDIUM', deadline: '2026-12-15' },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const project = created.json<{
+      id: string;
+      body: Record<string, unknown>;
+    }>();
+    expect(project.body.targetDate).toBe('2026-12-15');
+    expect(project.body.deadline).toBeUndefined();
+
+    const patched = await app.inject({
+      method: 'PATCH',
+      url: `/v1/items/${project.id}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        body: {
+          priority: 'MEDIUM',
+          outcome: 'Ship with a date',
+          targetDate: '2026-12-20',
+        },
+      },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(
+      patched.json<{ body: { targetDate?: string } }>().body.targetDate,
+    ).toBe('2026-12-20');
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: `/v1/items/${project.id}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        body: {
+          priority: 'MEDIUM',
+          outcome: 'Ship with a date',
+          targetDate: null,
+        },
+      },
+    });
+    expect(cleared.statusCode).toBe(200);
+    const clearedBody = cleared.json<{ body: Record<string, unknown> }>().body;
+    expect(clearedBody.targetDate).toBeUndefined();
+    expect(clearedBody.deadline).toBeUndefined();
+
+    const calendar = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2026&month=12&types=milestone',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(calendar.statusCode).toBe(200);
+    expect(
+      calendar
+        .json<{ events: { id: string }[] }>()
+        .events.some((event) => event.id === `milestone:${project.id}`),
+    ).toBe(false);
+
+    const withDeadline = await app.inject({
+      method: 'PATCH',
+      url: `/v1/items/${project.id}`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        body: { priority: 'MEDIUM', targetDate: '2026-12-25' },
+      },
+    });
+    expect(withDeadline.statusCode).toBe(200);
+
+    const milestones = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2026&month=12&types=milestone',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(milestones.statusCode).toBe(200);
+    const milestone = milestones
+      .json<{
+        events: { id: string; type: string; date: string; title: string }[];
+        counts: { milestones: number };
+      }>()
+      .events.find((event) => event.id === `milestone:${project.id}`);
+    expect(milestone).toMatchObject({
+      type: 'milestone',
+      date: '2026-12-25',
+    });
+    expect(milestone?.title).toContain('Deadline project');
+    expect(milestones.json<{ counts: { milestones: number } }>().counts.milestones).toBeGreaterThan(
+      0,
+    );
+  });
 });

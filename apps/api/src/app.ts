@@ -24,6 +24,7 @@ import {
   hashToken,
   verifyPassword,
 } from './security.js';
+import { normalizeProjectDeadlineBody } from './priority-matrix.js';
 
 const credentialsSchema = z.object({
   email: z.string().email().max(320).transform((value) => value.toLowerCase()),
@@ -738,6 +739,10 @@ export async function buildApp(
     if (body.visibility === 'SHARED' && !householdId) {
       throw new ApiError(400, 'no_active_household', 'Choose a household before sharing.');
     }
+    const itemBody =
+      body.kind === 'PROJECT'
+        ? normalizeProjectDeadlineBody(body.body)
+        : body.body;
 
     const [item] = await sql`
       INSERT INTO life_items (
@@ -751,7 +756,7 @@ export async function buildApp(
         ${body.visibility},
         ${body.title},
         ${body.status},
-        ${sql.json(body.body)},
+        ${sql.json(itemBody)},
         ${body.sortOrder}
       )
       RETURNING *
@@ -766,8 +771,10 @@ export async function buildApp(
     if (body.parentId !== undefined) {
       await assertParentAccessible(sql, request.authUser.id, body.parentId);
     }
-    const [existing] = await sql<{ id: string; visibility: 'PRIVATE' | 'SHARED' }[]>`
-      SELECT id, visibility FROM life_items
+    const [existing] = await sql<
+      { id: string; visibility: 'PRIVATE' | 'SHARED'; kind: string }[]
+    >`
+      SELECT id, visibility, kind FROM life_items
       WHERE id = ${id} AND owner_user_id = ${request.authUser.id}
     `;
     if (!existing) {
@@ -781,6 +788,10 @@ export async function buildApp(
     }
     const bodyProvided = body.body !== undefined;
     const parentProvided = body.parentId !== undefined;
+    const nextBody =
+      bodyProvided && existing.kind === 'PROJECT'
+        ? normalizeProjectDeadlineBody(body.body ?? {})
+        : (body.body ?? {});
 
     const [updated] = await sql`
       UPDATE life_items SET
@@ -793,7 +804,7 @@ export async function buildApp(
           ELSE parent_id
         END,
         body = CASE
-          WHEN ${bodyProvided} THEN ${sql.json(body.body ?? {})}
+          WHEN ${bodyProvided} THEN ${sql.json(nextBody)}
           ELSE body
         END,
         sort_order = COALESCE(${body.sortOrder ?? null}, sort_order),

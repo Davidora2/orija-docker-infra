@@ -23,6 +23,7 @@ const colors = {
   acid: '#D6F57A',
   dangerSoft: '#F8E4DF',
   danger: '#8A3D30',
+  amberSoft: '#FFF3E8',
 };
 
 function isoToday(): string {
@@ -38,6 +39,7 @@ function shiftWeek(start: string, delta: number): string {
 function eventStyle(type: CalendarEvent['type']) {
   if (type === 'payment') return styles.eventPayment;
   if (type === 'payday') return styles.eventPayday;
+  if (type === 'milestone') return styles.eventMilestone;
   return styles.eventTask;
 }
 
@@ -52,7 +54,12 @@ export function CalendarScreen({
   const [month, setMonth] = useState(now.getUTCMonth() + 1);
   const [weekStart, setWeekStart] = useState(isoToday());
   const [areaIds, setAreaIds] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>(['task', 'payment', 'payday']);
+  const [types, setTypes] = useState<string[]>([
+    'task',
+    'milestone',
+    'payment',
+    'payday',
+  ]);
   const [data, setData] = useState<CalendarPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -159,7 +166,7 @@ export function CalendarScreen({
         </View>
 
         <View style={styles.rowWrap}>
-          {(['task', 'payment', 'payday'] as const).map((type) => (
+          {(['task', 'milestone', 'payment', 'payday'] as const).map((type) => (
             <Pressable
               key={type}
               onPress={() => toggleType(type)}
@@ -171,7 +178,13 @@ export function CalendarScreen({
                   types.includes(type) && styles.chipTextActive,
                 ]}
               >
-                {type === 'task' ? 'Tasks' : type === 'payment' ? 'Payments' : 'Paydays'}
+                {type === 'task'
+                  ? 'Tasks'
+                  : type === 'milestone'
+                    ? 'Deadlines'
+                    : type === 'payment'
+                      ? 'Payments'
+                      : 'Paydays'}
               </Text>
             </Pressable>
           ))}
@@ -213,8 +226,8 @@ export function CalendarScreen({
 
         {data ? (
           <Text style={styles.counts}>
-            {data.counts.tasks} tasks · {data.counts.payments} payments ·{' '}
-            {data.counts.paydays} paydays
+            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} deadlines ·{' '}
+            {data.counts.payments} payments · {data.counts.paydays} paydays
           </Text>
         ) : null}
       </View>
@@ -302,6 +315,7 @@ const styles = StyleSheet.create({
   eventTask: { backgroundColor: colors.canvas },
   eventPayment: { backgroundColor: colors.dangerSoft },
   eventPayday: { backgroundColor: colors.sage },
+  eventMilestone: { backgroundColor: colors.amberSoft },
   eventTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   eventMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
 });
