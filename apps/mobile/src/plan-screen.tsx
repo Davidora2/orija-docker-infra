@@ -99,6 +99,8 @@ type Props = {
   onOpenProjectsMatrix: () => void;
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
+  onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onRequestPlanSegment?: (segment: PlanSegment) => void;
   tipDismissed?: boolean;
   onDismissTip?: () => void;
   areaTitle: string;
@@ -276,6 +278,8 @@ export function PlanScreen({
   onOpenProjectsMatrix,
   onMoveProjectToIdea,
   onParkAction,
+  onSetScheduledDate,
+  onRequestPlanSegment,
   tipDismissed = false,
   onDismissTip,
   areaTitle,
@@ -307,10 +311,12 @@ export function PlanScreen({
   }, [preferMatrix]);
 
   useEffect(() => {
-    setSelectedProjectId(null);
     setSelectedAreaId(null);
     setDetailsOpen(false);
     setMovingActionId(null);
+    if (planSegment !== 'projects') {
+      setSelectedProjectId(null);
+    }
     if (planSegment === 'priority' && !preferMatrix) {
       setProjectsView('list');
     }
@@ -392,6 +398,11 @@ export function PlanScreen({
         onOpenMatrix={() => setProjectsView('matrix')}
         onCompleteAction={onCompleteAction}
         onMoveActionQuadrant={onMoveActionQuadrant}
+        onSetScheduledDate={onSetScheduledDate}
+        onOpenProject={(project) => {
+          setSelectedProjectId(project.id);
+          onRequestPlanSegment?.('projects');
+        }}
         onMoveProjectToIdea={onMoveProjectToIdea}
         onParkAction={onParkAction}
       />

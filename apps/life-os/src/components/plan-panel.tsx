@@ -131,6 +131,8 @@ type Props = {
   ) => void;
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
+  onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onRequestPlanSegment?: (segment: PlanSegment) => void;
   preferPriorityMatrix?: boolean;
 };
 
@@ -503,6 +505,11 @@ export function PlanPanel(props: Props) {
         busy={busy}
         onMoveAction={props.onMoveAction}
         onCompleteAction={props.onCompleteAction}
+        onSetScheduledDate={props.onSetScheduledDate}
+        onOpenProject={(project) => {
+          setSelectedProjectId(project.id);
+          props.onRequestPlanSegment?.("projects");
+        }}
         onMoveProjectToIdea={props.onMoveProjectToIdea}
         onParkAction={props.onParkAction}
         preferMatrix={props.preferPriorityMatrix}

@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import type { LifeItem } from './api';
@@ -13,6 +14,8 @@ import {
   PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
   actionPriorityQuadrant,
+  actionScheduledDate,
+  quadrantRequiresScheduledDate,
   type PriorityQuadrant,
 } from './priority-matrix';
 
@@ -65,6 +68,12 @@ function isThisWeek(action: LifeItem) {
   return day !== 'Later' && day !== 'Someday';
 }
 
+type DateEditState = {
+  action: LifeItem;
+  draft: string;
+  completeAfter: boolean;
+};
+
 type Props = {
   pillars: LifeItem[];
   projects: LifeItem[];
@@ -76,6 +85,8 @@ type Props = {
   onOpenMatrix: () => void;
   onCompleteAction: (action: LifeItem) => void;
   onMoveActionQuadrant: (action: LifeItem, quadrant: PriorityQuadrant) => void;
+  onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onOpenProject?: (project: LifeItem) => void;
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
 };
@@ -91,6 +102,8 @@ export function PriorityScreen({
   onOpenMatrix,
   onCompleteAction,
   onMoveActionQuadrant,
+  onSetScheduledDate,
+  onOpenProject,
   onMoveProjectToIdea,
   onParkAction,
 }: Props) {
@@ -109,6 +122,40 @@ export function PriorityScreen({
     DELEGATE: false,
     ELIMINATE: false,
   });
+  const [dateEdit, setDateEdit] = useState<DateEditState | null>(null);
+
+  function openScheduleDateEditor(
+    action: LifeItem,
+    options?: { completeAfter?: boolean },
+  ) {
+    setDateEdit({
+      action,
+      draft: actionScheduledDate(action.body) ?? '',
+      completeAfter: Boolean(options?.completeAfter),
+    });
+  }
+
+  function handleCompleteAction(action: LifeItem, quadrant: PriorityQuadrant) {
+    if (
+      action.status !== 'DONE' &&
+      quadrantRequiresScheduledDate(quadrant) &&
+      !actionScheduledDate(action.body) &&
+      onSetScheduledDate
+    ) {
+      openScheduleDateEditor(action, { completeAfter: true });
+      return;
+    }
+    onCompleteAction(action);
+  }
+
+  function saveScheduleDate() {
+    if (!dateEdit || !onSetScheduledDate) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)) return;
+    const { action, draft, completeAfter } = dateEdit;
+    onSetScheduledDate(action, draft);
+    setDateEdit(null);
+    if (completeAfter) onCompleteAction(action);
+  }
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -326,6 +373,13 @@ export function PriorityScreen({
                     const icon =
                       (area && bodyString(area, 'icon')) ||
                       AREA_ICONS[index % AREA_ICONS.length];
+                    const scheduled =
+                      quadrant === 'SCHEDULE'
+                        ? actionScheduledDate(action.body)
+                        : null;
+                    const metaLabel = `${area?.title ?? 'Unassigned'}${
+                      project ? ` · ${project.title}` : ''
+                    }`;
                     return (
                       <View key={action.id} style={styles.actionRow}>
                         <View style={styles.actionIcon}>
@@ -337,18 +391,60 @@ export function PriorityScreen({
                           <Text style={styles.actionTitle} numberOfLines={1}>
                             {action.title}
                           </Text>
-                          <Text style={styles.actionMeta} numberOfLines={1}>
-                            {area?.title ?? 'Unassigned'}
-                            {project ? ` · ${project.title}` : ''}
-                          </Text>
+                          {project && onOpenProject ? (
+                            <Pressable
+                              onPress={() => onOpenProject(project)}
+                              hitSlop={4}
+                            >
+                              <Text
+                                style={styles.actionMetaLink}
+                                numberOfLines={1}
+                              >
+                                {metaLabel}
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <Text style={styles.actionMeta} numberOfLines={1}>
+                              {metaLabel}
+                            </Text>
+                          )}
                         </View>
                         <View style={styles.actionAside}>
                           <Text style={styles.actionHours}>
                             {hoursOf(action)}h
                           </Text>
+                          {quadrant === 'SCHEDULE' && onSetScheduledDate ? (
+                            <Pressable
+                              disabled={busy}
+                              onPress={(event) => {
+                                event?.stopPropagation?.();
+                                openScheduleDateEditor(action);
+                              }}
+                              hitSlop={6}
+                              accessibilityRole="button"
+                              accessibilityLabel={
+                                scheduled
+                                  ? `Edit schedule date ${scheduled}`
+                                  : 'Set schedule date'
+                              }
+                            >
+                              <Text
+                                style={[
+                                  styles.dateChip,
+                                  !scheduled && styles.dateChipMissing,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {scheduled ?? 'Set date'}
+                              </Text>
+                            </Pressable>
+                          ) : null}
                           <Pressable
                             disabled={busy}
-                            onPress={() => onCompleteAction(action)}
+                            onPress={(event) => {
+                              event?.stopPropagation?.();
+                              handleCompleteAction(action, quadrant);
+                            }}
                             accessibilityRole="button"
                             accessibilityLabel={
                               action.status === 'DONE'
@@ -610,6 +706,70 @@ export function PriorityScreen({
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={dateEdit != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDateEdit(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.sheet}>
+            <Text style={styles.micro}>Schedule</Text>
+            <Text style={styles.sheetTitle}>
+              {dateEdit?.completeAfter ? 'Date before done' : 'Pick a date'}
+            </Text>
+            <Text style={styles.sheetHint}>
+              {dateEdit
+                ? `"${dateEdit.action.title}" needs a calendar date (YYYY-MM-DD)${
+                    dateEdit.completeAfter ? ' before marking it done' : ''
+                  }.`
+                : ''}
+            </Text>
+            <TextInput
+              value={dateEdit?.draft ?? ''}
+              onChangeText={(value) =>
+                setDateEdit((current) =>
+                  current ? { ...current, draft: value } : current,
+                )
+              }
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.dateInput}
+            />
+            <View style={styles.dateModalActions}>
+              <Pressable
+                style={[styles.dateModalBtn, styles.dateModalBtnSecondary]}
+                onPress={() => setDateEdit(null)}
+              >
+                <Text style={styles.dateModalBtnSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.dateModalBtn,
+                  styles.dateModalBtnPrimary,
+                  (busy ||
+                    !dateEdit ||
+                    !/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)) &&
+                    styles.dateModalBtnDisabled,
+                ]}
+                disabled={
+                  busy ||
+                  !dateEdit ||
+                  !/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)
+                }
+                onPress={saveScheduleDate}
+              >
+                <Text style={styles.dateModalBtnPrimaryText}>
+                  {dateEdit?.completeAfter ? 'Save & complete' : 'Save date'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -739,8 +899,55 @@ const styles = StyleSheet.create({
   actionText: { flex: 1, minWidth: 0 },
   actionTitle: { color: colors.ink, fontWeight: '600', fontSize: 14 },
   actionMeta: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  actionMetaLink: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 2,
+    textDecorationLine: 'underline',
+  },
   actionAside: { alignItems: 'flex-end', gap: 4 },
   actionHours: { color: colors.ink, fontWeight: '700', fontSize: 12 },
+  dateChip: {
+    color: colors.sageDeep,
+    fontWeight: '700',
+    fontSize: 10,
+    maxWidth: 88,
+  },
+  dateChipMissing: { color: colors.danger },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    color: colors.ink,
+    backgroundColor: colors.paper,
+    marginBottom: 8,
+  },
+  dateModalActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  dateModalBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  dateModalBtnSecondary: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+  },
+  dateModalBtnSecondaryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  dateModalBtnPrimary: { backgroundColor: colors.ink },
+  dateModalBtnPrimaryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F4F5F0',
+  },
+  dateModalBtnDisabled: { opacity: 0.45 },
   doneLink: { color: colors.sageDeep, fontWeight: '700', fontSize: 10 },
   doneDot: { color: colors.sageDeep, fontWeight: '700', fontSize: 16, lineHeight: 18 },
   tipCard: {
