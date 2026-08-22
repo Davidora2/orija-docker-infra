@@ -322,6 +322,7 @@ export function registerAccountPrivacyRoutes(
         to: user.email,
         subject: 'Confirm deletion of your Life OS account',
         text: `Your Life OS account deletion code is ${code}. It expires in 15 minutes.\n\nIf you did not request this, keep your account and ignore this email.`,
+        purpose: 'auth',
       });
       return {
         ok: true,

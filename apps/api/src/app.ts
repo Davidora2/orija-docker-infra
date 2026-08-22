@@ -16,6 +16,7 @@ import type { AppConfig } from './config.js';
 import { createDatabase, type Database } from './db.js';
 import { ApiError } from './errors.js';
 import { lifeItemBodySchema } from './life-notes.js';
+import { assertRegistrationEmailAllowed } from './email-guard.js';
 import { createMailer } from './mailer.js';
 import { runMigrations } from './migrations.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
@@ -381,6 +382,7 @@ export async function buildApp(
     },
     async (request, reply) => {
       const body = registerSchema.parse(request.body);
+      assertRegistrationEmailAllowed(body.email, config);
       const passwordHash = await hashPassword(body.password);
 
       const user = await sql.begin(async (transaction) => {

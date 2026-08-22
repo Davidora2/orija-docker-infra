@@ -27,6 +27,8 @@ const envSchema = z.object({
   SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.coerce.number().int().default(465),
   AUTH_DEBUG_CODES: z.enum(['true', 'false']).optional(),
+  AUTH_EMAIL_VERIFICATION_DISABLED: z.enum(['true', 'false']).optional(),
+  SKIP_EMAIL_SEND: z.enum(['true', 'false']).optional(),
 });
 
 export type AppConfig = {
@@ -53,6 +55,9 @@ export type AppConfig = {
   smtpHost: string;
   smtpPort: number;
   authDebugCodes: boolean;
+  authEmailVerificationDisabled: boolean;
+  skipEmailSend: boolean;
+  allowTestRegistrationEmails: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -62,6 +67,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     parsed.AUTH_DEBUG_CODES === 'true' ||
     parsed.NODE_ENV === 'test' ||
     parsed.NODE_ENV === 'development';
+  const authEmailVerificationDisabled = parsed.AUTH_EMAIL_VERIFICATION_DISABLED === 'true';
+  const skipEmailSend = parsed.SKIP_EMAIL_SEND === 'true';
+  const allowTestRegistrationEmails = parsed.NODE_ENV === 'test';
 
   return {
     nodeEnv: parsed.NODE_ENV,
@@ -95,5 +103,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smtpHost: parsed.SMTP_HOST,
     smtpPort: parsed.SMTP_PORT,
     authDebugCodes,
+    authEmailVerificationDisabled,
+    skipEmailSend,
+    allowTestRegistrationEmails,
   };
 }

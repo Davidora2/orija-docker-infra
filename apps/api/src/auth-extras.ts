@@ -58,6 +58,7 @@ export async function issueEmailVerificationCode(
     to: email,
     subject: 'Verify your Life OS email',
     text: `Your Life OS verification code is ${code}. It expires in 15 minutes.\n\nIf you did not create an account, you can ignore this email.`,
+    purpose: 'auth',
   });
 
   return { code, delivery };
@@ -701,6 +702,7 @@ export function registerAuthExtras(
         to: body.email,
         subject: 'Your Life OS password reset code',
         text: `Your Life OS verification code is ${code}. It expires in 15 minutes.\n\nIf you did not request this, you can ignore this email.`,
+        purpose: 'auth',
       });
 
       return reply.send({
