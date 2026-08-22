@@ -20,6 +20,7 @@ import {
 } from './api';
 import { SUGGESTED_LIFE_AREAS, WEEK_DAYS } from './life-data';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
+import { FocusHero } from './ui';
 
 const colors = {
   ink: '#14241F',
@@ -269,14 +270,14 @@ export function OnboardingSheet({ visible, onComplete, notify }: Props) {
 
         {step === 'welcome' ? (
           <View style={styles.step}>
-            <Text style={styles.eyebrow}>LIFE OS</Text>
-            <Text style={styles.title}>About two minutes to a usable Today.</Text>
-            <Text style={styles.body}>
-              Choose a few life areas, set weekly capacity, capture ideas, and land
-              on your primary move.
-            </Text>
-            <Pressable style={styles.cta} onPress={() => setStep('areas')}>
-              <Text style={styles.ctaText}>Get started</Text>
+            <FocusHero
+              accentDot
+              eyebrow="Life OS"
+              meta="Choose life areas, set weekly capacity, capture ideas, and land on your primary move."
+              title="About two minutes to a usable Today."
+            />
+            <Pressable style={styles.ctaAcid} onPress={() => setStep('areas')}>
+              <Text style={styles.ctaAcidText}>Get started</Text>
             </Pressable>
             <Pressable
               style={styles.secondaryCta}
@@ -572,8 +573,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 16,
   },
-  progressFill: { height: '100%', backgroundColor: colors.sageDeep },
-  step: { flex: 1 },
+  progressFill: { height: '100%', backgroundColor: colors.acid },
+  step: { flex: 1, gap: 12 },
   eyebrow: {
     color: colors.sageDeep,
     fontSize: 11,
@@ -635,7 +636,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 8,
   },
+  ctaAcid: {
+    backgroundColor: colors.acid,
+    borderRadius: 14,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
   ctaText: { color: colors.paper, fontWeight: '700' },
+  ctaAcidText: { color: colors.ink, fontWeight: '700' },
   secondaryCta: {
     minHeight: 44,
     alignItems: 'center',

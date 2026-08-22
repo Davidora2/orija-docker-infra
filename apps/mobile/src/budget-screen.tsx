@@ -17,6 +17,13 @@ import {
 import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
+import {
+  AcidButtonLabel,
+  AppButton,
+  FocusHero,
+  SegmentedControl,
+  SurfaceCard,
+} from './ui';
 
 const colors = {
   ink: '#14241F',
@@ -86,28 +93,32 @@ export function BudgetScreen({ account, notify }: Props) {
 
   return (
     <ScrollView contentContainerStyle={styles.stack}>
-      <Text style={styles.title}>Money</Text>
-      <Text style={styles.lede}>
-        Calm cashflow pulse — overview, spending, and wealth in one place.
-      </Text>
+      <FocusHero
+        accentDot
+        eyebrow="Money"
+        meta="Calm cashflow pulse — overview, spending, and wealth in one place."
+        title="Your financial rhythm"
+      />
 
       <View style={styles.row}>
-        <Pressable
-          style={[styles.button, busy && styles.disabled]}
+        <AppButton
           disabled={busy}
           onPress={() => void create('PRIVATE')}
+          style={{ flex: 1 }}
+          variant="acid"
         >
-          <LifeIcon name="add" size={16} color={colors.paper} />
-          <Text style={styles.buttonText}>Personal</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.buttonSecondary, (!canShare || busy) && styles.disabled]}
+          <AcidButtonLabel icon={<LifeIcon color="#2F431E" name="add" size={16} />}>
+            Personal
+          </AcidButtonLabel>
+        </AppButton>
+        <AppButton
           disabled={!canShare || busy}
           onPress={() => void create('SHARED')}
+          style={{ flex: 1 }}
+          variant="secondary"
         >
-          <LifeIcon name="add" size={16} />
-          <Text style={styles.buttonTextSecondary}>Shared</Text>
-        </Pressable>
+          Shared
+        </AppButton>
       </View>
       {!canShare ? (
         <Text style={styles.hint}>
@@ -151,70 +162,34 @@ export function BudgetScreen({ account, notify }: Props) {
 
       {detail ? (
         <>
-          <View style={styles.row}>
-            {(
-              [
-                ['overview', 'Overview', 'overview'],
-                ['outgoings', 'Spending', 'spending'],
-                ['wealth', 'Wealth', 'wealth'],
-              ] as const
-            ).map(([id, label, icon]) => (
-              <Pressable
-                key={id}
-                style={[styles.chip, section === id && styles.chipActive]}
-                onPress={() => setSection(id)}
-              >
-                <LifeIcon
-                  name={icon}
-                  size={15}
-                  color={section === id ? colors.acid : colors.sageDeep}
-                />
-                <Text
-                  style={[
-                    styles.chipText,
-                    section === id && styles.chipTextActive,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <SegmentedControl
+            value={section}
+            onChange={setSection}
+            options={[
+              { id: 'overview', label: 'Overview', icon: 'overview' },
+              { id: 'outgoings', label: 'Spending', icon: 'spending' },
+              { id: 'wealth', label: 'Wealth', icon: 'wealth' },
+            ]}
+          />
 
           {section === 'overview' ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Cashflow pulse</Text>
-              <Text style={styles.meta}>
-                Income{' '}
-                {formatMoney(detail.summary?.incomeCents ?? 0, currency)} ·
-                Spent{' '}
-                {formatMoney(detail.summary?.expenseCents ?? 0, currency)} ·
-                Planned{' '}
-                {formatMoney(detail.summary?.plannedCents ?? 0, currency)}
-              </Text>
-              <Text style={styles.cardTitle}>
-                Balance{' '}
-                {formatMoney(detail.summary?.balanceCents ?? 0, currency)}
-              </Text>
-              <Text style={styles.meta}>
-                Open Spending for bills and daily expenses, or Wealth for savings
-                and debt.
-              </Text>
-              <View style={styles.row}>
-                <Pressable
-                  style={styles.buttonSecondary}
-                  onPress={() => setSection('outgoings')}
-                >
-                  <Text style={styles.buttonTextSecondary}>Spending</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.buttonSecondary}
-                  onPress={() => setSection('wealth')}
-                >
-                  <Text style={styles.buttonTextSecondary}>Wealth</Text>
-                </Pressable>
-              </View>
-            </View>
+            <FocusHero
+              accentDot
+              eyebrow="Cashflow pulse"
+              meta={`Income ${formatMoney(detail.summary?.incomeCents ?? 0, currency)} · Spent ${formatMoney(detail.summary?.expenseCents ?? 0, currency)} · Planned ${formatMoney(detail.summary?.plannedCents ?? 0, currency)}`}
+              title={formatMoney(detail.summary?.balanceCents ?? 0, currency)}
+              subtitle="Balance this month"
+              actions={
+                <>
+                  <AppButton onPress={() => setSection('outgoings')} variant="acid">
+                    <AcidButtonLabel>Review spending</AcidButtonLabel>
+                  </AppButton>
+                  <AppButton onPress={() => setSection('wealth')} variant="outlineDark">
+                    Open wealth
+                  </AppButton>
+                </>
+              }
+            />
           ) : null}
 
           {section === 'outgoings' ? (

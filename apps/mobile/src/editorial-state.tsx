@@ -1,17 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-
-const serif = Platform.select({
-  ios: 'Georgia',
-  android: 'serif',
-  default: 'Georgia',
-});
+import { colors, serif } from './ui/theme';
 
 export function EditorialState({
   kind,
@@ -40,7 +34,7 @@ export function EditorialState({
     >
       <View style={[styles.mark, kind === 'error' && styles.errorMark]}>
         {kind === 'loading' ? (
-          <ActivityIndicator color="#617A57" size="small" />
+          <ActivityIndicator color={colors.sageDeep} size="small" />
         ) : (
           <Text style={[styles.markText, kind === 'error' && styles.errorMarkText]}>
             {kind === 'error' ? '!' : '·'}
@@ -77,18 +71,18 @@ export function DelayedEditorialLoading({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#DDE2DD',
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
     borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 20,
     paddingVertical: 28,
   },
   compact: { paddingVertical: 20 },
-  errorWrap: { backgroundColor: '#FDF4F1', borderColor: '#E7B7AD' },
+  errorWrap: { backgroundColor: colors.dangerSoft, borderColor: '#E7B7AD' },
   mark: {
     alignItems: 'center',
-    backgroundColor: '#EEF3EA',
+    backgroundColor: colors.sageSurface,
     borderRadius: 20,
     height: 40,
     justifyContent: 'center',
@@ -96,11 +90,16 @@ const styles = StyleSheet.create({
     width: 40,
   },
   errorMark: { backgroundColor: '#F8E4DF' },
-  markText: { color: '#617A57', fontSize: 24, fontWeight: '700' },
-  errorMarkText: { color: '#C9634F' },
-  title: { color: '#14241F', fontFamily: serif, fontSize: 21, textAlign: 'center' },
+  markText: { color: colors.sageDeep, fontSize: 24, fontWeight: '700' },
+  errorMarkText: { color: colors.danger },
+  title: {
+    color: colors.ink,
+    fontFamily: serif,
+    fontSize: 21,
+    textAlign: 'center',
+  },
   description: {
-    color: '#6C7771',
+    color: colors.muted,
     fontSize: 13,
     lineHeight: 19,
     marginTop: 4,

@@ -49,6 +49,7 @@ import {
 import { SwipeableRow } from './swipeable-row';
 import { PriorityScreen } from './priority-screen';
 import { NotesEditor } from './notes-editor';
+import { FocusHero } from './ui';
 
 const colors = {
   ink: '#14241F',
@@ -813,22 +814,13 @@ export function PlanScreen({
             <LifeIcon name="chevron-left" size={16} />
             <Text style={styles.backText}>Areas</Text>
           </Pressable>
-          <View style={styles.areaHeading}>
-            <View style={styles.areaIcon}>
-              <LifeIcon
-                name={lifeIconFromLegacy(
-                  bodyString(selectedArea, 'icon'),
-                  Math.max(pillars.findIndex((pillar) => pillar.id === selectedArea.id), 0),
-                )}
-                size={25}
-              />
-            </View>
-            <Text style={styles.sectionTitle}>{selectedArea.title}</Text>
-          </View>
-          <Text style={styles.cardBody}>
-            {areaProjects.length} active project
-            {areaProjects.length === 1 ? '' : 's'} · {hours.toFixed(1)}h this week
-          </Text>
+          <FocusHero
+            accentDot
+            eyebrow="Life area"
+            meta={`${areaProjects.length} active project${areaProjects.length === 1 ? '' : 's'} · ${hours.toFixed(1)}h this week`}
+            title={selectedArea.title}
+            subtitle={`${hours.toFixed(1)}h of ${availableHours}h committed this week`}
+          />
           <Card>
             <View style={styles.capacitySummary}>
               <CapacityRing
@@ -1442,23 +1434,13 @@ function ProjectDetail({
         <LifeIcon name="chevron-left" size={16} />
         <Text style={styles.backText}>{backLabel}</Text>
       </Pressable>
-      <View style={styles.rowBetween}>
-        <View style={styles.projectHeading}>
-          <LifeIcon name="priority" size={24} />
-          <Text style={[styles.sectionTitle, { flex: 1 }]}>{project.title}</Text>
-        </View>
-        <Pill
-          tone={
-            level === 'HIGH' ? 'danger' : level === 'MEDIUM' ? 'amber' : 'sage'
-          }
-        >
-          {PROJECT_PRIORITY_META[level].title}
-        </Pill>
-      </View>
-      <Text style={styles.listMeta}>
-        {area?.title ?? 'Unassigned'} · {statusLabel}
-        {isArchived ? ' · Archived' : ''}
-      </Text>
+      <FocusHero
+        accentDot
+        eyebrow={PROJECT_PRIORITY_META[level].title}
+        meta={`${area?.title ?? 'Unassigned'} · ${statusLabel}${isArchived ? ' · Archived' : ''} · ${hours.toFixed(1)}h this week`}
+        title={project.title}
+        subtitle={outcome || 'Add an outcome so this project has a clear finish line.'}
+      />
       {isArchived ? null : isDone ? (
         <Button
           disabled={busy}
@@ -1484,13 +1466,6 @@ function ProjectDetail({
           </Button>
         </View>
       )}
-
-      <Card>
-        <MicroLabel>Outcome</MicroLabel>
-        <Text style={styles.outcomeText}>
-          {outcome || 'Add an outcome so this project has a clear finish line.'}
-        </Text>
-      </Card>
 
       <NotesEditor
         item={project}

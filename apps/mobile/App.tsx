@@ -67,6 +67,7 @@ import { PlanScreen } from './src/plan-screen';
 import { SwipeableRow } from './src/swipeable-row';
 import { TodayCapacityStrip } from './src/today-capacity-strip';
 import { TodayPrimaryHero } from './src/today-primary-hero';
+import { FocusHero, YouMenuHero } from './src/ui';
 import { WeeklyReviewScreen } from './src/weekly-review-screen';
 import {
   WEEK_DAYS,
@@ -111,6 +112,7 @@ const colors = {
   muted: '#6C7771',
   sage: '#DBE8D7',
   sageDeep: '#617A57',
+  sageSurface: '#EEF3EA',
   acid: '#D6F57A',
   acidInk: '#2F431E',
   amber: '#F2C66D',
@@ -1513,10 +1515,7 @@ function AppContent() {
 
         {tab === 'you' && youDest === 'menu' ? (
           <View style={styles.stack}>
-            <Text style={styles.sectionTitle}>You</Text>
-            <Text style={styles.lede}>
-              Capacity, review, household, integrations, and settings.
-            </Text>
+            <YouMenuHero />
             {(
               [
                 ['capacity', 'Capacity', 'Weekly hours and load', 'capacity'],
@@ -1539,7 +1538,9 @@ function AppContent() {
                   }
                 }}
               >
-                <LifeIcon name={icon} color={colors.sageDeep} size={22} />
+                <View style={styles.youRowIcon}>
+                  <LifeIcon name={icon} color={colors.sageDeep} size={22} />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.listTitle}>{title}</Text>
                   <Text style={styles.listMeta}>{body}</Text>
@@ -1556,7 +1557,17 @@ function AppContent() {
               <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Capacity</Text>
+            <FocusHero
+              accentDot
+              eyebrow="Capacity"
+              meta={
+                capacity.planned > capacity.available
+                  ? 'Overcommitted — reduce action hours below.'
+                  : 'Within capacity for this week.'
+              }
+              title={`${capacity.planned.toFixed(1)}h planned / ${capacity.available}h available`}
+              subtitle="Weekly load pulse"
+            />
             <Card>
               <View style={styles.ringSummary}>
                 <CapacityRing
@@ -1656,7 +1667,6 @@ function AppContent() {
               <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Weekly Review</Text>
             <WeeklyReviewScreen
               householdId={account!.activeHouseholdId!}
               completedActions={doneActions.length}
@@ -1674,7 +1684,12 @@ function AppContent() {
               <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Integrations</Text>
+            <FocusHero
+              accentDot
+              eyebrow="Integrations"
+              meta="Connect calendar providers and keep schedule sync honest."
+              title="Calendar connectors"
+            />
             <IntegrationsScreen notify={notify} />
           </View>
         ) : null}
@@ -1759,9 +1774,12 @@ function AppContent() {
                 },
               ]}
             >
-              <Text style={styles.sectionTitle}>
-                {fabKind === 'action' ? 'Quick add action' : 'Capture'}
-              </Text>
+              <View style={styles.modalHero}>
+                <Text style={styles.modalHeroEyebrow}>Quick capture</Text>
+                <Text style={styles.modalHeroTitle}>
+                  {fabKind === 'action' ? 'Quick add action' : 'Capture'}
+                </Text>
+              </View>
               <View style={styles.chipRow}>
                 {(
                   [
@@ -2774,7 +2792,7 @@ const styles = StyleSheet.create({
   },
   tabItem: { flex: 1, alignItems: 'center', gap: 4 },
   tabLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
-  tabLabelActive: { color: colors.ink },
+  tabLabelActive: { color: colors.sageDeep, fontWeight: '700' },
   segmentRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2808,15 +2826,23 @@ const styles = StyleSheet.create({
     color: colors.acid,
   },
   youRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     backgroundColor: colors.paper,
+    borderColor: colors.line,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.line,
+    flexDirection: 'row',
+    gap: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
+  },
+  youRowIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.sageSurface,
+    borderRadius: 12,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
   backRow: {
     flexDirection: 'row',
@@ -2870,8 +2896,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 18,
     gap: 12,
+    overflow: 'hidden',
+    padding: 18,
+  },
+  modalHero: {
+    backgroundColor: colors.ink,
+    gap: 6,
+    marginHorizontal: -18,
+    marginTop: -18,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  modalHeroEyebrow: {
+    color: colors.acid,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
+  modalHeroTitle: {
+    color: colors.paper,
+    fontFamily: serif,
+    fontSize: 24,
+    lineHeight: 28,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {

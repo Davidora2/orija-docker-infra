@@ -25,6 +25,7 @@ import {
 } from './priority-matrix';
 import { LandscapeHero } from './landscape-hero';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
+import { CapacityStrip } from './ui';
 
 const colors = {
   ink: '#14241F',
@@ -305,53 +306,25 @@ export function PriorityScreen({
         ) : null}
       </View>
 
-      <View style={styles.capacityCard}>
-        <View style={styles.capacityRow}>
-          <View style={styles.capacityCell}>
-            <Text style={styles.capacityValue} numberOfLines={1}>
-              {plannedHours.toFixed(plannedHours % 1 === 0 ? 0 : 1)}h
-            </Text>
-            <Text style={styles.capacityLabel} numberOfLines={1}>
-              Planned
-            </Text>
-          </View>
-          <View style={styles.capacityCell}>
-            <Text style={styles.capacityValue} numberOfLines={1}>
-              {availableHours}h
-            </Text>
-            <Text style={styles.capacityLabel} numberOfLines={1}>
-              Capacity
-            </Text>
-          </View>
-          <View style={styles.capacityCell}>
-            <Text
-              style={[
-                styles.capacityValue,
-                { color: overCapacity ? colors.danger : colors.sageDeep },
-              ]}
-              numberOfLines={1}
-            >
-              {overCapacity
-                ? `${overHours.toFixed(overHours % 1 === 0 ? 0 : 1)}h over`
-                : 'On track'}
-            </Text>
-            <Text style={styles.capacityLabel} numberOfLines={1}>
-              {overCapacity ? 'Over' : 'Balance'}
-            </Text>
-          </View>
-        </View>
-        {overCapacity ? (
-          <Pressable
-            style={styles.rebalanceLink}
-            onPress={() => setRebalanceOpen(true)}
-          >
-            <Text style={styles.rebalanceLinkText} numberOfLines={1}>
-              Rebalance your week
-            </Text>
-            <LifeIcon name="chevron-right" size={15} color={colors.sageDeep} />
-          </Pressable>
-        ) : null}
-      </View>
+      <CapacityStrip
+        available={availableHours}
+        planned={plannedHours}
+        onOpenCapacity={
+          overCapacity ? () => setRebalanceOpen(true) : undefined
+        }
+      />
+
+      {overCapacity ? (
+        <Pressable
+          style={styles.rebalanceLink}
+          onPress={() => setRebalanceOpen(true)}
+        >
+          <Text style={styles.rebalanceLinkText} numberOfLines={1}>
+            Rebalance your week
+          </Text>
+          <LifeIcon name="chevron-right" size={15} color={colors.sageDeep} />
+        </Pressable>
+      ) : null}
 
       {PRIORITY_MATRIX_ORDER.map((quadrant) => {
         const copy = ACCORDION_COPY[quadrant];
@@ -978,9 +951,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     maxWidth: '48%',
   },
-  filterChipActive: { backgroundColor: colors.sageDeep, borderColor: colors.sageDeep },
+  filterChipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
   filterChipText: { fontSize: 12, fontWeight: '700', color: colors.ink },
-  filterChipTextActive: { color: '#fff' },
+  filterChipTextActive: { color: '#D6F57A' },
   clearChip: { paddingHorizontal: 10, paddingVertical: 8 },
   clearChipText: { color: colors.muted, fontWeight: '700', fontSize: 12 },
   capacityCard: {
