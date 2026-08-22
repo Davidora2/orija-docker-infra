@@ -214,6 +214,15 @@ export {
   quickDateTomorrow,
 } from './dates';
 
+export {
+  summarizeAreasPlan,
+  summarizeIdeasPlan,
+  summarizeProjectsPlan,
+  type AreasPlanSummary,
+  type IdeasPlanSummary,
+  type ProjectsPlanSummary,
+} from './summaries';
+
 export function ideaConversionMetadata(ideaId: string): {
   projectBody: { fromIdeaId: string };
   sourceIdeaStatus: 'CONVERTED';

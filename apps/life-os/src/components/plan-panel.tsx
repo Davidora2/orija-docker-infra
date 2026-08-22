@@ -6,13 +6,16 @@ import {
   ideaOverallScore,
   ideaScoreNarrative,
   isValidDateOnly,
+  summarizeAreasPlan,
+  summarizeIdeasPlan,
+  summarizeProjectsPlan,
   type IdeaLifecycleAction,
 } from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
 import { CapacityRing } from "./capacity-ring";
 import { EditorialState } from "./editorial-state";
 import { EvaluationRadar } from "./evaluation-radar";
-import { LandscapeHero } from "./landscape-hero";
+import { PlanSummaryStrip } from "./plan-summary-strip";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { NotesEditor } from "./notes-editor";
 import { DatePickerField } from "./date-picker-field";
@@ -394,12 +397,31 @@ export function PlanPanel(props: Props) {
   const selectedIdea =
     allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
 
-  const plannedHours = openActions.reduce(
-    (sum, action) => sum + num(action, "hours", 1),
-    0,
+  const areasSummary = useMemo(
+    () =>
+      summarizeAreasPlan({
+        pillars,
+        projects,
+        actions: openActions,
+        availableHours,
+      }),
+    [pillars, projects, openActions, availableHours],
   );
-  const capacityPct =
-    availableHours > 0 ? Math.round((plannedHours / availableHours) * 100) : 0;
+
+  const projectsSummary = useMemo(
+    () =>
+      summarizeProjectsPlan({
+        projects,
+        actions: openActions,
+        availableHours,
+      }),
+    [projects, openActions, availableHours],
+  );
+
+  const ideasSummary = useMemo(
+    () => summarizeIdeasPlan(allIdeas),
+    [allIdeas],
+  );
 
   const filteredProjects = useMemo(() => {
     let list = [...projects];
@@ -1027,15 +1049,10 @@ export function PlanPanel(props: Props) {
           : parkedIdeas;
     return (
       <section className="space-y-4">
-        <LandscapeHero
-          title="Ideas"
-          subtitle="Capture now. Clarify later."
-          detail="Give promising sparks room to breathe, then compare their Impact, Effort, Alignment, and Timing before committing."
-        />
-        <div>
-          <h2 className="font-serif text-3xl text-[#14241f]">Ideas</h2>
-          <p className="text-sm text-[#6c7771]">Capture now. Clarify later.</p>
-        </div>
+        <header>
+          <h1 className="font-serif text-4xl text-[#14241f]">Ideas</h1>
+        </header>
+        <PlanSummaryStrip segment="ideas" summary={ideasSummary} />
         <div className="flex gap-2">
           {(
             [
@@ -1406,11 +1423,10 @@ export function PlanPanel(props: Props) {
 
     return (
       <section className="space-y-4">
-        <LandscapeHero
-          title="Areas"
-          subtitle="Keep every life domain in view."
-          detail="Health cues use active projects and protected weekly time, so you can see what is steady, overloaded, or being neglected."
-        />
+        <header>
+          <h1 className="font-serif text-4xl text-[#14241f]">Areas</h1>
+        </header>
+        <PlanSummaryStrip segment="areas" summary={areasSummary} />
         {pillars.length === 0 ? (
           <EditorialState
             kind="empty"
@@ -1590,21 +1606,12 @@ export function PlanPanel(props: Props) {
 
   return (
     <section className="space-y-4">
-      {projectsView === "list" ? (
-        <LandscapeHero
-          title="Projects"
-          subtitle="Commit to outcomes, not noise."
-          detail="Protect the next action, keep deadlines visible, and match project load to the week you actually have."
-        />
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-serif text-3xl text-[#14241f]">Projects</h2>
-          <p className="text-sm text-[#6c7771]">
-            Projects use High / Med / Low priority. First actions use Importance ×
-            Urgency on the Eisenhower matrix.
-          </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-3">
+          <h1 className="font-serif text-4xl text-[#14241f]">Projects</h1>
+          {projectsView === "list" ? (
+            <PlanSummaryStrip segment="projects" summary={projectsSummary} />
+          ) : null}
         </div>
         <div className="flex gap-2">
           {(
@@ -1941,21 +1948,6 @@ export function PlanPanel(props: Props) {
             })
           )}
 
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-              Capacity this week
-            </p>
-            <p className="mt-1 font-serif text-2xl text-[#14241f]">
-              Total planned {plannedHours.toFixed(1)} of {availableHours} capacity
-            </p>
-            <p className="text-sm text-[#6c7771]">{capacityPct}% used</p>
-            <div className="mt-3">
-              <ProgressBar
-                value={capacityPct}
-                tone={capacityPct > 100 ? "warn" : "sage"}
-              />
-            </div>
-          </article>
         </>
       )}
 

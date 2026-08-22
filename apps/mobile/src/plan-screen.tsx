@@ -18,13 +18,16 @@ import {
   ideaOverallScore,
   ideaScoreNarrative,
   resetPriorityFilters,
+  summarizeAreasPlan,
+  summarizeIdeasPlan,
+  summarizeProjectsPlan,
   type PriorityFilters,
 } from '@life-os/plan-domain';
 import type { LifeItem } from './api';
 import { CapacityRing } from './capacity-ring';
 import { EditorialState } from './editorial-state';
 import { EvaluationRadar } from './evaluation-radar';
-import { LandscapeHero } from './landscape-hero';
+import { PlanSummaryStrip } from './plan-summary-strip';
 import {
   bodyNumber,
   bodyString,
@@ -457,9 +460,30 @@ export function PlanScreen({
     projectSort,
     items,
   ]);
-  const plannedHours = openActions.reduce(
-    (sum, action) => sum + bodyNumber(action, 'hours', 1),
-    0,
+  const areasSummary = useMemo(
+    () =>
+      summarizeAreasPlan({
+        pillars,
+        projects,
+        actions: openActions,
+        availableHours,
+      }),
+    [pillars, projects, openActions, availableHours],
+  );
+
+  const projectsSummary = useMemo(
+    () =>
+      summarizeProjectsPlan({
+        projects,
+        actions: openActions,
+        availableHours,
+      }),
+    [projects, openActions, availableHours],
+  );
+
+  const ideasSummary = useMemo(
+    () => summarizeIdeasPlan(allIdeas),
+    [allIdeas],
   );
 
   const archivedToggle =
@@ -631,15 +655,11 @@ export function PlanScreen({
           : parkedIdeas;
     return (
       <View style={styles.stack}>
-        <LandscapeHero
-          title="Ideas"
-          subtitle="Capture now. Clarify later."
-          detail="Compare Impact, Effort, Alignment, and Timing before a spark earns a place in the week."
-        />
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Ideas</Text>
           <Button onPress={onCaptureIdea}>Capture</Button>
         </View>
+        <PlanSummaryStrip segment="ideas" summary={ideasSummary} variant="dark" />
         <View style={styles.captureBar}>
           <TextInput
             value={ideaTitle}
@@ -902,17 +922,8 @@ export function PlanScreen({
 
     return (
       <View style={styles.stack}>
-        <LandscapeHero
-          title="Areas"
-          subtitle="Keep every life domain in view."
-          detail="Shared health cues show what is steady, overloaded, or being neglected."
-        />
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Areas</Text>
-        </View>
-        <Text style={styles.lede}>
-          Life domains with active load. Tap an area to see its projects.
-        </Text>
+        <Text style={styles.sectionTitle}>Areas</Text>
+        <PlanSummaryStrip segment="areas" summary={areasSummary} variant="dark" />
         {pillars.length === 0 ? (
           <EditorialState
             kind="empty"
@@ -1038,21 +1049,13 @@ export function PlanScreen({
 
   return (
     <View style={styles.stack}>
-      {projectsView === 'list' ? (
-        <LandscapeHero
-          title="Projects"
-          subtitle="Commit to outcomes, not noise."
-          detail="Protect the next action, keep deadlines visible, and match project load to the week you have."
-        />
-      ) : null}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Projects</Text>
         <Button onPress={onNewProject}>New</Button>
       </View>
-      <Text style={styles.listMeta}>
-        Projects use High / Med / Low priority. First actions use Importance ×
-        Urgency on the Eisenhower matrix.
-      </Text>
+      {projectsView === 'list' ? (
+        <PlanSummaryStrip segment="projects" summary={projectsSummary} variant="dark" />
+      ) : null}
       <View style={styles.toggleRow}>
         {(
           [
@@ -1098,36 +1101,6 @@ export function PlanScreen({
               <LifeIcon name="priority" size={17} color={colors.sageDeep} />
               <Text style={styles.toolButtonText}>Filter & sort</Text>
             </Pressable>
-          </View>
-          <View style={styles.capacityStrip}>
-            <View style={styles.capacityStripCell}>
-              <Text style={styles.capacityStripValue}>{plannedHours.toFixed(1)}h</Text>
-              <Text style={styles.capacityStripLabel}>Planned</Text>
-            </View>
-            <View style={styles.capacityStripCell}>
-              <Text style={styles.capacityStripValue}>{availableHours}h</Text>
-              <Text style={styles.capacityStripLabel}>Capacity</Text>
-            </View>
-            <View style={styles.capacityStripCell}>
-              <Text
-                style={[
-                  styles.capacityStripValue,
-                  {
-                    color:
-                      plannedHours > availableHours
-                        ? colors.danger
-                        : colors.sageDeep,
-                  },
-                ]}
-              >
-                {plannedHours > availableHours
-                  ? `${(plannedHours - availableHours).toFixed(1)}h over`
-                  : 'On track'}
-              </Text>
-              <Text style={styles.capacityStripLabel}>
-                {filteredProjects.length} shown
-              </Text>
-            </View>
           </View>
         </>
       ) : null}
