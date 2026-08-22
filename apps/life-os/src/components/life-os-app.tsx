@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ideaConversionMetadata,
+  ideaStatusForAction,
+} from "@life-os/plan-domain";
+import {
   createLifeItem,
   forgotPassword,
   getAccount,
@@ -109,6 +113,7 @@ export function LifeOSApp() {
   const [providers, setProviders] = useState<AuthProviders | null>(null);
   const [ideaTitle, setIdeaTitle] = useState("");
   const [ideaNote, setIdeaNote] = useState("");
+  const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
   const [projectTitle, setProjectTitle] = useState("");
   const [projectOutcome, setProjectOutcome] = useState("");
   const [projectPillarId, setProjectPillarId] = useState("");
@@ -750,14 +755,22 @@ export function LifeOSApp() {
             })
           }
           onConvertIdea={(idea) => {
+            setSourceIdeaId(idea.id);
             setProjectTitle(idea.title);
             setProjectOutcome(str(idea, "note"));
             setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
             setActionTitle(`Next: ${idea.title}`);
             setActionImportance("HIGH");
             setActionUrgency("LOW");
-            setPlanSegment("projects");
           }}
+          onCancelIdeaConversion={() => setSourceIdeaId(null)}
+          onIdeaLifecycle={(idea, action) =>
+            void run(async () => {
+              await updateLifeItem(idea.id, {
+                status: ideaStatusForAction(action),
+              });
+            })
+          }
           onEvaluateIdea={(idea, scores) =>
             void run(async () => {
               const overall =
@@ -826,7 +839,12 @@ export function LifeOSApp() {
                 parentId: projectPillarId || null,
                 body: projectBodyWithPriority(
                   projectBodyWithTargetDate(
-                    { outcome: projectOutcome.trim() },
+                    {
+                      outcome: projectOutcome.trim(),
+                      ...(sourceIdeaId
+                        ? ideaConversionMetadata(sourceIdeaId).projectBody
+                        : {}),
+                    },
                     projectTargetDate || null,
                   ),
                   projectPriorityFromImportance(actionImportance),
@@ -852,6 +870,12 @@ export function LifeOSApp() {
                   actionUrgency,
                 ),
               });
+              if (sourceIdeaId) {
+                await updateLifeItem(sourceIdeaId, {
+                  status: ideaConversionMetadata(sourceIdeaId).sourceIdeaStatus,
+                });
+              }
+              setSourceIdeaId(null);
               setProjectTitle("");
               setProjectOutcome("");
               setProjectTargetDate("");

@@ -26,6 +26,12 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  ideaConversionMetadata,
+  ideaOverallScore,
+  ideaScoreNarrative,
+  ideaStatusForAction,
+} from '@life-os/plan-domain';
 import { AccountSheet } from './src/account-sheet';
 import { BudgetScreen } from './src/budget-screen';
 import { CalendarScreen } from './src/calendar-screen';
@@ -325,6 +331,7 @@ function AppContent() {
   const [quickActionUrgency, setQuickActionUrgency] = useState<PriorityLevel>('LOW');
 
   const [projectOpen, setProjectOpen] = useState(false);
+  const [projectStep, setProjectStep] = useState<1 | 2 | 3>(1);
   const [projectTitle, setProjectTitle] = useState('');
   const [projectOutcome, setProjectOutcome] = useState('');
   const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
@@ -609,7 +616,7 @@ function AppContent() {
           effort,
           alignment,
           timing,
-          score: impact + alignment + timing - effort,
+          score: ideaOverallScore({ impact, effort, alignment, timing }),
         },
       });
       setEvaluateId(null);
@@ -629,6 +636,7 @@ function AppContent() {
     setActionDay('Fri');
     setActionImportance('HIGH');
     setActionUrgency('LOW');
+    setProjectStep(1);
     setProjectOpen(true);
   }
 
@@ -655,7 +663,9 @@ function AppContent() {
           projectBodyWithTargetDate(
             {
               outcome: projectOutcome.trim(),
-              fromIdeaId: sourceIdeaId,
+              ...(sourceIdeaId
+                ? ideaConversionMetadata(sourceIdeaId).projectBody
+                : {}),
             },
             projectTargetDate.trim() || null,
           ),
@@ -690,7 +700,9 @@ function AppContent() {
         ),
       });
       if (sourceIdeaId) {
-        await updateLifeItem(sourceIdeaId, { status: 'CONVERTED' });
+        await updateLifeItem(sourceIdeaId, {
+          status: ideaConversionMetadata(sourceIdeaId).sourceIdeaStatus,
+        });
       }
       setProjectOpen(false);
       setSourceIdeaId(null);
@@ -706,6 +718,44 @@ function AppContent() {
       setPlanSegment('projects');
       notify('Project and next action saved.');
     });
+  }
+
+  async function setIdeaLifecycle(
+    idea: LifeItem,
+    action: 'KEEP' | 'PARK',
+  ) {
+    await run(`${action === 'KEEP' ? 'Keep' : 'Park'} idea`, async () => {
+      await updateLifeItem(idea.id, { status: ideaStatusForAction(action) });
+      await reloadItems();
+      notify(
+        action === 'KEEP'
+          ? 'Idea kept in the inbox.'
+          : 'Idea parked for later.',
+      );
+    });
+  }
+
+  function confirmDiscardIdea(idea: LifeItem) {
+    Alert.alert(
+      'Discard idea?',
+      `"${idea.title}" will be archived and hidden from Plan. It will not be permanently deleted.`,
+      [
+        { text: 'Keep idea', style: 'cancel' },
+        {
+          text: 'Archive idea',
+          style: 'destructive',
+          onPress: () => {
+            void run('Discard idea', async () => {
+              await updateLifeItem(idea.id, {
+                status: ideaStatusForAction('DISCARD'),
+              });
+              await reloadItems();
+              notify('Idea archived.');
+            });
+          },
+        },
+      ],
+    );
   }
 
   async function moveProjectPriority(project: LifeItem, priority: ProjectPriority) {
@@ -1204,6 +1254,7 @@ function AppContent() {
             onAreaTitleChange={setAreaTitle}
             onNewProject={() => {
               setSourceIdeaId(null);
+              setProjectStep(1);
               setProjectTitle('');
               setProjectOutcome('');
               setProjectPillarId(pillars[0]?.id ?? null);
@@ -1215,6 +1266,9 @@ function AppContent() {
               setProjectOpen(true);
             }}
             onCaptureIdea={() => openQuickCapture('idea')}
+            ideaTitle={ideaTitle}
+            onIdeaTitleChange={setIdeaTitle}
+            onSaveIdea={() => void saveIdea()}
             onQuickAction={(projectId) => {
               openQuickCapture('action', projectId);
             }}
@@ -1226,7 +1280,9 @@ function AppContent() {
               setTiming(bodyNumber(idea, 'timing', 3) || 3);
             }}
             onConvert={(idea) => openConvert(idea)}
-            onArchiveIdea={(idea) => void archiveItem(idea)}
+            onArchiveIdea={confirmDiscardIdea}
+            onKeepIdea={(idea) => void setIdeaLifecycle(idea, 'KEEP')}
+            onParkIdea={(idea) => void setIdeaLifecycle(idea, 'PARK')}
             onMoveProjectPriority={(project, priority) =>
               void moveProjectPriority(project, priority)
             }
@@ -1986,12 +2042,14 @@ function AppContent() {
             ))}
             <Pill tone="ink">
               Overall{' '}
-              {(
-                (impact + alignment + timing + (10 - effort)) /
-                4
-              ).toFixed(1)}
+              {ideaOverallScore({ impact, effort, alignment, timing }).toFixed(1)}
               /10
             </Pill>
+            <Text style={styles.cardBody}>
+              {ideaScoreNarrative(
+                ideaOverallScore({ impact, effort, alignment, timing }),
+              )}
+            </Text>
             <View style={styles.row}>
               <Button
                 variant="secondary"
@@ -2016,10 +2074,19 @@ function AppContent() {
         visible={projectOpen}
         animationType="slide"
         transparent
-        onRequestClose={() => setProjectOpen(false)}
+        onRequestClose={() => {
+          setProjectOpen(false);
+          setSourceIdeaId(null);
+        }}
       >
         <View style={styles.modalWrap}>
-          <Pressable style={styles.modalDismiss} onPress={() => setProjectOpen(false)} />
+          <Pressable
+            style={styles.modalDismiss}
+            onPress={() => {
+              setProjectOpen(false);
+              setSourceIdeaId(null);
+            }}
+          />
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={[
@@ -2037,7 +2104,29 @@ function AppContent() {
                 },
               ]}
             >
-              <Text style={styles.sectionTitle}>Create project</Text>
+              <Text style={styles.sectionTitle}>
+                {sourceIdeaId ? 'Turn into project' : 'Create project'}
+              </Text>
+              {sourceIdeaId ? (
+                <>
+                  <Text style={styles.cardBody}>
+                    Step {projectStep} of 3 · Project → first action → review
+                  </Text>
+                  <View style={styles.wizardProgress}>
+                    {([1, 2, 3] as const).map((step) => (
+                      <View
+                        key={step}
+                        style={[
+                          styles.wizardProgressSegment,
+                          projectStep >= step && styles.wizardProgressSegmentActive,
+                        ]}
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            {!sourceIdeaId || projectStep === 1 ? (
+              <>
             <Field
               label="Project title"
               value={projectTitle}
@@ -2076,6 +2165,10 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
+              </>
+            ) : null}
+            {!sourceIdeaId || projectStep === 2 ? (
+              <>
             <Field
               label="First next action"
               value={actionTitle}
@@ -2172,20 +2265,89 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
+              </>
+            ) : null}
+            {sourceIdeaId && projectStep === 3 ? (
+              <View style={styles.reviewCard}>
+                <Text style={styles.cardEyebrow}>Review</Text>
+                <Text style={styles.cardTitle}>{projectTitle || 'Untitled project'}</Text>
+                <Text style={styles.cardBody}>
+                  {projectOutcome || 'No outcome added.'}
+                </Text>
+                <Text style={styles.listTitle}>
+                  First action · {actionTitle || 'Not set'}
+                </Text>
+                <Text style={styles.listMeta}>
+                  {actionHours || '?'}h · {actionDay} ·{' '}
+                  {
+                    PRIORITY_QUADRANT_META[
+                      quadrantFromLevels(actionImportance, actionUrgency)
+                    ].label
+                  }
+                  {actionScheduleDate ? ` · ${actionScheduleDate}` : ''}
+                </Text>
+                <Text style={styles.cardBody}>
+                  The idea is marked Converted only after the project and first
+                  action are created successfully.
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.row}>
               <Button
                 variant="secondary"
                 style={{ flex: 1 }}
-                onPress={() => setProjectOpen(false)}
+                onPress={() => {
+                  if (sourceIdeaId && projectStep > 1) {
+                    setProjectStep((current) =>
+                      current === 3 ? 2 : 1,
+                    );
+                  } else {
+                    setProjectOpen(false);
+                    setSourceIdeaId(null);
+                  }
+                }}
               >
-                Cancel
+                {sourceIdeaId && projectStep > 1 ? 'Back' : 'Cancel'}
               </Button>
               <Button
                 style={{ flex: 1 }}
                 disabled={busy}
-                onPress={() => void saveProject()}
+                onPress={() => {
+                  if (sourceIdeaId && projectStep < 3) {
+                    if (projectStep === 1) {
+                      if (!projectTitle.trim()) {
+                        notify('Project needs a title.');
+                        return;
+                      }
+                      setProjectStep(2);
+                      return;
+                    }
+                    if (!actionTitle.trim() || Number(actionHours) <= 0) {
+                      notify('Add a first action with positive hours.');
+                      return;
+                    }
+                    if (
+                      quadrantRequiresScheduledDate(
+                        quadrantFromLevels(actionImportance, actionUrgency),
+                      ) &&
+                      !/^\d{4}-\d{2}-\d{2}$/.test(actionScheduleDate)
+                    ) {
+                      notify('Schedule actions need a date (YYYY-MM-DD).');
+                      return;
+                    }
+                    setProjectStep(3);
+                    return;
+                  }
+                  void saveProject();
+                }}
               >
-                Save project
+                {sourceIdeaId
+                  ? projectStep === 1
+                    ? 'Continue'
+                    : projectStep === 2
+                      ? 'Review'
+                      : 'Create project'
+                  : 'Save project'}
               </Button>
             </View>
             </ScrollView>
@@ -2562,4 +2724,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   scoreSlider: { height: 42, marginHorizontal: -8 },
+  wizardProgress: { flexDirection: 'row', gap: 6 },
+  wizardProgressSegment: {
+    backgroundColor: colors.line,
+    borderRadius: 999,
+    flex: 1,
+    height: 6,
+  },
+  wizardProgressSegmentActive: { backgroundColor: colors.sageDeep },
+  reviewCard: {
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 10,
+    padding: 16,
+  },
 });

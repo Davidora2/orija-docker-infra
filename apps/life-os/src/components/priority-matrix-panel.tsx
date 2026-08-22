@@ -12,7 +12,6 @@ import {
 type Props = {
   actions: LifeItem[];
   projects: LifeItem[];
-  areas: LifeItem[];
   busy: boolean;
   onMove: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onViewList?: () => void;
@@ -33,30 +32,18 @@ function hoursOf(action: LifeItem) {
 export function PriorityMatrixPanel({
   actions,
   projects,
-  areas,
   busy,
   onMove,
   onViewList,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [areaFilter, setAreaFilter] = useState("");
-  const [projectFilter, setProjectFilter] = useState("");
-  const [thisWeekOnly, setThisWeekOnly] = useState(false);
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
 
-  const filtered = useMemo(() => {
-    return actions.filter((action) => {
-      const project = projectById.get(action.parentId ?? "");
-      if (areaFilter && project?.parentId !== areaFilter) return false;
-      if (projectFilter && action.parentId !== projectFilter) return false;
-      if (thisWeekOnly && action.body.day === "Later") return false;
-      return true;
-    });
-  }, [actions, areaFilter, projectFilter, thisWeekOnly, projectById]);
+  const filtered = actions;
 
   const totalHours = filtered.reduce((sum, action) => sum + hoursOf(action), 0);
   const selected = selectedId
@@ -76,48 +63,8 @@ export function PriorityMatrixPanel({
         </p>
       </header>
 
-      <div className="flex flex-wrap gap-2">
-        <select
-          className="rounded-full border border-[#dde2dd] bg-white px-3 py-1.5 text-xs font-bold"
-          value={areaFilter}
-          onChange={(event) => {
-            setAreaFilter(event.target.value);
-            setProjectFilter("");
-          }}
-        >
-          <option value="">All areas</option>
-          {areas.map((area) => (
-            <option key={area.id} value={area.id}>
-              {area.title}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-full border border-[#dde2dd] bg-white px-3 py-1.5 text-xs font-bold"
-          value={projectFilter}
-          onChange={(event) => setProjectFilter(event.target.value)}
-        >
-          <option value="">All projects</option>
-          {projects
-            .filter((project) => !areaFilter || project.parentId === areaFilter)
-            .map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.title}
-              </option>
-            ))}
-        </select>
-        <button
-          type="button"
-          className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-            thisWeekOnly
-              ? "bg-[#617a57] text-white"
-              : "border border-[#dde2dd] bg-white text-[#14241f]"
-          }`}
-          onClick={() => setThisWeekOnly((value) => !value)}
-        >
-          This week
-        </button>
-        {onViewList ? (
+      {onViewList ? (
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             className="rounded-full border border-[#dde2dd] bg-white px-3 py-1.5 text-xs font-bold"
@@ -125,8 +72,8 @@ export function PriorityMatrixPanel({
           >
             View list
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-[#dde2dd] bg-white p-4 sm:p-5">
         <div className="mb-3 flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.12em] text-[#6c7771]">

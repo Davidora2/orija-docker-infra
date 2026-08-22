@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  ideaOverallScore,
+  ideaScoreNarrative,
+  type IdeaLifecycleAction,
+} from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
 import { CapacityRing } from "./capacity-ring";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
@@ -79,6 +84,11 @@ type Props = {
   onIdeaNoteChange: (value: string) => void;
   onSaveIdea: () => void;
   onConvertIdea: (idea: LifeItem) => void;
+  onCancelIdeaConversion: () => void;
+  onIdeaLifecycle: (
+    idea: LifeItem,
+    action: Exclude<IdeaLifecycleAction, "CONVERT">,
+  ) => void;
   onEvaluateIdea: (
     idea: LifeItem,
     scores: {
@@ -334,7 +344,9 @@ export function PlanPanel(props: Props) {
   } = props;
 
   const [projectsView, setProjectsView] = useState<"list" | "matrix">("list");
-  const [ideasTab, setIdeasTab] = useState<"inbox" | "evaluated">("inbox");
+  const [ideasTab, setIdeasTab] = useState<"inbox" | "evaluated" | "parked">(
+    "inbox",
+  );
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
@@ -348,6 +360,7 @@ export function PlanPanel(props: Props) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [evaluateOpen, setEvaluateOpen] = useState(false);
   const [convertStep, setConvertStep] = useState<0 | 1 | 2 | 3>(0);
+  const [discardIdeaId, setDiscardIdeaId] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [filterAreaId, setFilterAreaId] = useState("");
@@ -395,11 +408,13 @@ export function PlanPanel(props: Props) {
   const inboxIdeas = allIdeas.filter(
     (idea) =>
       idea.status !== "EVALUATED" &&
+      idea.status !== "PARKED" &&
       idea.status !== "CONVERTED" &&
       idea.status !== "ARCHIVED" &&
       idea.status !== "DONE",
   );
   const evaluatedIdeas = allIdeas.filter((idea) => idea.status === "EVALUATED");
+  const parkedIdeas = allIdeas.filter((idea) => idea.status === "PARKED");
 
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
@@ -518,7 +533,12 @@ export function PlanPanel(props: Props) {
       <PriorityPanel
         pillars={pillars}
         projects={projects}
-        openActions={openActions}
+        actions={items.filter(
+          (item) =>
+            item.kind === "ACTION" &&
+            item.status !== "ARCHIVED" &&
+            item.status !== "CONVERTED",
+        )}
         availableHours={availableHours}
         busy={busy}
         onMoveAction={props.onMoveAction}
@@ -543,7 +563,10 @@ export function PlanPanel(props: Props) {
           <button
             type="button"
             className="text-sm font-bold text-[#617a57]"
-            onClick={() => setConvertStep(0)}
+            onClick={() => {
+              setConvertStep(0);
+              props.onCancelIdeaConversion();
+            }}
           >
             <span className="inline-flex items-center gap-1">
               <LifeIcon name="chevron-left" size={15} />
@@ -771,12 +794,7 @@ export function PlanPanel(props: Props) {
 
     if (selectedIdea) {
       const area = pillars.find((p) => p.id === selectedIdea.parentId);
-      const overall =
-        (num(selectedIdea, "impact", 0) +
-          num(selectedIdea, "alignment", 0) +
-          num(selectedIdea, "timing", 0) +
-          (10 - num(selectedIdea, "effort", 0))) /
-        4;
+      const overall = ideaOverallScore(selectedIdea.body);
       return (
         <section className="space-y-4">
           <button
@@ -836,13 +854,44 @@ export function PlanPanel(props: Props) {
             >
               Turn into project
             </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-sm font-bold"
+              disabled={busy || selectedIdea.status === "ACTIVE"}
+              onClick={() => props.onIdeaLifecycle(selectedIdea, "KEEP")}
+            >
+              Keep in inbox
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-sm font-bold"
+              disabled={busy || selectedIdea.status === "PARKED"}
+              onClick={() => props.onIdeaLifecycle(selectedIdea, "PARK")}
+            >
+              Park for later
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[#e7b7ad] bg-[#fdf4f1] px-4 py-3 text-sm font-bold text-[#c9634f]"
+              disabled={busy}
+              onClick={() => setDiscardIdeaId(selectedIdea.id)}
+            >
+              Discard…
+            </button>
           </div>
           <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm">
             {(
               [
                 ["Area", area?.title ?? "—"],
                 ["Related project", "—"],
-                ["Status", selectedIdea.status === "EVALUATED" ? "Evaluated" : "Inbox"],
+                [
+                  "Status",
+                  selectedIdea.status === "EVALUATED"
+                    ? "Evaluated"
+                    : selectedIdea.status === "PARKED"
+                      ? "Parked"
+                      : "Inbox",
+                ],
                 ["Captured", relativeTime(selectedIdea.createdAt)],
                 ["Notes", str(selectedIdea, "note") || "—"],
               ] as const
@@ -867,11 +916,7 @@ export function PlanPanel(props: Props) {
                 {overall.toFixed(1)}
               </p>
               <p className="text-sm text-[#6c7771]">
-                {overall >= 7
-                  ? "Strong candidate — consider turning into a project."
-                  : overall >= 5
-                    ? "Promising — refine or park for later."
-                    : "Light signal — keep in inbox or discard."}
+                {ideaScoreNarrative(overall)}
               </p>
             </article>
           ) : null}
@@ -969,11 +1014,44 @@ export function PlanPanel(props: Props) {
               </div>
             </Sheet>
           ) : null}
+          {discardIdeaId === selectedIdea.id ? (
+            <Sheet
+              title="Discard idea?"
+              subtitle="Discard archives this idea. It is hidden from Plan but remains recoverable; nothing is permanently deleted."
+              onClose={() => setDiscardIdeaId(null)}
+            >
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-xs font-bold"
+                  onClick={() => setDiscardIdeaId(null)}
+                >
+                  Keep idea
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-xl bg-[#c9634f] px-4 py-3 text-xs font-bold text-white"
+                  onClick={() => {
+                    props.onIdeaLifecycle(selectedIdea, "DISCARD");
+                    setDiscardIdeaId(null);
+                    setSelectedIdeaId(null);
+                  }}
+                >
+                  Archive idea
+                </button>
+              </div>
+            </Sheet>
+          ) : null}
         </section>
       );
     }
 
-    const list = ideasTab === "inbox" ? inboxIdeas : evaluatedIdeas;
+    const list =
+      ideasTab === "inbox"
+        ? inboxIdeas
+        : ideasTab === "evaluated"
+          ? evaluatedIdeas
+          : parkedIdeas;
     return (
       <section className="space-y-4">
         <HillsHero />
@@ -986,6 +1064,7 @@ export function PlanPanel(props: Props) {
             [
               ["inbox", `Inbox (${inboxIdeas.length})`],
               ["evaluated", `Evaluated (${evaluatedIdeas.length})`],
+              ["parked", `Parked (${parkedIdeas.length})`],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -1034,7 +1113,11 @@ export function PlanPanel(props: Props) {
         {list.length === 0 ? (
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
             <p className="font-serif text-xl text-[#14241f]">
-              {ideasTab === "inbox" ? "Inbox is clear" : "Nothing evaluated yet"}
+              {ideasTab === "inbox"
+                ? "Inbox is clear"
+                : ideasTab === "evaluated"
+                  ? "Nothing evaluated yet"
+                  : "Nothing parked"}
             </p>
             <p className="mt-1 text-sm text-[#6c7771]">
               Rough captures land here until you evaluate or convert them.
@@ -1093,6 +1176,25 @@ export function PlanPanel(props: Props) {
                 >
                   To project
                 </button>
+                {ideasTab === "parked" ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-xl border border-[#dde2dd] px-3 py-2 text-[11px] font-bold"
+                    disabled={busy}
+                    onClick={() => props.onIdeaLifecycle(idea, "KEEP")}
+                  >
+                    Keep
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-xl border border-[#dde2dd] px-3 py-2 text-[11px] font-bold"
+                    disabled={busy}
+                    onClick={() => props.onIdeaLifecycle(idea, "PARK")}
+                  >
+                    Park
+                  </button>
+                )}
                 <button
                   type="button"
                   className="shrink-0 text-[#6c7771]"
@@ -1502,7 +1604,10 @@ export function PlanPanel(props: Props) {
           <button
             type="button"
             className="rounded-xl bg-[#14241f] px-3 py-1.5 text-xs font-bold text-[#f4f5f0]"
-            onClick={() => setComposerOpen((openState) => !openState)}
+              onClick={() => {
+                props.onCancelIdeaConversion();
+                setComposerOpen((openState) => !openState);
+              }}
           >
             + Add project
           </button>
@@ -1513,7 +1618,6 @@ export function PlanPanel(props: Props) {
         <PriorityMatrixPanel
           actions={openActions}
           projects={projects}
-          areas={pillars}
           busy={busy}
           onMove={props.onMoveAction}
           onViewList={() => setProjectsView("list")}
