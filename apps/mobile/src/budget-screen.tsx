@@ -23,6 +23,7 @@ const colors = {
   paper: '#FFFFFF',
   line: '#DDE2DD',
   muted: '#6C7771',
+  sageDeep: '#617A57',
   acid: '#D6F57A',
 };
 
