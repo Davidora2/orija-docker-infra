@@ -394,13 +394,6 @@ export function PlanPanel(props: Props) {
   const selectedIdea =
     allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
 
-  const plannedHours = openActions.reduce(
-    (sum, action) => sum + num(action, "hours", 1),
-    0,
-  );
-  const capacityPct =
-    availableHours > 0 ? Math.round((plannedHours / availableHours) * 100) : 0;
-
   const filteredProjects = useMemo(() => {
     let list = [...projects];
     if (filterAreaId) list = list.filter((p) => p.parentId === filterAreaId);
@@ -1026,16 +1019,12 @@ export function PlanPanel(props: Props) {
           ? evaluatedIdeas
           : parkedIdeas;
     return (
-      <section className="space-y-4">
+      <section className="space-y-3">
         <LandscapeHero
           title="Ideas"
           subtitle="Capture now. Clarify later."
           detail="Give promising sparks room to breathe, then compare their Impact, Effort, Alignment, and Timing before committing."
         />
-        <div>
-          <h2 className="font-serif text-3xl text-[#14241f]">Ideas</h2>
-          <p className="text-sm text-[#6c7771]">Capture now. Clarify later.</p>
-        </div>
         <div className="flex gap-2">
           {(
             [
@@ -1405,7 +1394,7 @@ export function PlanPanel(props: Props) {
     }
 
     return (
-      <section className="space-y-4">
+      <section className="space-y-3">
         <LandscapeHero
           title="Areas"
           subtitle="Keep every life domain in view."
@@ -1589,7 +1578,7 @@ export function PlanPanel(props: Props) {
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       {projectsView === "list" ? (
         <LandscapeHero
           title="Projects"
@@ -1598,14 +1587,12 @@ export function PlanPanel(props: Props) {
         />
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="font-serif text-3xl text-[#14241f]">Projects</h2>
-          <p className="text-sm text-[#6c7771]">
-            Projects use High / Med / Low priority. First actions use Importance ×
-            Urgency on the Eisenhower matrix.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="min-w-0 flex-1 text-sm text-[#6c7771]">
+          {projectsView === "list"
+            ? "List active work, filter by area, or open the matrix."
+            : "Drag actions between quadrants to rebalance priority."}
+        </p>
         <div className="flex gap-2">
           {(
             [
@@ -1941,21 +1928,6 @@ export function PlanPanel(props: Props) {
             })
           )}
 
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-              Capacity this week
-            </p>
-            <p className="mt-1 font-serif text-2xl text-[#14241f]">
-              Total planned {plannedHours.toFixed(1)} of {availableHours} capacity
-            </p>
-            <p className="text-sm text-[#6c7771]">{capacityPct}% used</p>
-            <div className="mt-3">
-              <ProgressBar
-                value={capacityPct}
-                tone={capacityPct > 100 ? "warn" : "sage"}
-              />
-            </div>
-          </article>
         </>
       )}
 

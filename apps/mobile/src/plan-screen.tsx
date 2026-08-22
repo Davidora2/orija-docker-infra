@@ -457,11 +457,6 @@ export function PlanScreen({
     projectSort,
     items,
   ]);
-  const plannedHours = openActions.reduce(
-    (sum, action) => sum + bodyNumber(action, 'hours', 1),
-    0,
-  );
-
   const archivedToggle =
     onShowArchivedChange != null ? (
       <Pressable
@@ -636,10 +631,6 @@ export function PlanScreen({
           subtitle="Capture now. Clarify later."
           detail="Compare Impact, Effort, Alignment, and Timing before a spark earns a place in the week."
         />
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Ideas</Text>
-          <Button onPress={onCaptureIdea}>Capture</Button>
-        </View>
         <View style={styles.captureBar}>
           <TextInput
             value={ideaTitle}
@@ -907,12 +898,6 @@ export function PlanScreen({
           subtitle="Keep every life domain in view."
           detail="Shared health cues show what is steady, overloaded, or being neglected."
         />
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Areas</Text>
-        </View>
-        <Text style={styles.lede}>
-          Life domains with active load. Tap an area to see its projects.
-        </Text>
         {pillars.length === 0 ? (
           <EditorialState
             kind="empty"
@@ -1046,13 +1031,13 @@ export function PlanScreen({
         />
       ) : null}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Projects</Text>
+        <Text style={styles.sectionContext}>
+          {projectsView === 'list'
+            ? 'Active commitments'
+            : 'Rebalance by quadrant'}
+        </Text>
         <Button onPress={onNewProject}>New</Button>
       </View>
-      <Text style={styles.listMeta}>
-        Projects use High / Med / Low priority. First actions use Importance ×
-        Urgency on the Eisenhower matrix.
-      </Text>
       <View style={styles.toggleRow}>
         {(
           [
@@ -1098,36 +1083,6 @@ export function PlanScreen({
               <LifeIcon name="priority" size={17} color={colors.sageDeep} />
               <Text style={styles.toolButtonText}>Filter & sort</Text>
             </Pressable>
-          </View>
-          <View style={styles.capacityStrip}>
-            <View style={styles.capacityStripCell}>
-              <Text style={styles.capacityStripValue}>{plannedHours.toFixed(1)}h</Text>
-              <Text style={styles.capacityStripLabel}>Planned</Text>
-            </View>
-            <View style={styles.capacityStripCell}>
-              <Text style={styles.capacityStripValue}>{availableHours}h</Text>
-              <Text style={styles.capacityStripLabel}>Capacity</Text>
-            </View>
-            <View style={styles.capacityStripCell}>
-              <Text
-                style={[
-                  styles.capacityStripValue,
-                  {
-                    color:
-                      plannedHours > availableHours
-                        ? colors.danger
-                        : colors.sageDeep,
-                  },
-                ]}
-              >
-                {plannedHours > availableHours
-                  ? `${(plannedHours - availableHours).toFixed(1)}h over`
-                  : 'On track'}
-              </Text>
-              <Text style={styles.capacityStripLabel}>
-                {filteredProjects.length} shown
-              </Text>
-            </View>
           </View>
         </>
       ) : null}
@@ -1881,6 +1836,12 @@ const styles = StyleSheet.create({
     fontSize: 26,
     color: colors.ink,
     flex: 1,
+  },
+  sectionContext: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   lede: { color: colors.muted, lineHeight: 20, marginBottom: 4 },
   card: {
