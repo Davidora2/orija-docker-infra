@@ -1,19 +1,52 @@
 import nodemailer from 'nodemailer';
 import type { AppConfig } from './config.js';
+import {
+  getEmailDeliveryBlockReason,
+  type EmailDeliveryPurpose,
+} from './email-guard.js';
 
 export type MailMessage = {
   to: string;
   subject: string;
   text: string;
+  purpose?: EmailDeliveryPurpose;
+};
+
+export type MailSendResult = {
+  delivered: boolean;
+  mode: string;
+  blocked?: boolean;
+  blockReason?: string;
 };
 
 export type Mailer = {
-  send: (message: MailMessage) => Promise<{ delivered: boolean; mode: string }>;
+  send: (message: MailMessage) => Promise<MailSendResult>;
 };
 
 export function createMailer(config: AppConfig): Mailer {
   return {
     async send(message) {
+      const purpose = message.purpose ?? 'auth';
+      const blockReason = await getEmailDeliveryBlockReason(
+        message.to,
+        config,
+        purpose,
+      );
+      if (blockReason) {
+        console.info('[life-os-mail] blocked delivery', {
+          to: message.to,
+          subject: message.subject,
+          purpose,
+          reason: blockReason,
+        });
+        return {
+          delivered: false,
+          mode: blockReason === 'skip_env' ? 'skipped' : 'blocked',
+          blocked: true,
+          blockReason,
+        };
+      }
+
       // Prefer Gmail / generic SMTP with app password
       if (config.smtpUser && config.smtpAppPassword) {
         const transporter = nodemailer.createTransport({

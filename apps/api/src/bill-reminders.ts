@@ -309,6 +309,7 @@ export async function sendBillRemindersForUser(
     to: user.email,
     subject: message.subject,
     text: message.text,
+    purpose: 'transactional',
   });
 
   await sql`
