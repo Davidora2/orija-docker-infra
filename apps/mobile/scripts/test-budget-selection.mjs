@@ -3,7 +3,12 @@
  * Run: node apps/mobile/scripts/test-budget-selection.mjs
  */
 import assert from 'node:assert/strict';
-import { pickDefaultBudgetId } from '../../life-os-shared/src/index.ts';
+import {
+  dedupeBudgetsById,
+  dedupeBudgetsForDisplay,
+  pickDefaultBudgetId,
+  resolveBudgetSelection,
+} from '../../life-os-shared/src/index.ts';
 
 const davidId = 'f5d5994a-7883-4894-b77e-8bc226a868cd';
 const partnerId = '4228f615-219c-4c25-a483-f993a3eaf29f';
@@ -18,6 +23,10 @@ const davidBudgets = [
     id: 'personal-full',
     ownerUserId: davidId,
     visibility: 'PRIVATE',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+    recurringCount: 8,
+    recurringTotalCents: 87540,
   },
 ];
 
@@ -29,14 +38,20 @@ assert.equal(
 
 assert.equal(
   pickDefaultBudgetId(davidBudgets, davidId, { storedId: 'shared-empty' }),
-  'shared-empty',
-  'stored preference should be respected when still valid',
+  'personal-full',
+  'stored empty shared budget should not hide populated personal budget',
 );
 
 assert.equal(
   pickDefaultBudgetId(davidBudgets, davidId, { preferredId: 'shared-empty' }),
   'shared-empty',
   'explicit preferred id should win',
+);
+
+assert.equal(
+  pickDefaultBudgetId(davidBudgets, davidId, { currentId: 'personal-full' }),
+  'personal-full',
+  'current valid selection should stay on refresh',
 );
 
 assert.equal(
@@ -78,5 +93,70 @@ assert.equal(
   'personal-full-old',
   'stored thin duplicate should not hide populated personal budget',
 );
+
+const duplicateRows = [
+  ...duplicatePersonal,
+  duplicatePersonal[1],
+  duplicatePersonal[0],
+];
+
+assert.equal(
+  dedupeBudgetsById(duplicateRows).length,
+  2,
+  'dedupe should collapse repeated budget ids',
+);
+
+const resolved = resolveBudgetSelection(duplicateRows, davidId, {
+  currentId: 'personal-full-old',
+  storedId: 'personal-empty-new',
+});
+assert.equal(resolved.budgets.length, 2);
+assert.equal(
+  resolved.selectedId,
+  'personal-full-old',
+  'resolve should keep current populated budget on refresh',
+);
+
+const currencyPair = [
+  {
+    id: 'personal-gbp',
+    ownerUserId: davidId,
+    visibility: 'PRIVATE',
+    currency: 'GBP',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+    recurringCount: 8,
+  },
+  {
+    id: 'personal-cad',
+    ownerUserId: davidId,
+    visibility: 'PRIVATE',
+    currency: 'CAD',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+    recurringCount: 8,
+  },
+];
+
+assert.equal(
+  pickDefaultBudgetId(currencyPair, davidId, { profileCurrency: 'CAD' }),
+  'personal-cad',
+  'profile currency should win when multiple populated budgets exist',
+);
+
+const displayDupes = dedupeBudgetsForDisplay(duplicateRows, 'CAD');
+assert.equal(displayDupes.length, 1);
+assert.equal(
+  displayDupes[0].id,
+  'personal-full-old',
+  'display dedupe should hide thin duplicate personal rows',
+);
+
+const resolvedDisplay = resolveBudgetSelection(duplicateRows, davidId, {
+  profileCurrency: 'CAD',
+  currentId: 'personal-full-old',
+});
+assert.equal(resolvedDisplay.displayBudgets.length, 1);
+assert.equal(resolvedDisplay.selectedId, 'personal-full-old');
 
 console.log('budget-selection tests passed');

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createBudget,
   getBudget,
@@ -12,7 +12,10 @@ import {
   loadLastBudgetId,
   saveLastBudgetId,
 } from "../lib/budget-selection";
-import { pickDefaultBudgetId } from "@life-os/shared";
+import {
+  resolveBudgetSelection,
+  type BudgetListItem,
+} from "@life-os/shared";
 import { DashboardPanel } from "./dashboard-panel";
 import { FocusHero } from "./focus-hero";
 import { LifeIcon } from "./life-icon";
@@ -30,7 +33,8 @@ export function BudgetPanel({
   onError,
   spendCaptureNonce = 0,
 }: Props) {
-  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
+  const [displayBudgets, setDisplayBudgets] = useState<BudgetListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,27 +43,41 @@ export function BudgetPanel({
   const [section, setSection] = useState<"overview" | "spending" | "wealth">(
     "overview",
   );
+  const activeIdRef = useRef<string | null>(null);
+  const hasLoadedRef = useRef(false);
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || "GBP";
 
   const reload = useCallback(
     async (preferredId?: string) => {
-      await Promise.resolve();
-      setLoading(true);
+      const isInitialLoad = !hasLoadedRef.current;
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setLoadError("");
       try {
         const list = await listBudgets();
-        setBudgets(list);
-        const nextId = pickDefaultBudgetId(list, account.user.id, {
-          preferredId: preferredId ?? activeId,
-          storedId: loadLastBudgetId(account.user.id),
-        });
-        setActiveId(nextId);
-        if (nextId) {
+        const { budgets: unique, displayBudgets: visible, selectedId: nextId } =
+          resolveBudgetSelection(list, account.user.id, {
+            preferredId,
+            storedId: loadLastBudgetId(account.user.id),
+            currentId: activeIdRef.current,
+            profileCurrency: currency,
+          });
+        setBudgets(unique);
+        setDisplayBudgets(visible);
+        if (nextId !== activeIdRef.current) {
+          setActiveId(nextId);
+          activeIdRef.current = nextId;
+          if (nextId) {
+            saveLastBudgetId(account.user.id, nextId);
+            setDetail(await getBudget(nextId));
+          } else {
+            setDetail(null);
+          }
+        } else if (nextId) {
           saveLastBudgetId(account.user.id, nextId);
-          setDetail(await getBudget(nextId));
-        } else {
-          setDetail(null);
+          void getBudget(nextId).then(setDetail);
         }
       } catch (error) {
         const message =
@@ -67,10 +85,13 @@ export function BudgetPanel({
         setLoadError(message);
         onError(message);
       } finally {
-        setLoading(false);
+        hasLoadedRef.current = true;
+        if (isInitialLoad) {
+          setLoading(false);
+        }
       }
     },
-    [account.user.id, activeId, onError],
+    [account.user.id, currency, onError],
   );
 
   useEffect(() => {
@@ -101,8 +122,8 @@ export function BudgetPanel({
 
   async function selectBudget(id: string) {
     setActiveId(id);
+    activeIdRef.current = id;
     saveLastBudgetId(account.user.id, id);
-    setLoading(true);
     setLoadError("");
     try {
       setDetail(await getBudget(id));
@@ -111,8 +132,6 @@ export function BudgetPanel({
         error instanceof Error ? error.message : "Could not open this money space.";
       setLoadError(message);
       onError(message);
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -151,7 +170,7 @@ export function BudgetPanel({
         })}
       </nav>
 
-      {budgets.length > 0 ? (
+      {displayBudgets.length > 0 ? (
         <article className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#dde2dd] bg-white px-4 py-3">
           <label className="flex min-w-[14rem] flex-1 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#eef3eb]">
@@ -172,7 +191,7 @@ export function BudgetPanel({
                 aria-label="Money space"
                 onChange={(event) => void selectBudget(event.target.value)}
               >
-                {budgets.map((budget) => (
+                {displayBudgets.map((budget) => (
                   <option key={budget.id} value={budget.id}>
                     {budget.name} ·{" "}
                     {budget.visibility === "SHARED" ? "Shared" : "Personal"}
