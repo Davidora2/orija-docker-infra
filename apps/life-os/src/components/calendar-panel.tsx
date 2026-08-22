@@ -18,6 +18,7 @@ import {
   DelayedEditorialLoading,
   EditorialState,
 } from "./editorial-state";
+import { FocusHero } from "./focus-hero";
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -155,14 +156,20 @@ export function CalendarPanel({
     <section className="space-y-4">
       <CalendarSyncPanel onError={onError} />
 
+      <FocusHero
+        accentDot
+        eyebrow="Calendar"
+        meta="Tasks, deadlines, payments, and paydays in one rhythm."
+        subtitle={
+          data
+            ? `${data.events.length} event${data.events.length === 1 ? "" : "s"} in view`
+            : "Loading your schedule"
+        }
+        title={view === "month" ? monthLabel : "This week"}
+      />
+
       <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-serif text-2xl">Calendar</h2>
-            <p className="text-sm text-[#6c7771]">
-              Tasks, project deadlines, saving targets, payments, and paydays in one place.
-            </p>
-          </div>
           <div className="flex gap-2">
             {(["week", "month"] as const).map((id) => (
               <button

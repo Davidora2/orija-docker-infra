@@ -10,6 +10,7 @@ import {
 } from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
 import { DatePickerField } from "./date-picker-field";
+import { LandscapeHero } from "./landscape-hero";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import {
@@ -291,9 +292,16 @@ export function PriorityPanel({
 
   return (
     <section className="space-y-4">
+      <LandscapeHero
+        detail="Shape Areas, commit Projects, and protect the actions that deserve this week."
+        eyebrow="Life OS · Plan"
+        subtitle="Decide what exists and what matters."
+        title="Plan"
+      />
+
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="font-serif text-4xl text-[#14241f]">Priority</h1>
+          <h1 className="font-serif text-2xl text-[#14241f]">Priority</h1>
           <p className="mt-1 text-sm leading-snug text-[#6c7771]">
             Focus on what deserves your attention.
           </p>
