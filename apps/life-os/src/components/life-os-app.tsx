@@ -227,6 +227,13 @@ export function LifeOSApp() {
     })[0];
   }, [openActions, projects]);
   const primary = useMemo(() => {
+    const profilePrimaryId = account?.user.body?.primaryMoveActionId;
+    if (profilePrimaryId) {
+      const profileAction = actions.find(
+        (item) => item.id === profilePrimaryId && item.kind === "ACTION",
+      );
+      if (profileAction) return profileAction;
+    }
     if (stickyPrimaryId) {
       const sticky = actions.find((item) => item.id === stickyPrimaryId);
       if (sticky && sticky.kind === "ACTION" && sticky.status === "DONE") {
@@ -234,7 +241,12 @@ export function LifeOSApp() {
       }
     }
     return rankedOpenPrimary;
-  }, [stickyPrimaryId, actions, rankedOpenPrimary]);
+  }, [
+    account?.user.body?.primaryMoveActionId,
+    stickyPrimaryId,
+    actions,
+    rankedOpenPrimary,
+  ]);
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
 
   useEffect(() => {
@@ -1218,7 +1230,42 @@ export function LifeOSApp() {
       {tab === "calendar" ? (
         <CalendarPanel
           preferredCurrency={account.user.preferredCurrency}
+          busy={busy}
           onError={setError}
+          onCompleteTask={async (actionId) => {
+            const action = items.find((item) => item.id === actionId);
+            if (!action) return;
+            await updateLifeItem(actionId, {
+              status: toggledActionStatus(action.status),
+            });
+            await refresh();
+          }}
+          onRescheduleTask={async (actionId, date) => {
+            const action = items.find((item) => item.id === actionId);
+            if (!action) return;
+            await updateLifeItem(actionId, {
+              body: actionBodyWithScheduledDate(action.body, date),
+            });
+            await refresh();
+          }}
+          onOpenTask={(actionId) => {
+            setTab("plan");
+            setPlanSegment("priority");
+            setPreferPriorityMatrix(true);
+            void actionId;
+          }}
+          onOpenProject={() => {
+            setTab("plan");
+            setPlanSegment("projects");
+          }}
+          onOpenMoney={() => setTab("money")}
+          onSetPrimaryMove={async (actionId) => {
+            const next = await updateProfile({
+              body: { primaryMoveActionId: actionId },
+            });
+            setAccount(next);
+            setStickyPrimaryId(null);
+          }}
         />
       ) : null}
 

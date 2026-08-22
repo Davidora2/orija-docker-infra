@@ -42,6 +42,7 @@ import {
   pingApi,
   syncPendingChanges,
   updateLifeItem,
+  updateProfile,
   type Account,
   type LifeItem,
 } from './src/api';
@@ -526,6 +527,13 @@ function AppContent() {
   const capacity = useMemo(() => weeklyCapacityHours(items), [items]);
   const rankedPrimary = useMemo(() => primaryAction(items), [items]);
   const primary = useMemo(() => {
+    const profilePrimaryId = account?.user.body?.primaryMoveActionId;
+    if (profilePrimaryId) {
+      const profileAction = items.find(
+        (item) => item.id === profilePrimaryId && item.kind === 'ACTION',
+      );
+      if (profileAction) return profileAction;
+    }
     if (stickyPrimaryId) {
       const sticky = items.find((item) => item.id === stickyPrimaryId);
       if (sticky && sticky.kind === 'ACTION' && sticky.status === 'DONE') {
@@ -533,7 +541,12 @@ function AppContent() {
       }
     }
     return rankedPrimary;
-  }, [stickyPrimaryId, items, rankedPrimary]);
+  }, [
+    account?.user.body?.primaryMoveActionId,
+    stickyPrimaryId,
+    items,
+    rankedPrimary,
+  ]);
   const supporting = useMemo(
     () => supportingActions(items, primary?.id),
     [items, primary?.id],
@@ -1315,7 +1328,48 @@ function AppContent() {
           <BudgetScreen account={account!} notify={notify} />
         ) : null}
 
-        {tab === 'calendar' ? <CalendarScreen notify={notify} /> : null}
+        {tab === 'calendar' ? (
+          <CalendarScreen
+            busy={busy}
+            notify={notify}
+            onCompleteTask={async (actionId) => {
+              const action = items.find((item) => item.id === actionId);
+              if (!action) return;
+              await completeAction(action);
+            }}
+            onRescheduleTask={async (actionId, date) => {
+              const action = items.find((item) => item.id === actionId);
+              if (!action) return;
+              await run('Reschedule action', async () => {
+                await updateLifeItem(actionId, {
+                  body: actionBodyWithScheduledDate(action.body, date),
+                });
+                await reloadItems();
+                notify('Schedule date saved.');
+              });
+            }}
+            onOpenTask={() => {
+              setTab('plan');
+              setPlanSegment('priority');
+              setPreferPriorityMatrix(true);
+            }}
+            onOpenProject={() => {
+              setTab('plan');
+              setPlanSegment('projects');
+            }}
+            onOpenMoney={() => setTab('money')}
+            onSetPrimaryMove={async (actionId) => {
+              await run('Set primary move', async () => {
+                const next = await updateProfile({
+                  body: { primaryMoveActionId: actionId },
+                });
+                setAccount(next);
+                setStickyPrimaryId(null);
+                notify('Primary move updated.');
+              });
+            }}
+          />
+        ) : null}
 
 
         {tab === 'you' && youDest === 'menu' ? (

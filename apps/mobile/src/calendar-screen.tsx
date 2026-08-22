@@ -1,7 +1,9 @@
 import {
+  Modal,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,6 +13,11 @@ import {
   type CalendarEvent,
   type CalendarPayload,
 } from './api';
+import {
+  calendarEventActionId,
+  calendarEventLabel,
+  calendarEventProjectId,
+} from './calendar-events';
 
 const colors = {
   ink: '#14241F',
@@ -45,8 +52,22 @@ function eventStyle(type: CalendarEvent['type']) {
 
 export function CalendarScreen({
   notify,
+  busy = false,
+  onCompleteTask,
+  onRescheduleTask,
+  onOpenTask,
+  onOpenProject,
+  onOpenMoney,
+  onSetPrimaryMove,
 }: {
   notify: (message: string) => void;
+  busy?: boolean;
+  onCompleteTask?: (actionId: string) => Promise<void>;
+  onRescheduleTask?: (actionId: string, date: string) => Promise<void>;
+  onOpenTask?: () => void;
+  onOpenProject?: () => void;
+  onOpenMoney?: () => void;
+  onSetPrimaryMove?: (actionId: string) => Promise<void>;
 }) {
   const now = useMemo(() => new Date(), []);
   const [view, setView] = useState<'week' | 'month'>('month');
@@ -62,6 +83,8 @@ export function CalendarScreen({
   ]);
   const [data, setData] = useState<CalendarPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +135,28 @@ export function CalendarScreen({
     'en-GB',
     { month: 'long', year: 'numeric', timeZone: 'UTC' },
   );
+
+  const selectedActionId = selectedEvent
+    ? calendarEventActionId(selectedEvent)
+    : null;
+  const selectedProjectId = selectedEvent
+    ? calendarEventProjectId(selectedEvent)
+    : null;
+
+  function openEvent(event: CalendarEvent) {
+    setSelectedEvent(event);
+    setRescheduleDate(event.date);
+  }
+
+  async function runAction(work: () => Promise<void>) {
+    try {
+      await work();
+      setSelectedEvent(null);
+      await load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update calendar');
+    }
+  }
 
   return (
     <View style={styles.wrap}>
@@ -244,7 +289,11 @@ export function CalendarScreen({
                 <Text style={styles.empty}>No events</Text>
               ) : (
                 day.events.map((event) => (
-                  <View key={event.id} style={[styles.event, eventStyle(event.type)]}>
+                  <Pressable
+                    key={event.id}
+                    onPress={() => openEvent(event)}
+                    style={[styles.event, eventStyle(event.type)]}
+                  >
                     <Text style={styles.eventTitle}>{event.title}</Text>
                     {event.amountCents != null ? (
                       <Text style={styles.eventMeta}>{formatMoney(event.amountCents)}</Text>
@@ -252,12 +301,127 @@ export function CalendarScreen({
                     {event.areaTitle ? (
                       <Text style={styles.eventMeta}>{event.areaTitle}</Text>
                     ) : null}
-                  </View>
+                  </Pressable>
                 ))
               )}
             </View>
           ))
         : null}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={selectedEvent !== null}
+        onRequestClose={() => setSelectedEvent(null)}
+      >
+        <View style={styles.sheetBackdrop}>
+          <View style={styles.sheet}>
+            {selectedEvent ? (
+              <>
+                <Text style={styles.sheetEyebrow}>
+                  {calendarEventLabel(selectedEvent.type)}
+                </Text>
+                <Text style={styles.sheetTitle}>{selectedEvent.title}</Text>
+                <Text style={styles.sheetMeta}>
+                  {selectedEvent.date}
+                  {selectedEvent.areaTitle ? ` · ${selectedEvent.areaTitle}` : ''}
+                  {selectedEvent.amountCents != null
+                    ? ` · ${formatMoney(selectedEvent.amountCents)}`
+                    : ''}
+                </Text>
+
+                {selectedActionId && onRescheduleTask ? (
+                  <TextInput
+                    accessibilityLabel="Reschedule date"
+                    autoCapitalize="none"
+                    editable={!busy}
+                    onChangeText={setRescheduleDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={colors.muted}
+                    style={styles.dateInput}
+                    value={rescheduleDate}
+                  />
+                ) : null}
+
+                <View style={styles.sheetActions}>
+                  {selectedActionId && onRescheduleTask ? (
+                    <Pressable
+                      disabled={busy || !rescheduleDate}
+                      onPress={() =>
+                        void runAction(() =>
+                          onRescheduleTask(selectedActionId, rescheduleDate),
+                        )
+                      }
+                      style={[styles.sheetBtn, styles.sheetBtnPrimary, busy && styles.disabled]}
+                    >
+                      <Text style={styles.sheetBtnPrimaryText}>Save date</Text>
+                    </Pressable>
+                  ) : null}
+                  {selectedActionId && onCompleteTask ? (
+                    <Pressable
+                      disabled={busy}
+                      onPress={() =>
+                        void runAction(() => onCompleteTask(selectedActionId))
+                      }
+                      style={[styles.sheetBtn, busy && styles.disabled]}
+                    >
+                      <Text style={styles.sheetBtnText}>Mark complete</Text>
+                    </Pressable>
+                  ) : null}
+                  {selectedActionId && onOpenTask ? (
+                    <Pressable
+                      onPress={() => {
+                        onOpenTask();
+                        setSelectedEvent(null);
+                      }}
+                      style={styles.sheetBtn}
+                    >
+                      <Text style={styles.sheetBtnText}>Open in Plan</Text>
+                    </Pressable>
+                  ) : null}
+                  {selectedProjectId && onOpenProject ? (
+                    <Pressable
+                      onPress={() => {
+                        onOpenProject();
+                        setSelectedEvent(null);
+                      }}
+                      style={styles.sheetBtn}
+                    >
+                      <Text style={styles.sheetBtnText}>Open project</Text>
+                    </Pressable>
+                  ) : null}
+                  {(selectedEvent.type === 'payment' || selectedEvent.type === 'payday') &&
+                  onOpenMoney ? (
+                    <Pressable
+                      onPress={() => {
+                        onOpenMoney();
+                        setSelectedEvent(null);
+                      }}
+                      style={styles.sheetBtn}
+                    >
+                      <Text style={styles.sheetBtnText}>Open Money</Text>
+                    </Pressable>
+                  ) : null}
+                  {selectedActionId && onSetPrimaryMove ? (
+                    <Pressable
+                      disabled={busy}
+                      onPress={() =>
+                        void runAction(() => onSetPrimaryMove(selectedActionId))
+                      }
+                      style={[styles.sheetBtn, styles.sheetBtnSage, busy && styles.disabled]}
+                    >
+                      <Text style={styles.sheetBtnSageText}>Set as primary move</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable onPress={() => setSelectedEvent(null)} style={styles.sheetBtn}>
+                    <Text style={styles.sheetBtnMuted}>Close</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -318,4 +482,49 @@ const styles = StyleSheet.create({
   eventMilestone: { backgroundColor: colors.amberSoft },
   eventTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   eventMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.paper,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    gap: 12,
+  },
+  sheetEyebrow: {
+    color: colors.sageDeep,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  sheetTitle: { color: colors.ink, fontSize: 22, fontWeight: '700' },
+  sheetMeta: { color: colors.muted, fontSize: 13 },
+  dateInput: {
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  sheetActions: { gap: 8 },
+  sheetBtn: {
+    alignItems: 'center',
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+  },
+  sheetBtnPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
+  sheetBtnPrimaryText: { color: colors.acid, fontWeight: '700' },
+  sheetBtnSage: { backgroundColor: colors.sage, borderColor: colors.sage },
+  sheetBtnSageText: { color: colors.sageDeep, fontWeight: '700' },
+  sheetBtnText: { color: colors.ink, fontWeight: '700' },
+  sheetBtnMuted: { color: colors.muted, fontWeight: '700' },
+  disabled: { opacity: 0.4 },
 });

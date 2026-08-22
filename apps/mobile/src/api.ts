@@ -35,6 +35,9 @@ export type AccountUser = {
   preferredCurrency: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: string | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 };
 
 export type Household = {
@@ -469,6 +472,9 @@ export async function updateProfile(input: {
   timezone?: string;
   preferredCurrency?: string;
   avatarUrl?: string | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 }): Promise<Account> {
   const account = await request<Account>('/v1/me', {
     method: 'PATCH',
