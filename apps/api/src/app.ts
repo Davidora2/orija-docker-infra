@@ -25,6 +25,7 @@ import {
   hashToken,
   verifyPassword,
 } from './security.js';
+import { profileBodySchema, publicProfileBody } from './user-profile.js';
 import { normalizeProjectDeadlineBody } from './priority-matrix.js';
 import {
   actionBodyAfterMoveToIdea,
@@ -60,6 +61,7 @@ const profileSchema = z
       .toUpperCase()
       .regex(/^[A-Z]{3}$/)
       .optional(),
+    body: profileBodySchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
 
@@ -146,6 +148,7 @@ type UserRow = {
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
   onboardingStep?: string | null;
+  profileBody: Record<string, unknown>;
   googleSub?: string | null;
   createdAt: Date;
 };
@@ -174,6 +177,7 @@ function publicUser(user: {
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
   onboardingStep?: string | null;
+  profileBody?: Record<string, unknown>;
   createdAt: Date;
 }) {
   return {
@@ -188,6 +192,7 @@ function publicUser(user: {
     onboardingStep:
       user.onboardingStep ??
       (user.onboardingCompletedAt ? null : 'welcome'),
+    body: publicProfileBody(user.profileBody),
     createdAt: user.createdAt,
   };
 }
@@ -197,7 +202,7 @@ async function getUser(sql: Database, userId: string): Promise<UserRow> {
     SELECT
       id, email, password_hash, display_name, avatar_url, timezone,
       preferred_currency, active_household_id, onboarding_completed_at,
-      onboarding_step, created_at
+      onboarding_step, profile_body, created_at
     FROM users
     WHERE id = ${userId}
   `;
@@ -515,6 +520,28 @@ export async function buildApp(
   app.patch('/v1/me', { preHandler: auth.authenticate }, async (request) => {
     const body = profileSchema.parse(request.body);
     const avatarProvided = body.avatarUrl !== undefined;
+    let profileBodyValue: Record<string, unknown> | null = null;
+    if (body.body) {
+      const user = await getUser(sql, request.authUser.id);
+      const merged = { ...user.profileBody, ...body.body };
+      const parsed = profileBodySchema.parse(merged);
+      if (parsed.primaryMoveActionId) {
+        const [action] = await sql<{ id: string }[]>`
+          SELECT id FROM life_items
+          WHERE id = ${parsed.primaryMoveActionId}
+            AND owner_user_id = ${request.authUser.id}
+            AND kind = 'ACTION'
+        `;
+        if (!action) {
+          throw new ApiError(
+            400,
+            'invalid_primary_move',
+            'Primary move must reference one of your actions.',
+          );
+        }
+      }
+      profileBodyValue = parsed;
+    }
     await sql`
       UPDATE users SET
         display_name = COALESCE(${body.displayName ?? null}, display_name),
@@ -524,6 +551,7 @@ export async function buildApp(
           WHEN ${avatarProvided} THEN ${body.avatarUrl ?? null}
           ELSE avatar_url
         END,
+        profile_body = COALESCE(${profileBodyValue ? sql.json(profileBodyValue) : null}, profile_body),
         updated_at = now()
       WHERE id = ${request.authUser.id}
     `;

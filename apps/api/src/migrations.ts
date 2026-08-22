@@ -77,6 +77,12 @@ const migrations = [
       new URL('../migrations/014_onboarding_progress.sql', import.meta.url),
     ),
   },
+  {
+    version: '015_user_profile_body',
+    path: fileURLToPath(
+      new URL('../migrations/015_user_profile_body.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

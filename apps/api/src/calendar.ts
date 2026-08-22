@@ -195,7 +195,7 @@ export async function loadCalendarEvents(
                 areaTitle: area?.title ?? null,
                 status: action.status,
                 source: 'action',
-                meta: { hours: body.hours ?? null, day: body.day },
+                meta: { hours: body.hours ?? null, day: body.day, actionId: action.id },
               });
             }
             cursor = addDays(cursor, 1);
@@ -216,7 +216,7 @@ export async function loadCalendarEvents(
         areaTitle: area?.title ?? null,
         status: action.status,
         source: 'action',
-        meta: { hours: body.hours ?? null },
+        meta: { hours: body.hours ?? null, actionId: action.id },
       });
     }
   }

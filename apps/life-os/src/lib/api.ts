@@ -23,6 +23,9 @@ export type AccountUser = {
   activeHouseholdId: string | null;
   onboardingCompletedAt: string | null;
   onboardingStep: OnboardingStep | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 };
 
 export type Account = {
@@ -515,6 +518,9 @@ export async function updateProfile(input: {
   timezone?: string;
   preferredCurrency?: string;
   avatarUrl?: string | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 }): Promise<Account> {
   return request<Account>("/v1/me", {
     method: "PATCH",
