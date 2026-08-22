@@ -12,7 +12,10 @@ import {
   loadLastBudgetId,
   saveLastBudgetId,
 } from "../lib/budget-selection";
-import { resolveBudgetSelection } from "@life-os/shared";
+import {
+  resolveBudgetSelection,
+  type BudgetListItem,
+} from "@life-os/shared";
 import { DashboardPanel } from "./dashboard-panel";
 import { FocusHero } from "./focus-hero";
 import { LifeIcon } from "./life-icon";
@@ -30,8 +33,8 @@ export function BudgetPanel({
   onError,
   spendCaptureNonce = 0,
 }: Props) {
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [displayBudgets, setDisplayBudgets] = useState<Budget[]>([]);
+  const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
+  const [displayBudgets, setDisplayBudgets] = useState<BudgetListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
