@@ -15,8 +15,12 @@ import type { Account, LifeItem } from './api';
 
 const ACCOUNT_CACHE_KEY = 'life-os-cache-account';
 const ITEMS_CACHE_KEY = 'life-os-cache-items';
-const CALENDAR_CACHE_KEY = 'life-os-cache-calendar';
-const BUDGETS_CACHE_KEY = 'life-os-cache-budgets';
+const CALENDAR_CACHE_PREFIX = 'life-os-cache-calendar';
+const BUDGETS_CACHE_PREFIX = 'life-os-cache-budgets';
+/** @deprecated Pre-user-scoping key; cleared on logout for migration. */
+const LEGACY_BUDGETS_CACHE_KEY = 'life-os-cache-budgets';
+/** @deprecated Pre-user-scoping key; cleared on logout for migration. */
+const LEGACY_CALENDAR_CACHE_KEY = 'life-os-cache-calendar';
 const OUTBOX_KEY = 'life-os-outbox';
 const SYNC_META_KEY = 'life-os-sync-meta';
 
@@ -182,10 +186,36 @@ export async function loadCachedJson<T>(key: string): Promise<T | null> {
   }
 }
 
-export const cacheKeys = {
-  calendar: CALENDAR_CACHE_KEY,
-  budgets: BUDGETS_CACHE_KEY,
-};
+export function userScopedCacheKey(prefix: string, userId: string): string {
+  return `${prefix}:${userId}`;
+}
+
+export async function resolveBudgetsCacheKey(): Promise<string> {
+  const account = await loadCachedAccount();
+  if (account?.user.id) {
+    return userScopedCacheKey(BUDGETS_CACHE_PREFIX, account.user.id);
+  }
+  return LEGACY_BUDGETS_CACHE_KEY;
+}
+
+export async function resolveCalendarCacheKey(): Promise<string> {
+  const account = await loadCachedAccount();
+  if (account?.user.id) {
+    return userScopedCacheKey(CALENDAR_CACHE_PREFIX, account.user.id);
+  }
+  return LEGACY_CALENDAR_CACHE_KEY;
+}
+
+/** Drop budget/calendar caches so the next sign-in cannot read another account's data. */
+export async function clearUserFinancialCaches(): Promise<void> {
+  const account = await loadCachedAccount();
+  const keys = [LEGACY_BUDGETS_CACHE_KEY, LEGACY_CALENDAR_CACHE_KEY];
+  if (account?.user.id) {
+    keys.push(userScopedCacheKey(BUDGETS_CACHE_PREFIX, account.user.id));
+    keys.push(userScopedCacheKey(CALENDAR_CACHE_PREFIX, account.user.id));
+  }
+  await AsyncStorage.multiRemove(keys);
+}
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

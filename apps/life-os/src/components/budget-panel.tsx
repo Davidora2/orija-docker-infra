@@ -282,6 +282,11 @@ export function BudgetPanel({
                 Link a partner under You to create a shared space.
               </p>
             ) : null}
+            <p className="mt-4 text-xs text-[#87918c]">
+              Signed in as <span className="font-semibold text-[#14241f]">{account.user.email}</span>.
+              Financial data is tied to this account — if you expected existing budgets,
+              confirm you are not using a plus-alias or alternate email.
+            </p>
           </div>
         </article>
       ) : null}

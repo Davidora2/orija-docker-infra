@@ -4,7 +4,7 @@ import {
   cacheAccount,
   cacheItems,
   cacheJson,
-  cacheKeys,
+  clearUserFinancialCaches,
   enqueueOutbox,
   isNetworkFailure,
   isOptimisticId,
@@ -12,6 +12,8 @@ import {
   loadCachedItems,
   loadCachedJson,
   optimisticLifeItem,
+  resolveBudgetsCacheKey,
+  resolveCalendarCacheKey,
   resolveMappedId,
   setSyncPhase,
 } from './offline';
@@ -286,6 +288,7 @@ async function requestOnline<T>(
       if (error instanceof ApiError && error.status === 401) {
         const currentSession = await loadSession();
         if (currentSession?.refreshToken === session.refreshToken) {
+          await clearUserFinancialCaches();
           await saveSession(null);
           await cacheAccount(null);
         }
@@ -321,6 +324,7 @@ export async function register(input: {
   });
   const auth = await parseResponse<AuthResponse>(response);
   await saveSession(auth);
+  await cacheAccount(auth.account);
   return auth.account;
 }
 
@@ -338,6 +342,7 @@ export async function login(input: {
   });
   const auth = await parseResponse<AuthResponse>(response);
   await saveSession(auth);
+  await cacheAccount(auth.account);
   return auth.account;
 }
 
@@ -364,6 +369,7 @@ export async function loginWithGoogle(idToken: string): Promise<Account> {
   });
   const auth = await parseResponse<AuthResponse>(response);
   await saveSession(auth);
+  await cacheAccount(auth.account);
   return auth.account;
 }
 
@@ -407,6 +413,7 @@ export async function resetPassword(input: {
   });
   const auth = await parseResponse<AuthResponse>(response);
   await saveSession(auth);
+  await cacheAccount(auth.account);
   return auth.account;
 }
 
@@ -458,12 +465,14 @@ export async function getCalendar(input: {
   const path = `/v1/calendar?${params.toString()}`;
   try {
     const payload = await request<CalendarPayload>(path);
-    await cacheJson(cacheKeys.calendar, payload);
+    const cacheKey = await resolveCalendarCacheKey();
+    await cacheJson(cacheKey, payload);
     return payload;
   } catch (error) {
     if (isNetworkFailure(error)) {
       await setSyncPhase('offline');
-      const cached = await loadCachedJson<CalendarPayload>(cacheKeys.calendar);
+      const cacheKey = await resolveCalendarCacheKey();
+      const cached = await loadCachedJson<CalendarPayload>(cacheKey);
       if (cached) return cached;
     }
     throw error;
@@ -482,6 +491,7 @@ export async function logout(): Promise<void> {
     } catch {
       // Still clear local session on logout even if the server is unreachable.
     } finally {
+      await clearUserFinancialCaches();
       await saveSession(null);
       await cacheAccount(null);
     }
@@ -556,6 +566,7 @@ export async function deleteAccount(input: {
     body: JSON.stringify(input),
   });
   await saveSession(null);
+  await clearUserFinancialCaches();
   await cacheAccount(null);
 }
 
@@ -1108,15 +1119,16 @@ function mapRecurring(raw: Record<string, unknown>): RecurringOutgoing {
 }
 
 export async function listBudgets(): Promise<Budget[]> {
+  const cacheKey = await resolveBudgetsCacheKey();
   try {
     const rows = await request<Record<string, unknown>[]>('/v1/budgets');
     const budgets = rows.map(mapBudget);
-    await cacheJson(cacheKeys.budgets, budgets);
+    await cacheJson(cacheKey, budgets);
     return budgets;
   } catch (error) {
     if (isNetworkFailure(error)) {
       await setSyncPhase('offline');
-      const cached = await loadCachedJson<Budget[]>(cacheKeys.budgets);
+      const cached = await loadCachedJson<Budget[]>(cacheKey);
       if (cached) return cached;
     }
     throw error;
