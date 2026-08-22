@@ -729,6 +729,10 @@ export function PlanScreen({
         <Text style={styles.sectionTitle}>Projects</Text>
         <Button onPress={onNewProject}>New</Button>
       </View>
+      <Text style={styles.listMeta}>
+        Projects use High / Med / Low priority. First actions use Importance ×
+        Urgency on the Eisenhower matrix.
+      </Text>
       <View style={styles.toggleRow}>
         {(
           [

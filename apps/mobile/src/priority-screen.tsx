@@ -388,7 +388,13 @@ export function PriorityScreen({
                           </Text>
                         </View>
                         <View style={styles.actionText}>
-                          <Text style={styles.actionTitle} numberOfLines={1}>
+                          <Text
+                            style={[
+                              styles.actionTitle,
+                              action.status === 'DONE' && styles.actionTitleDone,
+                            ]}
+                            numberOfLines={1}
+                          >
                             {action.title}
                           </Text>
                           {project && onOpenProject ? (
@@ -898,6 +904,10 @@ const styles = StyleSheet.create({
   },
   actionText: { flex: 1, minWidth: 0 },
   actionTitle: { color: colors.ink, fontWeight: '600', fontSize: 14 },
+  actionTitleDone: {
+    color: colors.muted,
+    textDecorationLine: 'line-through',
+  },
   actionMeta: { color: colors.muted, fontSize: 11, marginTop: 2 },
   actionMetaLink: {
     color: colors.muted,
