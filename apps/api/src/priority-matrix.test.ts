@@ -12,6 +12,7 @@ import {
   priorityRank,
   projectBodyWithPriority,
   projectBodyWithTargetDate,
+  projectPriorityFromImportance,
   projectPriorityFromLegacyQuadrant,
   projectPriorityLevel,
   projectPriorityQuadrant,
@@ -124,6 +125,12 @@ describe('project High/Medium/Low', () => {
   it('defaults unset projects to Medium', () => {
     expect(projectPriorityLevel({})).toBe('MEDIUM');
     expect(projectPriorityLevel(undefined)).toBe('MEDIUM');
+  });
+
+  it('derives quiet project priority from first-action importance', () => {
+    expect(projectPriorityFromImportance('HIGH')).toBe('HIGH');
+    expect(projectPriorityFromImportance('MEDIUM')).toBe('MEDIUM');
+    expect(projectPriorityFromImportance('LOW')).toBe('LOW');
   });
 
   it('strips Eisenhower keys when writing project priority', () => {
