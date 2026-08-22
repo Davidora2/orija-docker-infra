@@ -358,6 +358,13 @@ export async function buildApp(
         message: 'A record with those details already exists.',
       });
     }
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    if (statusCode === 429) {
+      return reply.code(429).send({
+        error: 'rate_limit_exceeded',
+        message: error instanceof Error ? error.message : 'Too many requests.',
+      });
+    }
     app.log.error(error);
     return reply.code(500).send({
       error: 'internal_error',
@@ -365,10 +372,14 @@ export async function buildApp(
     });
   });
 
-  app.get('/health', async () => {
-    const [result] = await sql<{ now: Date }[]>`SELECT now()`;
-    return { status: 'ok', database: Boolean(result), timestamp: result?.now };
-  });
+  app.get(
+    '/health',
+    { config: { rateLimit: false } },
+    async () => {
+      const [result] = await sql<{ now: Date }[]>`SELECT now()`;
+      return { status: 'ok', database: Boolean(result), timestamp: result?.now };
+    },
+  );
 
   app.post(
     '/v1/auth/register',

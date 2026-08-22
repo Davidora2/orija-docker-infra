@@ -44,12 +44,13 @@ export function BudgetPanel({
     "overview",
   );
   const activeIdRef = useRef<string | null>(null);
+  const hasLoadedRef = useRef(false);
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || "GBP";
 
   const reload = useCallback(
     async (preferredId?: string) => {
-      const isInitialLoad = activeIdRef.current === null && !detail;
+      const isInitialLoad = !hasLoadedRef.current;
       if (isInitialLoad) {
         setLoading(true);
       }
@@ -84,12 +85,13 @@ export function BudgetPanel({
         setLoadError(message);
         onError(message);
       } finally {
+        hasLoadedRef.current = true;
         if (isInitialLoad) {
           setLoading(false);
         }
       }
     },
-    [account.user.id, currency, detail, onError],
+    [account.user.id, currency, onError],
   );
 
   useEffect(() => {
