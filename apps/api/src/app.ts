@@ -931,6 +931,13 @@ export async function buildApp(
           )
           RETURNING *
         `;
+        if (!idea) {
+          throw new ApiError(
+            500,
+            'idea_create_failed',
+            'Could not create idea from project.',
+          );
+        }
 
         for (const action of openActions) {
           const nextActionBody = actionBodyAfterMoveToIdea(
@@ -958,6 +965,13 @@ export async function buildApp(
           WHERE id = ${project.id} AND owner_user_id = ${userId}
           RETURNING *
         `;
+        if (!archivedProject) {
+          throw new ApiError(
+            500,
+            'project_archive_failed',
+            'Could not archive project after move to Ideas.',
+          );
+        }
 
         return {
           idea,
