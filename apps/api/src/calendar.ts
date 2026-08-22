@@ -47,6 +47,12 @@ function resolveActionDate(
   body: Record<string, unknown>,
   fallback: string,
 ): string | null {
+  if (
+    typeof body.scheduledDate === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(body.scheduledDate)
+  ) {
+    return body.scheduledDate;
+  }
   if (typeof body.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate)) {
     return body.dueDate;
   }
@@ -165,7 +171,12 @@ export async function loadCalendarEvents(
       if (areaFilter.length && (!area || !areaFilter.includes(area.id))) continue;
 
       const body = action.body ?? {};
-      if (typeof body.day === 'string' && !body.dueDate && !body.date) {
+      if (
+        typeof body.day === 'string' &&
+        !body.scheduledDate &&
+        !body.dueDate &&
+        !body.date
+      ) {
         const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const target = names.indexOf(body.day);
         if (target >= 0) {

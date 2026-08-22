@@ -1295,4 +1295,42 @@ suite('account and couple household API', () => {
       0,
     );
   });
+
+  it('shows dated Schedule actions on Calendar', async () => {
+    const user = await register('schedule-calendar@example.com', 'Schedule Calendar');
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/items',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        kind: 'ACTION',
+        title: 'Prepare quarterly plan',
+        body: {
+          day: 'This week',
+          importance: 'HIGH',
+          urgency: 'LOW',
+          scheduledDate: '2027-01-14',
+        },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const action = created.json<{ id: string }>();
+
+    const calendar = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=1&types=task',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(calendar.statusCode).toBe(200);
+    const event = calendar
+      .json<{
+        events: { id: string; type: string; date: string; title: string }[];
+      }>()
+      .events.find((candidate) => candidate.id === `task:${action.id}`);
+    expect(event).toMatchObject({
+      type: 'task',
+      date: '2027-01-14',
+      title: 'Prepare quarterly plan',
+    });
+  });
 });
