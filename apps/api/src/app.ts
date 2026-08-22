@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
+import { registerAccountPrivacyRoutes } from './account-privacy.js';
 import { createAuth } from './auth.js';
 import { issueEmailVerificationCode, registerAuthExtras } from './auth-extras.js';
 import { registerCalendarRoutes } from './calendar.js';
@@ -19,6 +20,7 @@ import { createMailer } from './mailer.js';
 import { runMigrations } from './migrations.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
 import { registerWealthRoutes } from './wealth.js';
+import { registerWeeklyReviewRoutes } from './weekly-reviews.js';
 import {
   createOpaqueToken,
   hashPassword,
@@ -1069,6 +1071,8 @@ export async function buildApp(
   });
   registerCalendarRoutes(app, sql, auth);
   registerCalendarSyncRoutes(app, sql, config, auth);
+  registerWeeklyReviewRoutes(app, sql, auth);
+  registerAccountPrivacyRoutes(app, sql, config, auth, mailer);
 
   app.post(
     '/v1/payments/reminders/run',
@@ -1081,14 +1085,23 @@ export async function buildApp(
           email: string;
           displayName: string;
           timezone: string;
+          emailRemindersEnabled: boolean;
         }[]
       >`
-        SELECT id, email, display_name, timezone
+        SELECT id, email, display_name, timezone, email_reminders_enabled
         FROM users
         WHERE id = ${userId}
       `;
       if (!user) {
         throw new ApiError(404, 'user_not_found', 'User not found.');
+      }
+      if (!user.emailRemindersEnabled) {
+        return {
+          sent: false,
+          itemCount: 0,
+          dueDate: new Date().toISOString().slice(0, 10),
+          optedOut: true,
+        };
       }
       return sendBillRemindersForUser(sql, mailer, user);
     },

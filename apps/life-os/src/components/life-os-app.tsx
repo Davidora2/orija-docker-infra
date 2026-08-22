@@ -18,7 +18,6 @@ import {
   register,
   resetPassword,
   updateLifeItem,
-  updateProfile,
   verifyResetCode,
   getWealthMeta,
   type Account,
@@ -27,12 +26,16 @@ import {
 } from "../lib/api";
 import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
+import { CalendarSyncPanel } from "./calendar-sync-panel";
 import { CapacityRing } from "./capacity-ring";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { LifeIcon, type LifeIconName } from "./life-icon";
+import { HouseholdPanel } from "./household-panel";
 import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
 import { PlanPanel } from "./plan-panel";
+import { SettingsPrivacyPanel } from "./settings-privacy-panel";
+import { WeeklyReviewPanel } from "./weekly-review-panel";
 import {
   QuickAddSheet,
   type QuickAddKind,
@@ -102,7 +105,9 @@ export function LifeOSApp() {
   >("today");
   const [planSegment, setPlanSegment] = useState<"priority" | "areas" | "projects" | "ideas">("priority");
   const [preferPriorityMatrix, setPreferPriorityMatrix] = useState(false);
-  const [youDest, setYouDest] = useState<"menu" | "capacity" | "review">("menu");
+  const [youDest, setYouDest] = useState<
+    "menu" | "capacity" | "review" | "household" | "integrations" | "settings"
+  >("menu");
   const [authMode, setAuthMode] = useState<
     "login" | "register" | "forgot" | "reset"
   >("login");
@@ -138,13 +143,11 @@ export function LifeOSApp() {
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddKind, setQuickAddKind] =
     useState<QuickAddKind>("action");
   const [spendCaptureNonce, setSpendCaptureNonce] = useState(0);
-  const [profileCurrency, setProfileCurrency] = useState("GBP");
   const [currencies, setCurrencies] = useState<string[]>([
     "GBP",
     "USD",
@@ -188,6 +191,23 @@ export function LifeOSApp() {
       }
     })();
   }, [refresh]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "you") {
+      setTab("you");
+      const destination = params.get("dest");
+      if (
+        destination === "capacity" ||
+        destination === "review" ||
+        destination === "household" ||
+        destination === "integrations" ||
+        destination === "settings"
+      ) {
+        setYouDest(destination);
+      }
+    }
+  }, []);
 
   const pillars = useMemo(() => items.filter((i) => i.kind === "PILLAR" && open(i)), [items]);
   const ideas = useMemo(() => items.filter((i) => i.kind === "IDEA" && open(i)), [items]);
@@ -274,12 +294,6 @@ export function LifeOSApp() {
       setStickyPrimaryId(null);
     }
   }, [actions, stickyPrimaryId]);
-
-  useEffect(() => {
-    if (account?.user.preferredCurrency) {
-      setProfileCurrency(account.user.preferredCurrency);
-    }
-  }, [account?.user.preferredCurrency]);
 
   useEffect(() => {
     setCapacityHoursInput(String(available));
@@ -576,7 +590,10 @@ export function LifeOSApp() {
           <button
             className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold"
             type="button"
-            onClick={() => setSettingsOpen((value) => !value)}
+            onClick={() => {
+              setTab("you");
+              setYouDest("settings");
+            }}
           >
             Profile
           </button>
@@ -595,42 +612,6 @@ export function LifeOSApp() {
           </button>
         </div>
       </header>
-
-      {settingsOpen ? (
-        <article className="mb-5 space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
-          <h2 className="font-serif text-2xl">Profile settings</h2>
-          <p className="text-sm text-[#6c7771]">
-            Change the currency used for budgets, savings, and net worth.
-          </p>
-          <select
-            className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-            value={profileCurrency}
-            onChange={(e) => setProfileCurrency(e.target.value)}
-          >
-            {currencies.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={busy}
-            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
-            onClick={() =>
-              void run(async () => {
-                const next = await updateProfile({
-                  preferredCurrency: profileCurrency,
-                });
-                setAccount(next);
-                setSettingsOpen(false);
-              })
-            }
-          >
-            Save currency
-          </button>
-        </article>
-      ) : null}
 
       {needsOnboarding && !onboardingOpen ? (
         <article className="mb-5 flex flex-col gap-3 rounded-2xl border border-[#c9d6c4] bg-[#eef3ea] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1101,21 +1082,23 @@ export function LifeOSApp() {
       {tab === "you" && youDest === "menu" ? (
         <section className="space-y-3">
           <h2 className="font-serif text-2xl text-[#14241f]">You</h2>
-          <p className="text-sm text-[#6c7771]">Capacity and weekly review live here.</p>
+          <p className="text-sm text-[#6c7771]">
+            Capacity, review, household, integrations, and privacy controls.
+          </p>
           {(
             [
               ["capacity", "Capacity", "Weekly hours and load", "capacity"],
               ["review", "Weekly Review", "CEO-style check-in", "review"],
-              ["settings", "Settings", "Account and currency", "settings"],
+              ["household", "Household", "Partner link and shared space", "household"],
+              ["integrations", "Integrations", "Calendar sync connectors", "integrations"],
+              ["settings", "Settings", "Account, export, and privacy", "settings"],
             ] as const
           ).map(([id, title, description, icon]) => (
             <button
               key={id}
               type="button"
               className="flex w-full items-center gap-3 rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left"
-              onClick={() =>
-                id === "settings" ? setSettingsOpen(true) : setYouDest(id)
-              }
+              onClick={() => setYouDest(id)}
             >
               <LifeIcon name={icon as LifeIconName} size={22} />
               <span className="min-w-0 flex-1">
@@ -1355,27 +1338,33 @@ export function LifeOSApp() {
       ) : null}
 
       {tab === "you" && youDest === "review" ? (
+        <WeeklyReviewPanel
+          householdId={account.activeHouseholdId!}
+          completedActions={doneActions.length}
+          totalActions={actions.length}
+          plannedHours={planned}
+          availableHours={available}
+          onError={setError}
+        />
+      ) : null}
+
+      {tab === "you" && youDest === "household" ? (
+        <HouseholdPanel
+          account={account}
+          onAccountChange={setAccount}
+          onError={setError}
+        />
+      ) : null}
+
+      {tab === "you" && youDest === "integrations" ? (
         <section className="space-y-4">
-          <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <CapacityRing
-              planned={planned}
-              available={available}
-              label="Weekly review planned capacity"
-            />
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Scorecard</p>
-              <h2 className="mt-2 font-serif text-2xl">
-                {doneActions.length} completed · {openActions.length} open
-              </h2>
-              <p className="text-sm text-[#6c7771]">
-                Completion{" "}
-                {actions.length === 0
-                  ? 0
-                  : Math.round((doneActions.length / actions.length) * 100)}
-                % · planned {planned.toFixed(1)}h / {available}h
-              </p>
-            </div>
-          </article>
+          <div>
+            <h2 className="font-serif text-2xl">Integrations</h2>
+            <p className="text-sm text-[#6c7771]">
+              Each person connects and controls their own calendar account.
+            </p>
+          </div>
+          <CalendarSyncPanel onError={setError} />
         </section>
       ) : null}
 
@@ -1470,6 +1459,19 @@ export function LifeOSApp() {
           }}
           pillars={pillars}
           projects={projects.filter((project) => open(project))}
+        />
+      ) : null}
+
+      {tab === "you" && youDest === "settings" ? (
+        <SettingsPrivacyPanel
+          account={account}
+          currencies={currencies}
+          onAccountChange={setAccount}
+          onDeleted={() => {
+            setAccount(null);
+            setItems([]);
+          }}
+          onError={setError}
         />
       ) : null}
 

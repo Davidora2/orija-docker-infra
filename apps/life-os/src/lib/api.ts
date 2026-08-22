@@ -71,6 +71,38 @@ export type LifeItem = {
   updatedAt: string;
 };
 
+export type WeeklyReview = {
+  id: string;
+  schemaVersion: 1;
+  userId: string;
+  householdId: string;
+  weekStart: string;
+  results: {
+    completedActions: number;
+    totalActions: number;
+    completionRate: number;
+    highlights: string;
+  };
+  capacity: { plannedHours: number; availableHours: number };
+  bottlenecks: string;
+  startDoing: string;
+  stopDoing: string;
+  continueDoing: string;
+  nextWeekPriorities: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WeeklyReviewInput = Omit<
+  WeeklyReview,
+  "id" | "userId" | "createdAt" | "updatedAt"
+>;
+
+export type NotificationPreferences = {
+  emailRemindersEnabled: boolean;
+  deliveryChannels: ["email"];
+};
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -400,6 +432,78 @@ export async function logout() {
 export async function getAccount(): Promise<Account | null> {
   if (!loadSession()) return null;
   return request<Account>("/v1/me");
+}
+
+export async function createPartnerInvite(invitedEmail?: string): Promise<{
+  token: string;
+  deepLink: string;
+  webUrl: string;
+  expiresAt: string;
+}> {
+  return request("/v1/households/invites", {
+    method: "POST",
+    body: JSON.stringify({ invitedEmail: invitedEmail || undefined }),
+  });
+}
+
+export async function setActiveHousehold(householdId: string): Promise<Account> {
+  return request("/v1/households/active", {
+    method: "PATCH",
+    body: JSON.stringify({ householdId }),
+  });
+}
+
+export async function listWeeklyReviews(): Promise<WeeklyReview[]> {
+  return request("/v1/weekly-reviews");
+}
+
+export async function getWeeklyReview(id: string): Promise<WeeklyReview> {
+  return request(`/v1/weekly-reviews/${id}`);
+}
+
+export async function saveWeeklyReview(
+  input: WeeklyReviewInput,
+): Promise<WeeklyReview> {
+  return request("/v1/weekly-reviews", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  return request("/v1/me/preferences");
+}
+
+export async function updateNotificationPreferences(
+  emailRemindersEnabled: boolean,
+): Promise<NotificationPreferences> {
+  return request("/v1/me/preferences", {
+    method: "PATCH",
+    body: JSON.stringify({ emailRemindersEnabled }),
+  });
+}
+
+export async function getDataExport(): Promise<Record<string, unknown>> {
+  return request("/v1/me/export");
+}
+
+export async function requestDeletionCode(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  return request("/v1/me/deletion-code", { method: "POST" });
+}
+
+export async function deleteAccount(input: {
+  confirmation: string;
+  currentPassword?: string;
+  verificationCode?: string;
+}): Promise<void> {
+  await request("/v1/me", {
+    method: "DELETE",
+    body: JSON.stringify(input),
+  });
+  saveSession(null);
 }
 
 export async function listLifeItems(): Promise<LifeItem[]> {
