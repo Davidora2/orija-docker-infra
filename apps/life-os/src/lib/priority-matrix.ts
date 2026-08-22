@@ -213,6 +213,14 @@ export function projectPriorityFromLegacyQuadrant(
   }
 }
 
+
+/** Quiet project priority when create UI only collects Importance × Urgency. */
+export function projectPriorityFromImportance(
+  importance: PriorityLevel,
+): ProjectPriority {
+  return importance === 'HIGH' ? 'HIGH' : importance === 'MEDIUM' ? 'MEDIUM' : 'LOW';
+}
+
 /** Project priority: High / Medium / Low only (not Eisenhower). */
 export function projectPriorityLevel(
   body: Record<string, unknown> | null | undefined,

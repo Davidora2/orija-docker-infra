@@ -87,7 +87,6 @@ type Props = {
   projectTitle: string;
   projectOutcome: string;
   projectPillarId: string;
-  projectPriority: ProjectPriority;
   projectTargetDate: string;
   actionTitle: string;
   actionHours: string;
@@ -96,7 +95,6 @@ type Props = {
   onProjectTitleChange: (value: string) => void;
   onProjectOutcomeChange: (value: string) => void;
   onProjectPillarIdChange: (value: string) => void;
-  onProjectPriorityChange: (value: ProjectPriority) => void;
   onProjectTargetDateChange: (value: string) => void;
   onActionTitleChange: (value: string) => void;
   onActionHoursChange: (value: string) => void;
@@ -535,22 +533,6 @@ export function PlanPanel(props: Props) {
                   </option>
                 ))}
               </select>
-              <div className="grid grid-cols-3 gap-2">
-                {PROJECT_PRIORITIES.map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`rounded-xl border px-3 py-3 text-xs font-bold ${
-                      props.projectPriority === id
-                        ? "border-[#14241f] bg-[#14241f] text-white"
-                        : "border-[#dde2dd] bg-white"
-                    }`}
-                    onClick={() => props.onProjectPriorityChange(id)}
-                  >
-                    {PROJECT_PRIORITY_META[id].title}
-                  </button>
-                ))}
-              </div>
               <label className="block space-y-1">
                 <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
                   Deadline (optional)
@@ -592,18 +574,18 @@ export function PlanPanel(props: Props) {
                 placeholder="Estimate hours"
               />
               <LevelChips
-                label="Action importance"
+                label="Importance"
                 value={props.actionImportance}
                 onChange={props.onActionImportanceChange}
               />
               <LevelChips
-                label="Action urgency"
+                label="Urgency"
                 value={props.actionUrgency}
                 onChange={props.onActionUrgencyChange}
               />
               <p className="text-xs text-[#6c7771]">
-                Importance × Urgency → Eisenhower. Separate from Project
-                priority (High / Medium / Low).
+                Importance × Urgency place this first next action on the
+                Eisenhower matrix.
               </p>
               <div className="rounded-xl border border-[#dde2dd] bg-[#f7f8f5] p-3">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
@@ -1479,22 +1461,6 @@ export function PlanPanel(props: Props) {
                   </option>
                 ))}
               </select>
-              <div className="grid grid-cols-3 gap-2">
-                {PROJECT_PRIORITIES.map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`rounded-xl border px-3 py-3 text-xs font-bold ${
-                      props.projectPriority === id
-                        ? "border-[#14241f] bg-[#14241f] text-white"
-                        : "border-[#dde2dd] bg-white"
-                    }`}
-                    onClick={() => props.onProjectPriorityChange(id)}
-                  >
-                    {PROJECT_PRIORITY_META[id].title}
-                  </button>
-                ))}
-              </div>
               <label className="block space-y-1">
                 <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
                   Deadline (optional)
@@ -1521,17 +1487,18 @@ export function PlanPanel(props: Props) {
                 onChange={(e) => props.onActionHoursChange(e.target.value)}
               />
               <LevelChips
-                label="Action importance"
+                label="Importance"
                 value={props.actionImportance}
                 onChange={props.onActionImportanceChange}
               />
               <LevelChips
-                label="Action urgency"
+                label="Urgency"
                 value={props.actionUrgency}
                 onChange={props.onActionUrgencyChange}
               />
               <p className="text-xs text-[#6c7771]">
-                With Urgency → Eisenhower. Not the same as Project priority.
+                Importance × Urgency place the first next action on the
+                Eisenhower matrix.
               </p>
               <button
                 className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
@@ -1888,14 +1855,14 @@ function AddActionSheet({
       {detailsOpen ? (
         <>
           <LevelChips
-            label="Action importance"
+            label="Importance"
             value={importance}
             onChange={onImportance}
           />
           <div className="h-3" />
-          <LevelChips label="Action urgency" value={urgency} onChange={onUrgency} />
+          <LevelChips label="Urgency" value={urgency} onChange={onUrgency} />
           <p className="mb-2 mt-2 text-xs text-[#6c7771]">
-            Importance × Urgency sets Eisenhower. Project priority is separate.
+            Importance × Urgency place this action on the Eisenhower matrix.
           </p>
           <div className="my-4 rounded-xl border border-[#dde2dd] bg-white p-3 text-sm">
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">

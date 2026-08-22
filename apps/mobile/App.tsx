@@ -68,13 +68,12 @@ import {
   PRIORITY_LEVELS,
   PRIORITY_LEVEL_META,
   PRIORITY_QUADRANT_META,
-  PROJECT_PRIORITIES,
-  PROJECT_PRIORITY_META,
   actionBodyWithLevels,
   actionPriorityQuadrant,
   levelsFromQuadrant,
   projectBodyWithPriority,
   projectBodyWithTargetDate,
+  projectPriorityFromImportance,
   projectPriorityLevel,
   quadrantFromLevels,
   type PriorityLevel,
@@ -330,8 +329,6 @@ function AppContent() {
   const [projectTitle, setProjectTitle] = useState('');
   const [projectOutcome, setProjectOutcome] = useState('');
   const [projectPillarId, setProjectPillarId] = useState<string | null>(null);
-  const [projectPriority, setProjectPriority] =
-    useState<ProjectPriority>('MEDIUM');
   const [projectTargetDate, setProjectTargetDate] = useState('');
   const [actionTitle, setActionTitle] = useState('');
   const [actionHours, setActionHours] = useState('2');
@@ -610,7 +607,6 @@ function AppContent() {
     setProjectTitle(idea.title);
     setProjectOutcome(bodyString(idea, 'note'));
     setProjectPillarId(idea.parentId);
-    setProjectPriority('MEDIUM');
     setProjectTargetDate('');
     setActionTitle(`Next: ${idea.title}`);
     setActionHours('2');
@@ -647,7 +643,7 @@ function AppContent() {
             },
             projectTargetDate.trim() || null,
           ),
-          projectPriority,
+          projectPriorityFromImportance(actionImportance),
         ),
       });
       await createLifeItem({
@@ -670,8 +666,7 @@ function AppContent() {
       setSourceIdeaId(null);
       setProjectTitle('');
       setProjectOutcome('');
-      setProjectPriority('MEDIUM');
-      setProjectTargetDate('');
+        setProjectTargetDate('');
       setActionTitle('');
       setActionImportance('HIGH');
       setActionUrgency('LOW');
@@ -1084,8 +1079,7 @@ function AppContent() {
               setProjectTitle('');
               setProjectOutcome('');
               setProjectPillarId(pillars[0]?.id ?? null);
-              setProjectPriority('MEDIUM');
-              setProjectTargetDate('');
+                        setProjectTargetDate('');
               setActionTitle('');
               setActionHours('2');
               setActionImportance('HIGH');
@@ -1448,8 +1442,7 @@ function AppContent() {
                         setProjectTitle('');
                         setProjectOutcome('');
                         setProjectPillarId(pillars[0]?.id ?? null);
-                        setProjectPriority('MEDIUM');
-                        setActionTitle('');
+                                            setActionTitle('');
                         setActionHours('2');
                         setActionImportance('HIGH');
                         setActionUrgency('LOW');
@@ -1557,10 +1550,10 @@ function AppContent() {
                           ))}
                         </View>
                       </ScrollView>
-                      <Text style={styles.fieldLabel}>Action importance</Text>
+                      <Text style={styles.fieldLabel}>Importance</Text>
                       <Text style={styles.listMeta}>
                         With Urgency → Eisenhower (Do now / Schedule / Delegate /
-                        Eliminate). Separate from Project priority.
+                        Eliminate).
                       </Text>
                       <View style={styles.chipRow}>
                         {PRIORITY_LEVELS.map((level) => (
@@ -1583,7 +1576,7 @@ function AppContent() {
                           </Pressable>
                         ))}
                       </View>
-                      <Text style={styles.fieldLabel}>Action urgency</Text>
+                      <Text style={styles.fieldLabel}>Urgency</Text>
                       <View style={styles.chipRow}>
                         {PRIORITY_LEVELS.map((level) => (
                           <Pressable
@@ -1868,29 +1861,6 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.fieldLabel}>Project priority</Text>
-            <Text style={styles.listMeta}>
-              High / Medium / Low for the project. Eisenhower is set on the first
-              action below.
-            </Text>
-            <View style={styles.chipRow}>
-              {PROJECT_PRIORITIES.map((id) => (
-                <Pressable
-                  key={id}
-                  onPress={() => setProjectPriority(id)}
-                  style={[styles.chip, projectPriority === id && styles.chipActive]}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      projectPriority === id && styles.chipTextActive,
-                    ]}
-                  >
-                    {PROJECT_PRIORITY_META[id].title}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
             <Field
               label="First next action"
               value={actionTitle}
@@ -1902,10 +1872,10 @@ function AppContent() {
               onChangeText={setActionHours}
               keyboardType="decimal-pad"
             />
-            <Text style={styles.fieldLabel}>Action importance</Text>
+            <Text style={styles.fieldLabel}>Importance</Text>
             <Text style={styles.listMeta}>
-              Low / Medium / High with Urgency → Eisenhower quadrant. Not the same
-              as Project priority above.
+              Low / Medium / High with Urgency → Eisenhower quadrant for this
+              first next action.
             </Text>
             <View style={styles.chipRow}>
               {PRIORITY_LEVELS.map((level) => (
@@ -1928,7 +1898,7 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.fieldLabel}>Action urgency</Text>
+            <Text style={styles.fieldLabel}>Urgency</Text>
             <View style={styles.chipRow}>
               {PRIORITY_LEVELS.map((level) => (
                 <Pressable

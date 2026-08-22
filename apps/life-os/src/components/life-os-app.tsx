@@ -36,6 +36,7 @@ import {
   priorityRank,
   projectBodyWithPriority,
   projectBodyWithTargetDate,
+  projectPriorityFromImportance,
   projectPriorityLevel,
   projectPriorityRank,
   type PriorityLevel,
@@ -100,8 +101,6 @@ export function LifeOSApp() {
   const [projectTitle, setProjectTitle] = useState("");
   const [projectOutcome, setProjectOutcome] = useState("");
   const [projectPillarId, setProjectPillarId] = useState("");
-  const [projectPriority, setProjectPriority] =
-    useState<ProjectPriority>("MEDIUM");
   const [projectTargetDate, setProjectTargetDate] = useState("");
   const [actionTitle, setActionTitle] = useState("");
   const [actionHours, setActionHours] = useState("2");
@@ -674,7 +673,6 @@ export function LifeOSApp() {
             setProjectTitle(idea.title);
             setProjectOutcome(str(idea, "note"));
             setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
-            setProjectPriority("MEDIUM");
             setActionTitle(`Next: ${idea.title}`);
             setActionImportance("HIGH");
             setActionUrgency("LOW");
@@ -705,7 +703,6 @@ export function LifeOSApp() {
           projectTitle={projectTitle}
           projectOutcome={projectOutcome}
           projectPillarId={projectPillarId}
-          projectPriority={projectPriority}
           projectTargetDate={projectTargetDate}
           actionTitle={actionTitle}
           actionHours={actionHours}
@@ -714,7 +711,6 @@ export function LifeOSApp() {
           onProjectTitleChange={setProjectTitle}
           onProjectOutcomeChange={setProjectOutcome}
           onProjectPillarIdChange={setProjectPillarId}
-          onProjectPriorityChange={setProjectPriority}
           onProjectTargetDateChange={setProjectTargetDate}
           onActionTitleChange={setActionTitle}
           onActionHoursChange={setActionHours}
@@ -738,7 +734,7 @@ export function LifeOSApp() {
                     { outcome: projectOutcome.trim() },
                     projectTargetDate || null,
                   ),
-                  projectPriority,
+                  projectPriorityFromImportance(actionImportance),
                 ),
               });
               await createLifeItem({
@@ -753,7 +749,6 @@ export function LifeOSApp() {
               });
               setProjectTitle("");
               setProjectOutcome("");
-              setProjectPriority("MEDIUM");
               setProjectTargetDate("");
               setActionTitle("");
               setActionImportance("HIGH");
