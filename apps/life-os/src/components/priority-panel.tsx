@@ -77,9 +77,27 @@ function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-[#14241f]/35 p-3 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-[#f4f5f0] p-5 shadow-xl">
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-[#14241f]/35 p-3 sm:items-center"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-[#f4f5f0] p-5 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="truncate font-serif text-2xl text-[#14241f]">
@@ -132,6 +150,7 @@ export function PriorityPanel({
   });
   const [tipDismissed, setTipDismissed] = useState(false);
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
+  const [retainedDone, setRetainedDone] = useState<LifeItem[]>([]);
 
   useEffect(() => {
     try {
@@ -145,13 +164,20 @@ export function PriorityPanel({
     if (preferMatrix) setView("matrix");
   }, [preferMatrix]);
 
+  useEffect(() => {
+    const openIds = new Set(openActions.map((action) => action.id));
+    setRetainedDone((prev) =>
+      prev.filter((action) => !openIds.has(action.id)),
+    );
+  }, [openActions]);
+
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
 
   const filteredActions = useMemo(() => {
-    return openActions.filter((action) => {
+    const matches = (action: LifeItem) => {
       const project = projectById.get(action.parentId ?? "");
       if (areaFilter && project?.parentId !== areaFilter) return false;
       if (windowFilter === "week" && !isThisWeek(action)) return false;
@@ -160,13 +186,28 @@ export function PriorityPanel({
         if (q !== quadrantFilter) return false;
       }
       return true;
-    });
-  }, [openActions, areaFilter, windowFilter, quadrantFilter, projectById]);
+    };
+    const openFiltered = openActions.filter(matches);
+    const doneFiltered = retainedDone.filter(
+      (action) =>
+        matches(action) && !openFiltered.some((open) => open.id === action.id),
+    );
+    return [...openFiltered, ...doneFiltered.map((action) => ({
+      ...action,
+      status: "DONE" as const,
+    }))];
+  }, [
+    openActions,
+    retainedDone,
+    areaFilter,
+    windowFilter,
+    quadrantFilter,
+    projectById,
+  ]);
 
-  const plannedHours = filteredActions.reduce(
-    (sum, action) => sum + hoursOf(action),
-    0,
-  );
+  const plannedHours = filteredActions
+    .filter((action) => action.status !== "DONE")
+    .reduce((sum, action) => sum + hoursOf(action), 0);
   const overHours = Math.max(0, plannedHours - availableHours);
   const overCapacity = overHours > 0.05;
 
@@ -188,7 +229,7 @@ export function PriorityPanel({
   const heavyProjects = useMemo(() => {
     const hoursByProject = new Map<string, number>();
     for (const action of filteredActions) {
-      if (!action.parentId) continue;
+      if (!action.parentId || action.status === "DONE") continue;
       hoursByProject.set(
         action.parentId,
         (hoursByProject.get(action.parentId) ?? 0) + hoursOf(action),
@@ -350,7 +391,10 @@ export function PriorityPanel({
         {PRIORITY_MATRIX_ORDER.map((quadrant) => {
           const copy = ACCORDION_COPY[quadrant];
           const actions = byQuadrant[quadrant];
-          const hours = actions.reduce((sum, a) => sum + hoursOf(a), 0);
+          const openCount = actions.filter((a) => a.status !== "DONE").length;
+          const hours = actions
+            .filter((a) => a.status !== "DONE")
+            .reduce((sum, a) => sum + hoursOf(a), 0);
           const open = expanded[quadrant];
           return (
             <article
@@ -371,7 +415,7 @@ export function PriorityPanel({
                     {copy.subtitle}
                   </p>
                   <p className="mt-1 text-xs font-bold text-[#14241f]">
-                    {actions.length} action{actions.length === 1 ? "" : "s"} ·{" "}
+                    {openCount} action{openCount === 1 ? "" : "s"} ·{" "}
                     {hours.toFixed(hours % 1 === 0 ? 0 : 1)}h
                   </p>
                 </div>
@@ -398,13 +442,23 @@ export function PriorityPanel({
                         return (
                           <li
                             key={action.id}
-                            className="flex min-w-0 items-center gap-3 rounded-xl bg-[#f7f8f5] px-3 py-2.5"
+                            className={`flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 ${
+                              action.status === "DONE"
+                                ? "bg-[#eef0ed]"
+                                : "bg-[#f7f8f5]"
+                            }`}
                           >
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-lg">
                               {icon.length <= 3 ? icon : "📌"}
                             </span>
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-[#14241f]">
+                              <p
+                                className={`truncate text-sm font-semibold ${
+                                  action.status === "DONE"
+                                    ? "text-[#6c7771] line-through"
+                                    : "text-[#14241f]"
+                                }`}
+                              >
                                 {action.title}
                               </p>
                               <p className="truncate text-[11px] text-[#6c7771]">
@@ -420,7 +474,21 @@ export function PriorityPanel({
                                 type="button"
                                 className="flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
                                 disabled={busy}
-                                onClick={() => onCompleteAction(action)}
+                                onClick={() => {
+                                  if (action.status !== "DONE") {
+                                    setRetainedDone((prev) => {
+                                      if (prev.some((row) => row.id === action.id)) {
+                                        return prev;
+                                      }
+                                      return [...prev, action];
+                                    });
+                                  } else {
+                                    setRetainedDone((prev) =>
+                                      prev.filter((row) => row.id !== action.id),
+                                    );
+                                  }
+                                  onCompleteAction(action);
+                                }}
                                 aria-label={
                                   action.status === "DONE"
                                     ? "Mark action open"
