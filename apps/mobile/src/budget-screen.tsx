@@ -14,6 +14,11 @@ import {
   type Account,
   type Budget,
 } from './api';
+import {
+  loadLastBudgetId,
+  pickDefaultBudgetId,
+  saveLastBudgetId,
+} from './budget-selection';
 import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
@@ -48,20 +53,24 @@ export function BudgetScreen({ account, notify }: Props) {
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || 'GBP';
 
-  const reload = useCallback(async () => {
-    const list = await listBudgets();
-    setBudgets(list);
-    const nextId =
-      activeId && list.some((budget) => budget.id === activeId)
-        ? activeId
-        : (list[0]?.id ?? null);
-    setActiveId(nextId);
-    if (nextId) {
-      setDetail(await getBudget(nextId));
-    } else {
-      setDetail(null);
-    }
-  }, [activeId]);
+  const reload = useCallback(
+    async (preferredId?: string) => {
+      const list = await listBudgets();
+      setBudgets(list);
+      const nextId = pickDefaultBudgetId(list, account.user.id, {
+        preferredId: preferredId ?? activeId,
+        storedId: await loadLastBudgetId(account.user.id),
+      });
+      setActiveId(nextId);
+      if (nextId) {
+        await saveLastBudgetId(account.user.id, nextId);
+        setDetail(await getBudget(nextId));
+      } else {
+        setDetail(null);
+      }
+    },
+    [account.user.id, activeId],
+  );
 
   useEffect(() => {
     void reload().catch((error) =>
@@ -78,7 +87,7 @@ export function BudgetScreen({ account, notify }: Props) {
         currency,
       });
       setActiveId(created.id);
-      await reload();
+      await reload(created.id);
       notify(
         visibility === 'SHARED'
           ? 'Shared budget created for your household.'
@@ -142,6 +151,7 @@ export function BudgetScreen({ account, notify }: Props) {
                 style={[styles.tab, activeId === budget.id && styles.tabActive]}
                 onPress={() => {
                   setActiveId(budget.id);
+                  void saveLastBudgetId(account.user.id, budget.id);
                   void getBudget(budget.id).then(setDetail);
                 }}
               >
@@ -197,7 +207,7 @@ export function BudgetScreen({ account, notify }: Props) {
               budget={detail}
               preferredCurrency={currency}
               notify={notify}
-              onChanged={() => void reload()}
+              onChanged={() => void reload(activeId ?? undefined)}
             />
           ) : null}
 

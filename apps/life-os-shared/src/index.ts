@@ -66,6 +66,89 @@ export function clampEvaluationScore(value: number): number {
  * Plot points in label order: top, right, bottom, left. Values stay raw so
  * effort is not inverted or blended into a potentially misleading aggregate.
  */
+export type BudgetListItem = {
+  id: string;
+  ownerUserId: string;
+  visibility: "PRIVATE" | "SHARED";
+  createdAt?: string;
+  payFrequency?: string | null;
+  typicalPayCents?: number | null;
+};
+
+function isThinPersonalBudget(budget: BudgetListItem): boolean {
+  return (
+    !budget.payFrequency &&
+    (budget.typicalPayCents == null || budget.typicalPayCents <= 0)
+  );
+}
+
+function personalBudgetRichness(budget: BudgetListItem): number {
+  let score = 0;
+  if (budget.typicalPayCents != null && budget.typicalPayCents > 0) score += 1000;
+  if (budget.payFrequency) score += 100;
+  if (budget.createdAt) {
+    const created = Date.parse(budget.createdAt);
+    if (Number.isFinite(created)) score += -created / 1e15;
+  }
+  return score;
+}
+
+function pickBestOwnedPrivate(
+  budgets: BudgetListItem[],
+  userId: string,
+): BudgetListItem | null {
+  const ownedPrivate = budgets.filter(
+    (budget) =>
+      budget.visibility === "PRIVATE" && budget.ownerUserId === userId,
+  );
+  if (!ownedPrivate.length) return null;
+  return [...ownedPrivate].sort(
+    (a, b) => personalBudgetRichness(b) - personalBudgetRichness(a),
+  )[0]!;
+}
+
+/** Prefer a stored or owned personal budget over a newer empty shared space. */
+export function pickDefaultBudgetId(
+  budgets: BudgetListItem[],
+  userId: string,
+  options?: { preferredId?: string | null; storedId?: string | null },
+): string | null {
+  if (!budgets.length) return null;
+
+  const valid = (id?: string | null) =>
+    id && budgets.some((budget) => budget.id === id) ? id : null;
+
+  const preferred = valid(options?.preferredId);
+  if (preferred) return preferred;
+
+  const bestOwnedPrivate = pickBestOwnedPrivate(budgets, userId);
+
+  const stored = valid(options?.storedId);
+  if (stored) {
+    if (bestOwnedPrivate) {
+      const storedBudget = budgets.find((budget) => budget.id === stored);
+      if (
+        storedBudget &&
+        stored !== bestOwnedPrivate.id &&
+        storedBudget.ownerUserId === userId &&
+        storedBudget.visibility === "PRIVATE" &&
+        isThinPersonalBudget(storedBudget) &&
+        !isThinPersonalBudget(bestOwnedPrivate)
+      ) {
+        return bestOwnedPrivate.id;
+      }
+    }
+    return stored;
+  }
+
+  if (bestOwnedPrivate) return bestOwnedPrivate.id;
+
+  const owned = budgets.filter((budget) => budget.ownerUserId === userId);
+  if (owned.length) return owned[0]!.id;
+
+  return budgets[0]!.id;
+}
+
 export function evaluationRadarPoints(
   scores: EvaluationScores,
   center = 60,

@@ -8,6 +8,11 @@ import {
   type Account,
   type Budget,
 } from "../lib/api";
+import {
+  loadLastBudgetId,
+  saveLastBudgetId,
+} from "../lib/budget-selection";
+import { pickDefaultBudgetId } from "@life-os/shared";
 import { DashboardPanel } from "./dashboard-panel";
 import { FocusHero } from "./focus-hero";
 import { LifeIcon } from "./life-icon";
@@ -45,13 +50,17 @@ export function BudgetPanel({
       try {
         const list = await listBudgets();
         setBudgets(list);
-        const nextId =
-          preferredId && list.some((budget) => budget.id === preferredId)
-            ? preferredId
-            : (list[0]?.id ?? null);
+        const nextId = pickDefaultBudgetId(list, account.user.id, {
+          preferredId: preferredId ?? activeId,
+          storedId: loadLastBudgetId(account.user.id),
+        });
         setActiveId(nextId);
-        if (nextId) setDetail(await getBudget(nextId));
-        else setDetail(null);
+        if (nextId) {
+          saveLastBudgetId(account.user.id, nextId);
+          setDetail(await getBudget(nextId));
+        } else {
+          setDetail(null);
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Could not load money.";
@@ -61,7 +70,7 @@ export function BudgetPanel({
         setLoading(false);
       }
     },
-    [onError],
+    [account.user.id, activeId, onError],
   );
 
   useEffect(() => {
@@ -92,6 +101,7 @@ export function BudgetPanel({
 
   async function selectBudget(id: string) {
     setActiveId(id);
+    saveLastBudgetId(account.user.id, id);
     setLoading(true);
     setLoadError("");
     try {
@@ -282,6 +292,11 @@ export function BudgetPanel({
                 Link a partner under You to create a shared space.
               </p>
             ) : null}
+            <p className="mt-4 text-xs text-[#87918c]">
+              Signed in as <span className="font-semibold text-[#14241f]">{account.user.email}</span>.
+              Financial data is tied to this account — if you expected existing budgets,
+              confirm you are not using a plus-alias or alternate email.
+            </p>
           </div>
         </article>
       ) : null}

@@ -115,6 +115,39 @@ await asyncStorageMock.setItem(
 assert.ok(await asyncStorageMock.getItem('life-os-cache-account'));
 assert.equal(JSON.parse(await asyncStorageMock.getItem('life-os-outbox')).length, 1);
 
+function userScopedCacheKey(prefix, userId) {
+  return `${prefix}:${userId}`;
+}
+
+assert.equal(
+  userScopedCacheKey('life-os-cache-budgets', 'user-a'),
+  'life-os-cache-budgets:user-a',
+);
+await asyncStorageMock.setItem(
+  userScopedCacheKey('life-os-cache-budgets', 'user-a'),
+  JSON.stringify([{ id: 'budget-1' }]),
+);
+await asyncStorageMock.setItem(
+  userScopedCacheKey('life-os-cache-budgets', 'user-b'),
+  JSON.stringify([]),
+);
+assert.equal(
+  JSON.parse(
+    await asyncStorageMock.getItem(
+      userScopedCacheKey('life-os-cache-budgets', 'user-a'),
+    ),
+  ).length,
+  1,
+);
+assert.equal(
+  JSON.parse(
+    await asyncStorageMock.getItem(
+      userScopedCacheKey('life-os-cache-budgets', 'user-b'),
+    ),
+  ).length,
+  0,
+);
+
 console.log('offline-sync checks passed');
 console.log(
   JSON.stringify(
