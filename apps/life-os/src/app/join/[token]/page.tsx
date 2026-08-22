@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Copy, ExternalLink, Link2, ShieldCheck } from "lucide-react";
 import { use, useState } from "react";
+import { LifeIcon } from "../../../components/life-icon";
 
 export default function JoinHouseholdPage({
   params,
@@ -29,7 +29,7 @@ export default function JoinHouseholdPage({
             <span className="text-sm font-semibold">Life OS</span>
           </div>
           <p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.13em] text-white/50">
-            <Link2 className="h-3.5 w-3.5" /> Partner invitation
+            <LifeIcon name="link" size={14} color="currentColor" /> Partner invitation
           </p>
           <h1 className="font-serif text-3xl tracking-[-.03em]">
             You’ve been invited to a shared household.
@@ -42,7 +42,12 @@ export default function JoinHouseholdPage({
 
         <div className="space-y-5 p-7">
           <div className="flex gap-3 rounded-xl bg-[#f0f5ed] p-4 text-[#526a47]">
-            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+            <LifeIcon
+              className="mt-0.5 shrink-0"
+              name="shield"
+              size={20}
+              color="currentColor"
+            />
             <p className="text-[11px] leading-5">
               Private items remain private. Joining only gives access to records
               explicitly marked as shared.
@@ -53,7 +58,7 @@ export default function JoinHouseholdPage({
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#14241f] text-xs font-bold text-[#f4f5f0]"
             href={deepLink}
           >
-            Open in Life OS <ExternalLink className="h-4 w-4" />
+            Open in Life OS <LifeIcon name="external" size={16} color="currentColor" />
           </a>
 
           <div className="relative py-1 text-center text-[9px] font-bold uppercase tracking-widest text-[#8a948e]">
@@ -74,9 +79,9 @@ export default function JoinHouseholdPage({
               </code>
             </span>
             {copied ? (
-              <Check className="h-4 w-4 shrink-0 text-[#617a57]" />
+              <LifeIcon className="shrink-0" name="check" size={16} />
             ) : (
-              <Copy className="h-4 w-4 shrink-0 text-[#617a57]" />
+              <LifeIcon className="shrink-0" name="copy" size={16} />
             )}
           </button>
 

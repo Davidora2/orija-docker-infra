@@ -1,5 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
@@ -29,6 +29,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { AccountSheet } from './src/account-sheet';
 import { BudgetScreen } from './src/budget-screen';
 import { CalendarScreen } from './src/calendar-screen';
+import { CapacityRing } from './src/capacity-ring';
+import { LifeIcon } from './src/life-icon';
 import { OnboardingSheet } from './src/onboarding-sheet';
 import {
   ApiError,
@@ -120,18 +122,6 @@ function successTap() {
   if (Platform.OS !== 'web') {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
-}
-
-function Icon({
-  name,
-  size = 18,
-  color = colors.ink,
-}: {
-  name: React.ComponentProps<typeof Ionicons>['name'];
-  size?: number;
-  color?: string;
-}) {
-  return <Ionicons name={name} size={size} color={color} />;
 }
 
 function Button({
@@ -1117,7 +1107,7 @@ function AppContent() {
                             : ''}
                         </Text>
                       </View>
-                      <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                      <LifeIcon name="done" color={colors.sageDeep} />
                     </Pressable>
                   </SwipeableRow>
                 ))
@@ -1125,19 +1115,25 @@ function AppContent() {
             </Card>
 
             <Card>
-              <Text style={styles.cardEyebrow}>Capacity pulse</Text>
-              <Text style={styles.cardTitle}>
-                {capacity.planned.toFixed(1)}h / {capacity.available}h
-              </Text>
-              <ProgressBar
-                value={(capacity.planned / Math.max(capacity.available, 0.1)) * 100}
-                warning={capacity.planned > capacity.available}
-              />
-              <Text style={styles.cardBody}>
-                {capacity.planned > capacity.available
-                  ? 'Over capacity — reduce scope in Capacity.'
-                  : 'Within capacity for this week.'}
-              </Text>
+              <View style={styles.ringSummary}>
+                <CapacityRing
+                  planned={capacity.planned}
+                  available={capacity.available}
+                  size={88}
+                  label="Today weekly capacity"
+                />
+                <View style={styles.ringSummaryCopy}>
+                  <Text style={styles.cardEyebrow}>Capacity pulse</Text>
+                  <Text style={styles.cardTitle}>
+                    {capacity.planned.toFixed(1)}h / {capacity.available}h
+                  </Text>
+                  <Text style={styles.cardBody}>
+                    {capacity.planned > capacity.available
+                      ? 'Over capacity — reduce scope in Capacity.'
+                      : 'Within capacity for this week.'}
+                  </Text>
+                </View>
+              </View>
             </Card>
 
             <Card>
@@ -1147,7 +1143,7 @@ function AppContent() {
               ) : (
                 risks.map((risk) => (
                   <View key={risk} style={styles.riskRow}>
-                    <Icon name="warning-outline" color={colors.danger} />
+                    <LifeIcon name="warning" color={colors.danger} />
                     <Text style={[styles.cardBody, { flex: 1 }]}>{risk}</Text>
                   </View>
                 ))
@@ -1161,12 +1157,12 @@ function AppContent() {
           <View style={styles.segmentRow}>
             {(
               [
-                ['priority', 'Priority'],
-                ['areas', 'Areas'],
-                ['projects', 'Projects'],
-                ['ideas', 'Ideas'],
+                ['priority', 'Priority', 'priority'],
+                ['areas', 'Areas', 'areas'],
+                ['projects', 'Projects', 'projects'],
+                ['ideas', 'Ideas', 'ideas'],
               ] as const
-            ).map(([id, label]) => (
+            ).map(([id, label, icon]) => (
               <Pressable
                 key={id}
                 onPress={() => {
@@ -1176,6 +1172,11 @@ function AppContent() {
                 }}
                 style={[styles.segmentChip, planSegment === id && styles.segmentChipActive]}
               >
+                <LifeIcon
+                  name={icon}
+                  size={15}
+                  color={planSegment === id ? colors.acid : colors.sageDeep}
+                />
                 <Text
                   style={[
                     styles.segmentChipText,
@@ -1325,11 +1326,11 @@ function AppContent() {
             </Text>
             {(
               [
-                ['capacity', 'Capacity', 'Weekly hours and load', 'speedometer-outline'],
-                ['review', 'Weekly Review', 'CEO-style check-in', 'stats-chart-outline'],
-                ['household', 'Household', 'Partner link and shared space', 'people-outline'],
-                ['integrations', 'Integrations', 'Calendar sync connectors', 'extension-puzzle-outline'],
-                ['settings', 'Settings', 'Account, currency, notifications', 'settings-outline'],
+                ['capacity', 'Capacity', 'Weekly hours and load', 'capacity'],
+                ['review', 'Weekly Review', 'CEO-style check-in', 'review'],
+                ['household', 'Household', 'Partner link and shared space', 'household'],
+                ['integrations', 'Integrations', 'Calendar sync connectors', 'integrations'],
+                ['settings', 'Settings', 'Account, currency, notifications', 'settings'],
               ] as const
             ).map(([id, title, body, icon]) => (
               <Pressable
@@ -1345,12 +1346,12 @@ function AppContent() {
                   }
                 }}
               >
-                <Icon name={icon} color={colors.sageDeep} size={22} />
+                <LifeIcon name={icon} color={colors.sageDeep} size={22} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.listTitle}>{title}</Text>
                   <Text style={styles.listMeta}>{body}</Text>
                 </View>
-                <Icon name="chevron-forward" color={colors.muted} />
+                <LifeIcon name="chevron-right" color={colors.muted} />
               </Pressable>
             ))}
           </View>
@@ -1359,19 +1360,24 @@ function AppContent() {
         {tab === 'you' && youDest === 'capacity' ? (
           <View style={styles.stack}>
             <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
-              <Icon name="chevron-back" color={colors.sageDeep} />
+              <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
             <Text style={styles.sectionTitle}>Capacity</Text>
             <Card>
-              <Text style={styles.cardEyebrow}>This week</Text>
-              <Text style={styles.cardTitle}>
-                {capacity.planned.toFixed(1)}h planned / {capacity.available}h available
-              </Text>
-              <ProgressBar
-                value={(capacity.planned / Math.max(capacity.available, 0.1)) * 100}
-                warning={capacity.planned > capacity.available}
-              />
+              <View style={styles.ringSummary}>
+                <CapacityRing
+                  planned={capacity.planned}
+                  available={capacity.available}
+                  label="Weekly planned capacity"
+                />
+                <View style={styles.ringSummaryCopy}>
+                  <Text style={styles.cardEyebrow}>This week</Text>
+                  <Text style={styles.cardTitle}>
+                    {capacity.planned.toFixed(1)}h planned / {capacity.available}h available
+                  </Text>
+                </View>
+              </View>
               {capacity.planned > capacity.available ? (
                 <Pill tone="danger">Overcommitted — reduce action hours below</Pill>
               ) : (
@@ -1454,23 +1460,32 @@ function AppContent() {
         {tab === 'you' && youDest === 'review' ? (
           <View style={styles.stack}>
             <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
-              <Icon name="chevron-back" color={colors.sageDeep} />
+              <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
             <Text style={styles.sectionTitle}>Weekly Review</Text>
             <Card>
-              <Text style={styles.cardEyebrow}>Scorecard</Text>
-              <Text style={styles.cardTitle}>
-                {doneActions.length} completed · {capacity.openActions.length} still open
-              </Text>
-              <Text style={styles.cardBody}>
-                Planned load {capacity.planned.toFixed(1)}h against {capacity.available}h
-                available. Completion rate{' '}
-                {actions.length === 0
-                  ? '0'
-                  : Math.round((doneActions.length / actions.length) * 100)}
-                %.
-              </Text>
+              <View style={styles.ringSummary}>
+                <CapacityRing
+                  planned={capacity.planned}
+                  available={capacity.available}
+                  label="Weekly review planned capacity"
+                />
+                <View style={styles.ringSummaryCopy}>
+                  <Text style={styles.cardEyebrow}>Scorecard</Text>
+                  <Text style={styles.cardTitle}>
+                    {doneActions.length} completed · {capacity.openActions.length} still open
+                  </Text>
+                  <Text style={styles.cardBody}>
+                    Planned load {capacity.planned.toFixed(1)}h against {capacity.available}h
+                    available. Completion rate{' '}
+                    {actions.length === 0
+                      ? '0'
+                      : Math.round((doneActions.length / actions.length) * 100)}
+                    %.
+                  </Text>
+                </View>
+              </View>
             </Card>
             <Card>
               <Text style={styles.cardEyebrow}>Open actions to close</Text>
@@ -1486,7 +1501,7 @@ function AppContent() {
                     onPress={() => void completeAction(action)}
                   >
                     <Text style={[styles.listTitle, { flex: 1 }]}>{action.title}</Text>
-                    <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                    <LifeIcon name="done" color={colors.sageDeep} />
                   </Pressable>
                 ))
               )}
@@ -1508,11 +1523,11 @@ function AppContent() {
       <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
         {(
           [
-            ['today', 'Today', 'sunny-outline'],
-            ['plan', 'Plan', 'layers-outline'],
-            ['calendar', 'Calendar', 'calendar-outline'],
-            ['money', 'Money', 'wallet-outline'],
-            ['you', 'You', 'person-outline'],
+            ['today', 'Today', 'today'],
+            ['plan', 'Plan', 'plan'],
+            ['calendar', 'Calendar', 'calendar'],
+            ['money', 'Money', 'money'],
+            ['you', 'You', 'you'],
           ] as const
         ).map(([id, label, icon]) => (
           <Pressable
@@ -1525,7 +1540,7 @@ function AppContent() {
             }}
             style={styles.tabItem}
           >
-            <Icon
+            <LifeIcon
               name={icon}
               color={tab === id ? colors.ink : colors.muted}
               size={20}
@@ -1550,7 +1565,7 @@ function AppContent() {
           openQuickCapture(defaultKind);
         }}
       >
-        <Icon name="add" color={colors.acidInk} size={28} />
+        <LifeIcon name="add" color={colors.acidInk} size={28} />
       </Pressable>
 
       {toast ? (
@@ -1945,27 +1960,28 @@ function AppContent() {
               ] as const
             ).map(([label, value, setter]) => (
               <View key={label} style={styles.scoreRow}>
-                <Text style={styles.fieldLabel}>
-                  {label} · {value}/10
-                </Text>
-                <View style={styles.chipRow}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                    <Pressable
-                      key={n}
-                      onPress={() => setter(n)}
-                      style={[styles.scoreChip, value === n && styles.chipActive]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          value === n && styles.chipTextActive,
-                        ]}
-                      >
-                        {n}
-                      </Text>
-                    </Pressable>
-                  ))}
+                <View style={styles.scoreLabelRow}>
+                  <Text style={styles.fieldLabel}>{label}</Text>
+                  <Text style={styles.scoreValue}>{value}/10</Text>
                 </View>
+                <Slider
+                  accessibilityLabel={`${label} score`}
+                  accessibilityValue={{
+                    min: 1,
+                    max: 10,
+                    now: value,
+                    text: `${value} out of 10`,
+                  }}
+                  minimumValue={1}
+                  maximumValue={10}
+                  step={1}
+                  value={value}
+                  onValueChange={setter}
+                  minimumTrackTintColor={colors.sageDeep}
+                  maximumTrackTintColor={colors.line}
+                  thumbTintColor={colors.ink}
+                  style={styles.scoreSlider}
+                />
               </View>
             ))}
             <Pill tone="ink">
@@ -2337,6 +2353,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
   },
   riskRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  ringSummary: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+  },
+  ringSummaryCopy: { flex: 1, gap: 5, minWidth: 0 },
   emptyCard: { alignItems: 'flex-start' },
   emptyTitle: { fontFamily: serif, fontSize: 20, color: colors.ink },
   emptyBody: { color: colors.muted, lineHeight: 20 },
@@ -2428,6 +2450,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: '22%',
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.line,
@@ -2525,15 +2550,16 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
   chipText: { color: colors.ink, fontWeight: '600', fontSize: 12 },
   chipTextActive: { color: colors.acid },
-  scoreRow: { gap: 8 },
-  scoreChip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.line,
+  scoreRow: { gap: 2 },
+  scoreLabelRow: {
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.paper,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
+  scoreValue: {
+    color: colors.ink,
+    fontFamily: serif,
+    fontSize: 18,
+  },
+  scoreSlider: { height: 42, marginHorizontal: -8 },
 });

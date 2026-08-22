@@ -18,6 +18,7 @@ import {
   quadrantRequiresScheduledDate,
   type PriorityQuadrant,
 } from './priority-matrix';
+import { LifeIcon, lifeIconFromLegacy } from './life-icon';
 
 const colors = {
   ink: '#14241F',
@@ -55,8 +56,6 @@ const ACCORDION_COPY: Record<
     subtitle: 'Neither urgent nor important',
   },
 };
-
-const AREA_ICONS = ['🌿', '💪', '💼', '🏠', '🎯', '📚', '💚', '✨'];
 
 function hoursOf(action: LifeItem) {
   return bodyNumber(action, 'hours', 1);
@@ -325,7 +324,7 @@ export function PriorityScreen({
             <Text style={styles.rebalanceLinkText} numberOfLines={1}>
               Rebalance your week
             </Text>
-            <Text style={styles.rebalanceLinkText}>›</Text>
+            <LifeIcon name="chevron-right" size={15} color={colors.sageDeep} />
           </Pressable>
         ) : null}
       </View>
@@ -370,9 +369,10 @@ export function PriorityScreen({
                     const area = pillars.find(
                       (p) => p.id === project?.parentId,
                     );
-                    const icon =
-                      (area && bodyString(area, 'icon')) ||
-                      AREA_ICONS[index % AREA_ICONS.length];
+                    const icon = lifeIconFromLegacy(
+                      area && bodyString(area, 'icon'),
+                      index,
+                    );
                     const scheduled =
                       quadrant === 'SCHEDULE'
                         ? actionScheduledDate(action.body)
@@ -383,9 +383,7 @@ export function PriorityScreen({
                     return (
                       <View key={action.id} style={styles.actionRow}>
                         <View style={styles.actionIcon}>
-                          <Text style={{ fontSize: 16 }}>
-                            {icon.length <= 3 ? icon : '📌'}
-                          </Text>
+                          <LifeIcon name={icon} size={18} />
                         </View>
                         <View style={styles.actionText}>
                           <Text
@@ -422,6 +420,7 @@ export function PriorityScreen({
                           {quadrant === 'SCHEDULE' && onSetScheduledDate ? (
                             <Pressable
                               disabled={busy}
+                              style={styles.dateChipRow}
                               onPress={(event) => {
                                 event?.stopPropagation?.();
                                 openScheduleDateEditor(action);
@@ -434,6 +433,11 @@ export function PriorityScreen({
                                   : 'Set schedule date'
                               }
                             >
+                              <LifeIcon
+                                name="calendar-edit"
+                                size={12}
+                                color={scheduled ? colors.sageDeep : colors.danger}
+                              />
                               <Text
                                 style={[
                                   styles.dateChip,
@@ -459,9 +463,11 @@ export function PriorityScreen({
                             }
                             hitSlop={8}
                           >
-                            <Text style={styles.doneDot}>
-                              {action.status === 'DONE' ? '●' : '○'}
-                            </Text>
+                            <LifeIcon
+                              name="done"
+                              size={18}
+                              weight={action.status === 'DONE' ? 'fill' : 'regular'}
+                            />
                           </Pressable>
                         </View>
                       </View>
@@ -917,6 +923,7 @@ const styles = StyleSheet.create({
   },
   actionAside: { alignItems: 'flex-end', gap: 4 },
   actionHours: { color: colors.ink, fontWeight: '700', fontSize: 12 },
+  dateChipRow: { alignItems: 'center', flexDirection: 'row', gap: 3 },
   dateChip: {
     color: colors.sageDeep,
     fontWeight: '700',

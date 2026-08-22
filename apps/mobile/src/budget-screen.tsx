@@ -14,6 +14,7 @@ import {
   type Account,
   type Budget,
 } from './api';
+import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
 
@@ -95,14 +96,16 @@ export function BudgetScreen({ account, notify }: Props) {
           disabled={busy}
           onPress={() => void create('PRIVATE')}
         >
-          <Text style={styles.buttonText}>+ Personal</Text>
+          <LifeIcon name="add" size={16} color={colors.paper} />
+          <Text style={styles.buttonText}>Personal</Text>
         </Pressable>
         <Pressable
           style={[styles.buttonSecondary, (!canShare || busy) && styles.disabled]}
           disabled={!canShare || busy}
           onPress={() => void create('SHARED')}
         >
-          <Text style={styles.buttonTextSecondary}>+ Shared</Text>
+          <LifeIcon name="add" size={16} />
+          <Text style={styles.buttonTextSecondary}>Shared</Text>
         </Pressable>
       </View>
       {!canShare ? (
@@ -150,16 +153,21 @@ export function BudgetScreen({ account, notify }: Props) {
           <View style={styles.row}>
             {(
               [
-                ['overview', 'Overview'],
-                ['outgoings', 'Spending'],
-                ['wealth', 'Wealth'],
+                ['overview', 'Overview', 'overview'],
+                ['outgoings', 'Spending', 'spending'],
+                ['wealth', 'Wealth', 'wealth'],
               ] as const
-            ).map(([id, label]) => (
+            ).map(([id, label, icon]) => (
               <Pressable
                 key={id}
                 style={[styles.chip, section === id && styles.chipActive]}
                 onPress={() => setSection(id)}
               >
+                <LifeIcon
+                  name={icon}
+                  size={15}
+                  color={section === id ? colors.acid : colors.sageDeep}
+                />
                 <Text
                   style={[
                     styles.chipText,
@@ -238,6 +246,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   button: {
     flex: 1,
+    flexDirection: 'row',
+    gap: 5,
     backgroundColor: colors.ink,
     borderRadius: 12,
     minHeight: 44,
@@ -246,6 +256,8 @@ const styles = StyleSheet.create({
   },
   buttonSecondary: {
     flex: 1,
+    flexDirection: 'row',
+    gap: 5,
     backgroundColor: colors.paper,
     borderWidth: 1,
     borderColor: colors.line,
@@ -281,12 +293,15 @@ const styles = StyleSheet.create({
   tabText: { color: colors.ink, fontWeight: '600', fontSize: 12 },
   tabTextActive: { color: colors.acid },
   chip: {
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: colors.paper,
+    flexDirection: 'row',
+    gap: 5,
   },
   chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
   chipText: { color: colors.ink, fontWeight: '600', fontSize: 12 },

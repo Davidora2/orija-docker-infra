@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LifeItem } from "../lib/api";
+import { CapacityRing } from "./capacity-ring";
+import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import { PriorityPanel } from "./priority-panel";
 import {
@@ -138,12 +140,8 @@ type Props = {
   preferPriorityMatrix?: boolean;
 };
 
-const AREA_ICONS = ["🌿", "💪", "💼", "🏠", "🎯", "📚", "💚", "✨"];
-
-function areaIcon(pillar: LifeItem, index: number) {
-  const icon = str(pillar, "icon");
-  if (icon && !icon.includes("outline") && icon.length <= 3) return icon;
-  return AREA_ICONS[index % AREA_ICONS.length];
+function areaIconName(pillar: LifeItem, index: number) {
+  return lifeIconFromLegacy(str(pillar, "icon"), index);
 }
 
 function relativeTime(iso: string) {
@@ -547,7 +545,10 @@ export function PlanPanel(props: Props) {
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setConvertStep(0)}
           >
-            ← Idea
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={15} />
+              Idea
+            </span>
           </button>
           <h2 className="font-serif text-2xl">Turn into project</h2>
           <p className="text-sm text-[#6c7771]">
@@ -783,7 +784,10 @@ export function PlanPanel(props: Props) {
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setSelectedIdeaId(null)}
           >
-            ← Ideas
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={15} />
+              Ideas
+            </span>
           </button>
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#dbe8d7] text-2xl">
@@ -1050,7 +1054,19 @@ export function PlanPanel(props: Props) {
                   onClick={() => setSelectedIdeaId(idea.id)}
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef3ea] text-lg">
-                    {AREA_ICONS[index % AREA_ICONS.length]}
+                    <LifeIcon
+                      name={
+                        area
+                          ? areaIconName(
+                              area,
+                              Math.max(
+                                pillars.findIndex((pillar) => pillar.id === area.id),
+                                index,
+                              ),
+                            )
+                          : "ideas"
+                      }
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-[#14241f]">
@@ -1083,7 +1099,7 @@ export function PlanPanel(props: Props) {
                   aria-label={`Open ${idea.title}`}
                   onClick={() => setSelectedIdeaId(idea.id)}
                 >
-                  ›
+                  <LifeIcon name="chevron-right" size={16} color="#6c7771" />
                 </button>
               </div>
             );
@@ -1147,11 +1163,17 @@ export function PlanPanel(props: Props) {
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setSelectedAreaId(null)}
           >
-            ← Areas
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={15} />
+              Areas
+            </span>
           </button>
           <div className="flex items-start gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dbe8d7] text-3xl">
-              {areaIcon(selectedArea, Math.max(index, 0))}
+              <LifeIcon
+                name={areaIconName(selectedArea, Math.max(index, 0))}
+                size={28}
+              />
             </div>
             <div>
               <h2 className="font-serif text-3xl">{selectedArea.title}</h2>
@@ -1191,16 +1213,12 @@ export function PlanPanel(props: Props) {
                   Weekly capacity
                 </p>
                 <div className="mt-3 flex items-center gap-4">
-                  <div
-                    className="relative flex h-24 w-24 items-center justify-center rounded-full"
-                    style={{
-                      background: `conic-gradient(#617a57 ${Math.min(pct, 100)}%, #dde2dd 0)`,
-                    }}
-                  >
-                    <div className="flex h-[4.5rem] w-[4.5rem] flex-col items-center justify-center rounded-full bg-white">
-                      <span className="font-serif text-xl">{pct}%</span>
-                    </div>
-                  </div>
+                  <CapacityRing
+                    used={hours}
+                    capacity={availableHours}
+                    size={96}
+                    label={`${selectedArea.title} weekly capacity`}
+                  />
                   <div>
                     <p className="font-serif text-2xl text-[#14241f]">
                       {hours.toFixed(1)}h of {availableHours}h
@@ -1275,8 +1293,9 @@ export function PlanPanel(props: Props) {
                         {PROJECT_PRIORITY_META[level].title}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-[#14241f]">
-                      ○ Next: {next ? next.title : "Define next action"}
+                    <p className="mt-2 flex items-center gap-1.5 text-sm text-[#14241f]">
+                      <LifeIcon name="done" size={15} />
+                      Next: {next ? next.title : "Define next action"}
                     </p>
                     <p
                       className={`mt-1 text-xs ${
@@ -1334,7 +1353,7 @@ export function PlanPanel(props: Props) {
                 }}
               >
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#eef3ea] text-2xl">
-                  {areaIcon(pillar, index)}
+                  <LifeIcon name={areaIconName(pillar, index)} size={24} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
@@ -1364,7 +1383,7 @@ export function PlanPanel(props: Props) {
                     <ProgressBar value={pct} tone={pct > 100 ? "warn" : "sage"} />
                   </div>
                 </div>
-                <span className="text-lg text-[#6c7771]">›</span>
+                <LifeIcon name="chevron-right" size={17} color="#6c7771" />
               </div>
             );
           })}
@@ -1736,7 +1755,19 @@ export function PlanPanel(props: Props) {
                   }}
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eef3ea] text-lg">
-                    {AREA_ICONS[index % AREA_ICONS.length]}
+                    <LifeIcon
+                      name={
+                        area
+                          ? areaIconName(
+                              area,
+                              Math.max(
+                                pillars.findIndex((pillar) => pillar.id === area.id),
+                                index,
+                              ),
+                            )
+                          : "projects"
+                      }
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
@@ -1759,8 +1790,9 @@ export function PlanPanel(props: Props) {
                       {projectStatusLabel(project.status)} ·{" "}
                       {area?.title ?? "Unassigned"}
                     </p>
-                    <p className="mt-1 truncate text-sm font-medium text-[#14241f]">
-                      ○ Next: {next ? next.title : "Define next action"}
+                    <p className="mt-1 flex items-center gap-1.5 truncate text-sm font-medium text-[#14241f]">
+                      <LifeIcon name="done" size={15} />
+                      Next: {next ? next.title : "Define next action"}
                     </p>
                     <p
                       className={`mt-1 text-xs ${
@@ -1775,7 +1807,7 @@ export function PlanPanel(props: Props) {
                         : ""}
                     </p>
                   </div>
-                  <span className="text-[#6c7771]">›</span>
+                  <LifeIcon name="chevron-right" size={17} color="#6c7771" />
                 </button>
               );
             })
@@ -2205,11 +2237,14 @@ function ProjectDetailView({
         className="text-sm font-bold text-[#617a57]"
         onClick={onBack}
       >
-        ← Projects
+        <span className="inline-flex items-center gap-1">
+          <LifeIcon name="chevron-left" size={15} />
+          Projects
+        </span>
       </button>
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#dbe8d7] text-2xl">
-          🎯
+          <LifeIcon name="priority" size={26} />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-serif text-3xl text-[#14241f]">{project.title}</h2>
@@ -2284,7 +2319,11 @@ function ProjectDetailView({
                   : "Mark next action done"
               }
             >
-              {next.status === "DONE" ? "●" : "○"}
+              <LifeIcon
+                name="done"
+                size={14}
+                weight={next.status === "DONE" ? "fill" : "regular"}
+              />
             </button>
             <div>
               <h3
@@ -2386,7 +2425,11 @@ function ProjectDetailView({
                               done ? "Mark action open" : "Mark action done"
                             }
                           >
-                            {done ? "●" : "○"}
+                            <LifeIcon
+                              name="done"
+                              size={14}
+                              weight={done ? "fill" : "regular"}
+                            />
                           </button>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">

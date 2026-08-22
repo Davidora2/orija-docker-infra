@@ -9,6 +9,7 @@ import {
   type Budget,
 } from "../lib/api";
 import { DashboardPanel } from "./dashboard-panel";
+import { LifeIcon } from "./life-icon";
 import { OutgoingsPanel } from "./outgoings-panel";
 import { WealthPanel } from "./wealth-panel";
 
@@ -76,18 +77,18 @@ export function BudgetPanel({ account, onError }: Props) {
           <button
             type="button"
             disabled={busy}
-            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
             onClick={() => void create("PRIVATE")}
           >
-            + Personal
+            <LifeIcon name="add" size={14} color="currentColor" /> Personal
           </button>
           <button
             type="button"
             disabled={!canShare || busy}
-            className="rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold disabled:opacity-50"
             onClick={() => void create("SHARED")}
           >
-            + Shared
+            <LifeIcon name="add" size={14} color="currentColor" /> Shared
           </button>
         </div>
         {!canShare ? (
@@ -129,39 +130,31 @@ export function BudgetPanel({ account, onError }: Props) {
       {detail ? (
         <>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                section === "outgoings"
-                  ? "bg-[#14241f] text-[#f4f5f0]"
-                  : "border border-[#dde2dd] bg-white text-[#14241f]"
-              }`}
-              onClick={() => setSection("outgoings")}
-            >
-              Outgoings
-            </button>
-            <button
-              type="button"
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                section === "wealth"
-                  ? "bg-[#14241f] text-[#f4f5f0]"
-                  : "border border-[#dde2dd] bg-white text-[#14241f]"
-              }`}
-              onClick={() => setSection("wealth")}
-            >
-              Savings & investing
-            </button>
-            <button
-              type="button"
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                section === "dashboard"
-                  ? "bg-[#14241f] text-[#f4f5f0]"
-                  : "border border-[#dde2dd] bg-white text-[#14241f]"
-              }`}
-              onClick={() => setSection("dashboard")}
-            >
-              Dashboard
-            </button>
+            {(
+              [
+                ["outgoings", "Outgoings", "spending"],
+                ["wealth", "Savings & investing", "wealth"],
+                ["dashboard", "Dashboard", "overview"],
+              ] as const
+            ).map(([id, label, icon]) => (
+              <button
+                key={id}
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${
+                  section === id
+                    ? "bg-[#14241f] text-[#f4f5f0]"
+                    : "border border-[#dde2dd] bg-white text-[#14241f]"
+                }`}
+                onClick={() => setSection(id)}
+              >
+                <LifeIcon
+                  name={icon}
+                  size={14}
+                  color={section === id ? "#f4f5f0" : "#617a57"}
+                />
+                {label}
+              </button>
+            ))}
           </div>
 
           {section === "outgoings" ? (

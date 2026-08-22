@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LifeItem } from "../lib/api";
+import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import {
   PRIORITY_MATRIX_ORDER,
@@ -36,8 +37,6 @@ const ACCORDION_COPY: Record<
     subtitle: "Neither urgent nor important",
   },
 };
-
-const AREA_ICONS = ["🌿", "💪", "💼", "🏠", "🎯", "📚", "💚", "✨"];
 
 function hoursOf(action: LifeItem) {
   const value = action.body.hours;
@@ -333,7 +332,10 @@ export function PriorityPanel({
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setView("list")}
           >
-            ← Priority
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={14} />
+              Priority
+            </span>
           </button>
         </div>
         <PriorityMatrixPanel
@@ -440,7 +442,12 @@ export function PriorityPanel({
             onClick={() => setRebalanceOpen(true)}
           >
             <span className="min-w-0 truncate">Rebalance your week</span>
-            <span className="shrink-0">›</span>
+            <LifeIcon
+              className="shrink-0"
+              name="chevron-right"
+              size={14}
+              color="currentColor"
+            />
           </button>
         ) : null}
       </article>
@@ -494,9 +501,10 @@ export function PriorityPanel({
                         const area = pillars.find(
                           (p) => p.id === project?.parentId,
                         );
-                        const icon =
-                          (area && str(area, "icon")) ||
-                          AREA_ICONS[index % AREA_ICONS.length];
+                        const icon = lifeIconFromLegacy(
+                          area && str(area, "icon"),
+                          index,
+                        );
                         const scheduled =
                           quadrant === "SCHEDULE"
                             ? actionScheduledDate(action.body)
@@ -514,7 +522,7 @@ export function PriorityPanel({
                             }`}
                           >
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-lg">
-                              {icon.length <= 3 ? icon : "📌"}
+                              <LifeIcon name={icon} size={19} />
                             </span>
                             <div className="min-w-0 flex-1">
                               <p
@@ -547,7 +555,7 @@ export function PriorityPanel({
                               {quadrant === "SCHEDULE" && onSetScheduledDate ? (
                                 <button
                                   type="button"
-                                  className={`max-w-[7.5rem] truncate rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                  className={`inline-flex max-w-[8.5rem] items-center gap-1 truncate rounded-full border px-2 py-0.5 text-[10px] font-bold ${
                                     scheduled
                                       ? "border-[#c9d6c4] bg-white text-[#617a57]"
                                       : "border-[#c9634f]/40 bg-[#fdf4f1] text-[#c9634f]"
@@ -563,6 +571,11 @@ export function PriorityPanel({
                                       : "Set schedule date"
                                   }
                                 >
+                                  <LifeIcon
+                                    name="calendar-edit"
+                                    size={11}
+                                    color="currentColor"
+                                  />
                                   {scheduled ?? "Set date"}
                                 </button>
                               ) : null}
@@ -580,7 +593,13 @@ export function PriorityPanel({
                                     : "Mark action done"
                                 }
                               >
-                                {action.status === "DONE" ? "●" : "○"}
+                                <LifeIcon
+                                  name="done"
+                                  size={14}
+                                  weight={
+                                    action.status === "DONE" ? "fill" : "regular"
+                                  }
+                                />
                               </button>
                             </div>
                           </li>
