@@ -44,13 +44,11 @@ import {
   type LifeItem,
 } from './src/api';
 import {
-  getSyncPhase,
   loadCachedAccount,
   loadCachedItems,
   loadOutbox,
   setSyncPhase,
   subscribeSyncStatus,
-  type SyncPhase,
 } from './src/offline';
 import { PlanScreen } from './src/plan-screen';
 import { SwipeableRow } from './src/swipeable-row';
@@ -315,7 +313,6 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [online, setOnline] = useState(true);
-  const [syncPhase, setSyncPhaseState] = useState<SyncPhase>(getSyncPhase());
   const [pendingCount, setPendingCount] = useState(0);
   const [accountOpen, setAccountOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -388,14 +385,11 @@ function AppContent() {
       return;
     }
     setOnline(true);
-    const result = await syncPendingChanges((nextItems) => {
+    await syncPendingChanges((nextItems) => {
       setItems(nextItems);
       applyVisionHours(nextItems);
     });
-    if (result.remaining === 0) {
-      notify('Synced');
-    }
-  }, [applyVisionHours, notify]);
+  }, [applyVisionHours]);
 
   const load = useCallback(
     async (mode: 'boot' | 'refresh' = 'boot') => {
@@ -418,7 +412,6 @@ function AppContent() {
             applyVisionHours(cachedItems);
             setOnline(false);
             await setSyncPhase('offline');
-            notify('Offline — showing last saved data.');
             return;
           }
           setItems([]);
@@ -436,7 +429,6 @@ function AppContent() {
           applyVisionHours(cachedItems);
           setOnline(false);
           await setSyncPhase('offline');
-          notify('Offline — showing cached life items.');
         }
         if (reachable) {
           void flushSync();
@@ -456,7 +448,6 @@ function AppContent() {
             setAccount(cachedAccount);
             setItems(cachedItems);
             applyVisionHours(cachedItems);
-            notify('Offline — using last known session.');
           } else {
             notify(
               error instanceof Error
@@ -486,7 +477,6 @@ function AppContent() {
 
   useEffect(() => {
     return subscribeSyncStatus((phase, meta) => {
-      setSyncPhaseState(phase);
       setPendingCount(meta.pendingCount);
       setOnline(phase !== 'offline');
     });
@@ -990,18 +980,12 @@ function AppContent() {
         <View>
           <Text style={styles.brandMark}>Life OS</Text>
           <Text style={styles.topMeta}>
-            {todayLabel()} ·{' '}
-            {syncPhase === 'syncing'
-              ? 'Syncing…'
-              : syncPhase === 'synced' && pendingCount === 0
-                ? online
-                  ? 'Synced'
-                  : 'Offline'
-                : !online || syncPhase === 'offline'
-                  ? pendingCount > 0
-                    ? `Offline · ${pendingCount} queued`
-                    : 'Offline'
-                  : 'Online'}
+            {todayLabel()}
+            {!online
+              ? pendingCount > 0
+                ? ` · Offline · ${pendingCount} queued`
+                : ' · Offline'
+              : ''}
           </Text>
         </View>
         <Pressable

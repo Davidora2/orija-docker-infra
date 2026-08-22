@@ -26,7 +26,8 @@
  *
  * ## UI feedback
  *
- * Top bar shows Online / Offline / Syncing… / Synced. Pending outbox count is
- * available via sync meta for future badges.
+ * Sync runs quietly in the background (outbox flush + phase tracking stay
+ * intact). The top bar only shows a static Offline indicator when unreachable
+ * (with queued count when the outbox is non-empty). No Syncing / Synced flashes.
  */
 export {};
