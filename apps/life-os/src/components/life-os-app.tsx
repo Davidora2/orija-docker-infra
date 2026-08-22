@@ -35,6 +35,7 @@ import {
   DelayedEditorialLoading,
   EditorialState,
 } from "./editorial-state";
+import { FocusHero } from "./focus-hero";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { LifeIcon, type LifeIconName } from "./life-icon";
 import { HouseholdPanel } from "./household-panel";
@@ -1096,10 +1097,12 @@ export function LifeOSApp() {
 
       {tab === "you" && youDest === "menu" ? (
         <section className="space-y-3">
-          <h2 className="font-serif text-2xl text-[#14241f]">You</h2>
-          <p className="text-sm text-[#6c7771]">
-            Capacity, review, household, integrations, and privacy controls.
-          </p>
+          <FocusHero
+            accentDot
+            eyebrow="You"
+            meta="Keep weekly load honest, run your review, and manage household tools."
+            title="Capacity, review, and settings"
+          />
           {(
             [
               ["capacity", "Capacity", "Weekly hours and load", "capacity"],
@@ -1132,7 +1135,18 @@ export function LifeOSApp() {
 
       {tab === "you" && youDest === "capacity" ? (
         <section className="space-y-4">
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+          <FocusHero
+            accentDot
+            eyebrow="Capacity"
+            meta={
+              planned > available
+                ? "Overcommitted — reduce action hours below."
+                : "Within capacity for this week."
+            }
+            subtitle="Weekly load pulse"
+            title={`${planned.toFixed(1)}h planned / ${available}h available`}
+          />
+          <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
             <div className="flex items-center gap-4">
               <CapacityRing
                 planned={planned}
@@ -1140,7 +1154,7 @@ export function LifeOSApp() {
                 label="Weekly planned capacity"
               />
               <div className="min-w-0">
-                <h2 className="font-serif text-2xl">
+                <h2 className="font-serif text-xl">
                   {planned.toFixed(1)}h planned / {available}h available
                 </h2>
                 {planned > available ? (

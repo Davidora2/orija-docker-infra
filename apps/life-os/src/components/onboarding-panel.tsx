@@ -16,6 +16,7 @@ import {
   type OnboardingStep,
 } from "../lib/api";
 import { actionBodyWithLevels, type PriorityLevel } from "../lib/priority-matrix";
+import { FocusHero } from "./focus-hero";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 
 const FLOW: Exclude<OnboardingStep, "deferred">[] = [
@@ -423,16 +424,16 @@ export function OnboardingPanel({
         </div>
 
         {step === "welcome" ? (
-          <div className="py-5">
-            <h2 id="onboarding-title" className="font-serif text-4xl leading-tight">
-              About two minutes to a usable Today.
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-[#6c7771]">
-              Choose a few life areas, set weekly capacity, capture ideas, and
-              land on your primary move.
-            </p>
+          <div className="space-y-5 py-2">
+            <FocusHero
+              accentDot
+              eyebrow="Life OS"
+              meta="Choose life areas, set weekly capacity, capture ideas, and land on your primary move."
+              title="About two minutes to a usable Today."
+              titleId="onboarding-title"
+            />
             <button
-              className="mt-7 w-full rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className="w-full rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
               disabled={busy}
               onClick={() => void transition("areas")}
               type="button"
@@ -440,7 +441,7 @@ export function OnboardingPanel({
               Get started
             </button>
             <button
-              className="mt-2 w-full rounded-xl px-4 py-3 text-sm font-bold text-[#617a57] disabled:opacity-50"
+              className="w-full rounded-xl px-4 py-3 text-sm font-bold text-[#617a57] disabled:opacity-50"
               disabled={busy}
               onClick={() => void pause()}
               type="button"

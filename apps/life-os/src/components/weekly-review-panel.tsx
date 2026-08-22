@@ -6,6 +6,7 @@ import {
   saveWeeklyReview,
   type WeeklyReview,
 } from "../lib/api";
+import { FocusHero } from "./focus-hero";
 import { CapacityRing } from "./capacity-ring";
 
 type Props = {
@@ -143,6 +144,14 @@ export function WeeklyReviewPanel({
 
   return (
     <section className="space-y-4">
+      <FocusHero
+        accentDot
+        eyebrow={`Results · week of ${mondayOfCurrentWeek()}`}
+        meta={`${totalActions === 0 ? 0 : Math.round((completedActions / totalActions) * 100)}% complete · ${plannedHours.toFixed(1)}h planned / ${availableHours}h available`}
+        subtitle="Guided CEO-style check-in"
+        title={`${completedActions} completed · ${Math.max(0, totalActions - completedActions)} open`}
+      />
+
       <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
         <CapacityRing
           planned={plannedHours}
@@ -151,10 +160,10 @@ export function WeeklyReviewPanel({
         />
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-            Results
+            Capacity ring
           </p>
-          <h2 className="mt-2 font-serif text-2xl">
-            {completedActions} completed · {Math.max(0, totalActions - completedActions)} open
+          <h2 className="mt-2 font-serif text-xl">
+            {plannedHours.toFixed(1)}h planned / {availableHours}h available
           </h2>
           <p className="text-sm text-[#6c7771]">
             Completion{" "}

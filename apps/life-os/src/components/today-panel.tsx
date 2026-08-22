@@ -8,6 +8,7 @@ import {
   actionScheduledDate,
 } from "../lib/priority-matrix";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
+import { FocusHero, FocusHeroHours } from "./focus-hero";
 
 type Props = {
   primary: LifeItem | null;
@@ -159,41 +160,10 @@ export function TodayPanel({
       </article>
 
       {primary ? (
-        <article className="relative overflow-hidden rounded-3xl bg-[#14241f] p-6 text-white shadow-[0_18px_50px_rgba(20,36,31,0.14)] sm:p-8">
-          <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-[#d6f57a]/15" />
-          <div className="relative">
-            <div className="flex items-center justify-between gap-3">
-              <p className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/60">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#d6f57a]" />
-                Primary move
-              </p>
-              <span className="text-xs text-white/50">
-                {hours(numberOf(primary, "hours", 1))}
-              </span>
-            </div>
-            <h2
-              className={`mt-7 max-w-2xl font-serif text-3xl leading-tight tracking-tight sm:text-4xl ${
-                primary.status === "DONE" ? "text-white/55 line-through" : ""
-              }`}
-            >
-              {primary.title}
-            </h2>
-            {(() => {
-              const { project, label } = context(primary);
-              const quadrant =
-                PRIORITY_QUADRANT_META[
-                  actionPriorityQuadrant(primary.body, project?.body)
-                ].title;
-              const day = stringOf(primary, "day");
-              return (
-                <p className="mt-3 text-xs text-white/55">
-                  {[day, label, quadrant, primary.status === "DONE" ? "Done" : ""]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              );
-            })()}
-            <div className="mt-7 flex flex-wrap items-center gap-3">
+        <FocusHero
+          accentDot
+          actions={
+            <>
               <button
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#d6f57a] px-4 text-xs font-bold text-[#2f431e] disabled:opacity-50"
                 disabled={busy}
@@ -210,9 +180,25 @@ export function TodayPanel({
               >
                 View capacity
               </button>
-            </div>
-          </div>
-        </article>
+            </>
+          }
+          eyebrow="Primary move"
+          meta={(() => {
+            const { project, label } = context(primary);
+            const quadrant =
+              PRIORITY_QUADRANT_META[
+                actionPriorityQuadrant(primary.body, project?.body)
+              ].title;
+            const day = stringOf(primary, "day");
+            return [day, label, quadrant, primary.status === "DONE" ? "Done" : ""]
+              .filter(Boolean)
+              .join(" · ");
+          })()}
+          title={primary.title}
+          trailing={
+            <FocusHeroHours>{hours(numberOf(primary, "hours", 1))}</FocusHeroHours>
+          }
+        />
       ) : (
         <article className="rounded-3xl border border-[#d9e2d5] bg-gradient-to-br from-white to-[#edf3e9] px-6 py-10 text-center">
           <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dbe8d7]">

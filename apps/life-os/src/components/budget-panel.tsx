@@ -9,6 +9,7 @@ import {
   type Budget,
 } from "../lib/api";
 import { DashboardPanel } from "./dashboard-panel";
+import { FocusHero } from "./focus-hero";
 import { LifeIcon } from "./life-icon";
 import { OutgoingsPanel } from "./outgoings-panel";
 import { WealthPanel } from "./wealth-panel";
@@ -107,19 +108,12 @@ export function BudgetPanel({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-4 px-1 pb-1">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#617a57]">
-            Money
-          </p>
-          <h2 className="mt-2 font-serif text-3xl leading-tight">
-            Your financial rhythm
-          </h2>
-          <p className="mt-1 max-w-xl text-sm leading-6 text-[#6c7771]">
-            See what is coming, understand this month, then act where it matters.
-          </p>
-        </div>
-      </div>
+      <FocusHero
+        accentDot
+        eyebrow="Money"
+        meta="Calm cashflow pulse — overview, spending, and wealth in one place."
+        title="Your financial rhythm"
+      />
 
       <nav
         className="grid grid-cols-3 rounded-2xl border border-[#dce1dc] bg-white/70 p-1.5 shadow-[0_8px_30px_rgba(28,45,38,0.05)]"

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LifeItem } from "../lib/api";
 import type { PriorityLevel } from "../lib/priority-matrix";
+import { FocusHero } from "./focus-hero";
 import { LifeIcon, type LifeIconName } from "./life-icon";
 
 export type QuickAddKind = "action" | "idea" | "project" | "spend";
@@ -119,14 +120,13 @@ export function QuickAddSheet({
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#617a57]">
-              Quick Add
-            </p>
-            <h2 id="quick-add-title" className="mt-1 font-serif text-3xl text-[#14241f]">
-              Capture without breaking focus.
-            </h2>
-          </div>
+          <FocusHero
+            accentDot
+            className="flex-1"
+            eyebrow="Quick Add"
+            title="Capture without breaking focus."
+            titleId="quick-add-title"
+          />
           <button
             aria-label="Close Quick Add"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dde2dd] bg-white"
