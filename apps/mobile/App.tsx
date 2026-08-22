@@ -1265,6 +1265,19 @@ function AppContent() {
                 notify('Moved to Later.');
               })
             }
+            onSetScheduledDate={(action, date) =>
+              void run('Set schedule date', async () => {
+                await updateLifeItem(action.id, {
+                  body: actionBodyWithScheduledDate(action.body, date),
+                });
+                await reloadItems();
+                notify('Schedule date saved.');
+              })
+            }
+            onRequestPlanSegment={(segment) => {
+              setPlanSegment(segment);
+              if (segment !== 'priority') setPreferPriorityMatrix(false);
+            }}
             tipDismissed={priorityTipDismissed}
             onDismissTip={() => {
               setPriorityTipDismissed(true);

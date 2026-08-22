@@ -927,6 +927,17 @@ export function LifeOSApp() {
               });
             })
           }
+          onSetScheduledDate={(action, date) =>
+            void run(async () => {
+              await updateLifeItem(action.id, {
+                body: actionBodyWithScheduledDate(action.body, date),
+              });
+            })
+          }
+          onRequestPlanSegment={(segment) => {
+            setPlanSegment(segment);
+            if (segment !== "priority") setPreferPriorityMatrix(false);
+          }}
         />
       ) : null}
 

@@ -7,6 +7,8 @@ import {
   PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
   actionPriorityQuadrant,
+  actionScheduledDate,
+  quadrantRequiresScheduledDate,
   type PriorityQuadrant,
 } from "../lib/priority-matrix";
 
@@ -53,6 +55,12 @@ function isThisWeek(action: LifeItem) {
   return day !== "Later" && day !== "Someday";
 }
 
+type DateEditState = {
+  action: LifeItem;
+  draft: string;
+  completeAfter: boolean;
+};
+
 type Props = {
   pillars: LifeItem[];
   projects: LifeItem[];
@@ -61,6 +69,8 @@ type Props = {
   busy: boolean;
   onMoveAction: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onOpenProject?: (project: LifeItem) => void;
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
   preferMatrix?: boolean;
@@ -111,6 +121,8 @@ export function PriorityPanel({
   busy,
   onMoveAction,
   onCompleteAction,
+  onSetScheduledDate,
+  onOpenProject,
   onMoveProjectToIdea,
   onParkAction,
   preferMatrix = false,
@@ -132,6 +144,40 @@ export function PriorityPanel({
   });
   const [tipDismissed, setTipDismissed] = useState(false);
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
+  const [dateEdit, setDateEdit] = useState<DateEditState | null>(null);
+
+  function openScheduleDateEditor(
+    action: LifeItem,
+    options?: { completeAfter?: boolean },
+  ) {
+    setDateEdit({
+      action,
+      draft: actionScheduledDate(action.body) ?? "",
+      completeAfter: Boolean(options?.completeAfter),
+    });
+  }
+
+  function handleCompleteAction(action: LifeItem, quadrant: PriorityQuadrant) {
+    if (
+      action.status !== "DONE" &&
+      quadrantRequiresScheduledDate(quadrant) &&
+      !actionScheduledDate(action.body) &&
+      onSetScheduledDate
+    ) {
+      openScheduleDateEditor(action, { completeAfter: true });
+      return;
+    }
+    onCompleteAction(action);
+  }
+
+  function saveScheduleDate() {
+    if (!dateEdit || !onSetScheduledDate) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)) return;
+    const { action, draft, completeAfter } = dateEdit;
+    onSetScheduledDate(action, draft);
+    setDateEdit(null);
+    if (completeAfter) onCompleteAction(action);
+  }
 
   useEffect(() => {
     try {
@@ -395,6 +441,13 @@ export function PriorityPanel({
                         const icon =
                           (area && str(area, "icon")) ||
                           AREA_ICONS[index % AREA_ICONS.length];
+                        const scheduled =
+                          quadrant === "SCHEDULE"
+                            ? actionScheduledDate(action.body)
+                            : null;
+                        const metaLabel = `${area?.title ?? "Unassigned"}${
+                          project ? ` · ${project.title}` : ""
+                        }`;
                         return (
                           <li
                             key={action.id}
@@ -407,20 +460,54 @@ export function PriorityPanel({
                               <p className="truncate text-sm font-semibold text-[#14241f]">
                                 {action.title}
                               </p>
-                              <p className="truncate text-[11px] text-[#6c7771]">
-                                {area?.title ?? "Unassigned"}
-                                {project ? ` · ${project.title}` : ""}
-                              </p>
+                              {project && onOpenProject ? (
+                                <button
+                                  type="button"
+                                  className="mt-0.5 block max-w-full truncate text-left text-[11px] text-[#6c7771] underline-offset-2 hover:underline"
+                                  onClick={() => onOpenProject(project)}
+                                >
+                                  {metaLabel}
+                                </button>
+                              ) : (
+                                <p className="truncate text-[11px] text-[#6c7771]">
+                                  {metaLabel}
+                                </p>
+                              )}
                             </div>
                             <div className="flex shrink-0 flex-col items-end gap-1">
                               <span className="text-xs font-bold text-[#14241f]">
                                 {hoursOf(action)}h
                               </span>
+                              {quadrant === "SCHEDULE" && onSetScheduledDate ? (
+                                <button
+                                  type="button"
+                                  className={`max-w-[7.5rem] truncate rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                    scheduled
+                                      ? "border-[#c9d6c4] bg-white text-[#617a57]"
+                                      : "border-[#c9634f]/40 bg-[#fdf4f1] text-[#c9634f]"
+                                  }`}
+                                  disabled={busy}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openScheduleDateEditor(action);
+                                  }}
+                                  aria-label={
+                                    scheduled
+                                      ? `Edit schedule date ${scheduled}`
+                                      : "Set schedule date"
+                                  }
+                                >
+                                  {scheduled ?? "Set date"}
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
                                 disabled={busy}
-                                onClick={() => onCompleteAction(action)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleCompleteAction(action, quadrant);
+                                }}
                                 aria-label={
                                   action.status === "DONE"
                                     ? "Mark action open"
@@ -597,6 +684,68 @@ export function PriorityPanel({
             )}
           </div>
         </Sheet>
+      ) : null}
+
+      {dateEdit ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="priority-schedule-date-title"
+            className="w-full max-w-md rounded-2xl border border-[#dde2dd] bg-white p-5 shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              Schedule
+            </p>
+            <h3
+              id="priority-schedule-date-title"
+              className="mt-1 font-serif text-2xl text-[#14241f]"
+            >
+              {dateEdit.completeAfter ? "Date before done" : "Pick a date"}
+            </h3>
+            <p className="mt-1 text-sm text-[#6c7771]">
+              &ldquo;{dateEdit.action.title}&rdquo; is in Schedule — set a
+              calendar date (YYYY-MM-DD)
+              {dateEdit.completeAfter ? " before marking it done" : ""}.
+            </p>
+            <label className="mt-4 block space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                Date
+              </span>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                value={dateEdit.draft}
+                onChange={(e) =>
+                  setDateEdit((current) =>
+                    current ? { ...current, draft: e.target.value } : current,
+                  )
+                }
+              />
+              <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
+            </label>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-[#dde2dd] px-4 py-3 text-xs font-bold"
+                onClick={() => setDateEdit(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+                disabled={
+                  busy || !/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)
+                }
+                onClick={saveScheduleDate}
+              >
+                {dateEdit.completeAfter ? "Save & complete" : "Save date"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );
