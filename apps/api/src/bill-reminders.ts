@@ -329,6 +329,7 @@ export async function runBillReminderPass(
     SELECT id, email, display_name, timezone
     FROM users
     WHERE email IS NOT NULL AND char_length(email) > 3
+      AND email_reminders_enabled = true
   `;
 
   let emailsSent = 0;
