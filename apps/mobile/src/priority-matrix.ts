@@ -341,6 +341,73 @@ export function projectPriorityQuadrant(
   return 'SCHEDULE';
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Canonical project deadline from body (`targetDate`, or aliases `deadline` / `dueAt`). */
+export function projectTargetDate(
+  body: Record<string, unknown> | null | undefined,
+): string | null {
+  const source = body ?? {};
+  for (const key of ['targetDate', 'deadline', 'dueAt'] as const) {
+    const value = source[key];
+    if (typeof value === 'string') {
+      const sliced = value.slice(0, 10);
+      if (DATE_ONLY.test(sliced)) return sliced;
+    }
+  }
+  return null;
+}
+
+/** Write/clear canonical `targetDate`; drop deadline aliases. */
+export function projectBodyWithTargetDate(
+  body: Record<string, unknown>,
+  targetDate: string | null | undefined,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...body };
+  delete next.deadline;
+  delete next.dueAt;
+  if (typeof targetDate === 'string' && DATE_ONLY.test(targetDate.slice(0, 10))) {
+    next.targetDate = targetDate.slice(0, 10);
+  } else {
+    delete next.targetDate;
+  }
+  return next;
+}
+
+/** Normalize PROJECT body so deadline aliases collapse onto `targetDate`. */
+export function normalizeProjectDeadlineBody(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const hasAlias =
+    Object.prototype.hasOwnProperty.call(body, 'deadline') ||
+    Object.prototype.hasOwnProperty.call(body, 'dueAt') ||
+    Object.prototype.hasOwnProperty.call(body, 'targetDate');
+  if (!hasAlias) return body;
+  const cleared =
+    body.targetDate === null ||
+    body.deadline === null ||
+    body.dueAt === null;
+  const due = projectTargetDate(body);
+  return projectBodyWithTargetDate(body, cleared && !due ? null : due);
+}
+
+export function isProjectDeadlineOverdue(
+  body: Record<string, unknown> | null | undefined,
+  status: string,
+  today = new Date().toISOString().slice(0, 10),
+): boolean {
+  if (
+    status === 'DONE' ||
+    status === 'ARCHIVED' ||
+    status === 'CANCELLED' ||
+    status === 'CONVERTED'
+  ) {
+    return false;
+  }
+  const due = projectTargetDate(body);
+  return Boolean(due && due < today);
+}
+
 /** Build project body fields for High/Med/Low (strips Eisenhower keys). */
 export function projectBodyWithPriority(
   body: Record<string, unknown>,
@@ -390,7 +457,7 @@ export function actionBodyWithFlags(
 export function migrateProjectBody(
   body: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
-  const source = { ...(body ?? {}) };
+  const source = normalizeProjectDeadlineBody({ ...(body ?? {}) });
   const priority = projectPriorityLevel(source);
   return projectBodyWithPriority(source, priority);
 }

@@ -22,6 +22,7 @@ function shiftWeek(start: string, delta: number): string {
 function eventTone(type: CalendarEvent["type"]) {
   if (type === "payment") return "bg-[#f8e4df] text-[#8a3d30]";
   if (type === "payday") return "bg-[#dbe8d7] text-[#2f431e]";
+  if (type === "milestone") return "bg-[#fff3e8] text-[#8a5a16]";
   return "bg-[#eef2ea] text-[#14241f]";
 }
 
@@ -38,7 +39,12 @@ export function CalendarPanel({
   const [month, setMonth] = useState(now.getUTCMonth() + 1);
   const [weekStart, setWeekStart] = useState(isoToday());
   const [areaIds, setAreaIds] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>(["task", "payment", "payday"]);
+  const [types, setTypes] = useState<string[]>([
+    "task",
+    "payment",
+    "payday",
+    "milestone",
+  ]);
   const [data, setData] = useState<CalendarPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -102,7 +108,7 @@ export function CalendarPanel({
           <div>
             <h2 className="font-serif text-2xl">Calendar</h2>
             <p className="text-sm text-[#6c7771]">
-              Tasks, payments, and paydays in one place.
+              Tasks, project deadlines, payments, and paydays in one place.
             </p>
           </div>
           <div className="flex gap-2">
@@ -166,7 +172,7 @@ export function CalendarPanel({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {(["task", "payment", "payday"] as const).map((type) => (
+          {(["task", "milestone", "payment", "payday"] as const).map((type) => (
             <button
               key={type}
               type="button"
@@ -179,9 +185,11 @@ export function CalendarPanel({
             >
               {type === "task"
                 ? "Tasks"
-                : type === "payment"
-                  ? "Payments"
-                  : "Paydays"}
+                : type === "milestone"
+                  ? "Deadlines"
+                  : type === "payment"
+                    ? "Payments"
+                    : "Paydays"}
             </button>
           ))}
         </div>
@@ -218,8 +226,8 @@ export function CalendarPanel({
 
         {data ? (
           <p className="text-xs text-[#6c7771]">
-            {data.counts.tasks} tasks · {data.counts.payments} payments ·{" "}
-            {data.counts.paydays} paydays
+            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} deadlines ·{" "}
+            {data.counts.payments} payments · {data.counts.paydays} paydays
           </p>
         ) : null}
       </article>
