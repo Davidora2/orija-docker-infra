@@ -201,6 +201,19 @@ export function ideaScoreNarrative(score: number): string {
   return 'Light signal — keep it in the inbox or discard it.';
 }
 
+export {
+  DATE_ONLY,
+  addLocalDays,
+  canonicalDateOnly,
+  formatFriendlyDate,
+  isValidDateOnly,
+  localDayKey,
+  parseLocalDayKey,
+  quickDateNextWeek,
+  quickDateToday,
+  quickDateTomorrow,
+} from './dates';
+
 export function ideaConversionMetadata(ideaId: string): {
   projectBody: { fromIdeaId: string };
   sourceIdeaStatus: 'CONVERTED';

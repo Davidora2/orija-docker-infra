@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PRIORITY_FILTERS,
+  addLocalDays,
+  canonicalDateOnly,
   filterPriorityActions,
+  formatFriendlyDate,
   ideaConversionMetadata,
   ideaOverallScore,
   ideaScoreNarrative,
   ideaStatusForAction,
+  isValidDateOnly,
+  localDayKey,
+  quickDateNextWeek,
+  quickDateToday,
+  quickDateTomorrow,
   resetPriorityFilters,
   type PlanItemLike,
 } from './index.js';
@@ -96,6 +104,33 @@ describe('Priority filters', () => {
     const reset = resetPriorityFilters();
     expect(reset).toEqual(DEFAULT_PRIORITY_FILTERS);
     expect(reset).not.toBe(DEFAULT_PRIORITY_FILTERS);
+  });
+});
+
+describe('Local date helpers', () => {
+  const fixed = new Date(2026, 7, 22, 23, 59, 59);
+
+  it('canonicalizes valid day keys and rejects invalid ones', () => {
+    expect(canonicalDateOnly('2026-08-22')).toBe('2026-08-22');
+    expect(canonicalDateOnly(' 2026-08-22 ')).toBe('2026-08-22');
+    expect(canonicalDateOnly('2026-02-30')).toBeNull();
+    expect(canonicalDateOnly('not-a-date')).toBeNull();
+    expect(isValidDateOnly('2026-08-22')).toBe(true);
+    expect(isValidDateOnly('2026-13-01')).toBe(false);
+  });
+
+  it('uses local calendar days without UTC drift near midnight', () => {
+    expect(localDayKey(fixed)).toBe('2026-08-22');
+    expect(quickDateToday(fixed)).toBe('2026-08-22');
+    expect(quickDateTomorrow(fixed)).toBe('2026-08-23');
+    expect(quickDateNextWeek(fixed)).toBe('2026-08-29');
+    expect(addLocalDays(fixed, 1).getDate()).toBe(23);
+  });
+
+  it('formats friendly labels for today, tomorrow, and other dates', () => {
+    expect(formatFriendlyDate('2026-08-22', fixed)).toBe('Today');
+    expect(formatFriendlyDate('2026-08-23', fixed)).toBe('Tomorrow');
+    expect(formatFriendlyDate('2026-08-25', fixed)).toMatch(/25 Aug/);
   });
 });
 

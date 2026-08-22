@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   DEFAULT_PRIORITY_FILTERS,
   filterPriorityActions,
+  isValidDateOnly,
   resetPriorityFilters,
   type PriorityFilters,
 } from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
+import { DatePickerField } from "./date-picker-field";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import {
@@ -857,25 +859,26 @@ export function PriorityPanel({
             </h3>
             <p className="mt-1 text-sm text-[#6c7771]">
               &ldquo;{dateEdit.action.title}&rdquo; is in Schedule — set a
-              calendar date (YYYY-MM-DD)
+              calendar date
               {dateEdit.completeAfter ? " before marking it done" : ""}.
             </p>
-            <label className="mt-4 block space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                Date
-              </span>
-              <input
-                type="date"
-                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                value={dateEdit.draft}
-                onChange={(e) =>
+            <div className="mt-4">
+              <DatePickerField
+                error={
+                  dateEdit.draft && !isValidDateOnly(dateEdit.draft)
+                    ? "Choose a date for Schedule"
+                    : undefined
+                }
+                label="Date"
+                onChange={(value) =>
                   setDateEdit((current) =>
-                    current ? { ...current, draft: e.target.value } : current,
+                    current ? { ...current, draft: value } : current,
                   )
                 }
+                required
+                value={dateEdit.draft}
               />
-              <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
-            </label>
+            </div>
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -888,7 +891,7 @@ export function PriorityPanel({
                 type="button"
                 className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
                 disabled={
-                  busy || !/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)
+                  busy || !isValidDateOnly(dateEdit.draft)
                 }
                 onClick={saveScheduleDate}
               >

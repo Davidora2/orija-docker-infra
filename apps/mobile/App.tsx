@@ -30,6 +30,7 @@ import {
   ideaOverallScore,
   ideaScoreNarrative,
   ideaStatusForAction,
+  isValidDateOnly,
 } from '@life-os/plan-domain';
 import { AccountSheet } from './src/account-sheet';
 import { BudgetScreen } from './src/budget-screen';
@@ -67,7 +68,12 @@ import { PlanScreen } from './src/plan-screen';
 import { SwipeableRow } from './src/swipeable-row';
 import { TodayCapacityStrip } from './src/today-capacity-strip';
 import { TodayPrimaryHero } from './src/today-primary-hero';
-import { FocusHero, YouMenuHero } from './src/ui';
+import { FocusHero, YouMenuHero, DatePickerField } from './src/ui';
+import {
+  EMPTY_NEXT_STEP,
+  NextStepComposerModal,
+  type NextStepDraft,
+} from './src/next-step-composer';
 import { WeeklyReviewScreen } from './src/weekly-review-screen';
 import {
   WEEK_DAYS,
@@ -374,6 +380,10 @@ function AppContent() {
     useState<PriorityLevel>('HIGH');
   const [actionUrgency, setActionUrgency] = useState<PriorityLevel>('LOW');
   const [actionScheduleDate, setActionScheduleDate] = useState('');
+  const [projectScheduleError, setProjectScheduleError] = useState('');
+  const [nextStepProjectId, setNextStepProjectId] = useState<string | null>(null);
+  const [nextStepDraft, setNextStepDraft] = useState<NextStepDraft>(EMPTY_NEXT_STEP);
+  const [nextStepNotesOpen, setNextStepNotesOpen] = useState(false);
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
   const [stickyPrimaryId, setStickyPrimaryId] = useState<string | null>(null);
 
@@ -724,10 +734,9 @@ function AppContent() {
       };
       if (quadrantRequiresScheduledDate(createQuadrant)) {
         const date = actionScheduleDate.trim() || projectTargetDate.trim();
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-          throw new Error(
-            'Schedule actions need a date — set the schedule date (YYYY-MM-DD).',
-          );
+        if (!isValidDateOnly(date)) {
+          setProjectScheduleError('Choose a date for Schedule');
+          throw new Error('Schedule actions need a date.');
         }
         actionBody = actionBodyWithScheduledDate(actionBody, date);
       }
@@ -830,7 +839,7 @@ function AppContent() {
   async function confirmSchedulePrompt() {
     if (!schedulePrompt) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)) {
-      notify('Schedule requires a date (YYYY-MM-DD).');
+      notify('Choose a date for Schedule.');
       return;
     }
     const { action, quadrant } = schedulePrompt;
@@ -847,6 +856,51 @@ function AppContent() {
       setSchedulePrompt(null);
       setScheduleDateDraft('');
       notify('Action scheduled.');
+    });
+  }
+
+  function openNextStep(projectId: string) {
+    setNextStepProjectId(projectId);
+    setNextStepDraft({ ...EMPTY_NEXT_STEP });
+    setNextStepNotesOpen(false);
+  }
+
+  async function saveNextStep() {
+    if (!nextStepProjectId || !nextStepDraft.title.trim()) return;
+    const quadrant = quadrantFromLevels(
+      nextStepDraft.importance,
+      nextStepDraft.urgency,
+    );
+    if (
+      quadrantRequiresScheduledDate(quadrant) &&
+      !isValidDateOnly(nextStepDraft.scheduledDate)
+    ) {
+      return;
+    }
+    const hours = Number(nextStepDraft.hours);
+    let body: Record<string, unknown> = {
+      hours: Number.isFinite(hours) && hours > 0 ? hours : 0.5,
+      note: nextStepDraft.notes.trim() || undefined,
+    };
+    if (quadrantRequiresScheduledDate(quadrant)) {
+      body = actionBodyWithScheduledDate(body, nextStepDraft.scheduledDate);
+    }
+    await run('Add next step', async () => {
+      await createLifeItem({
+        kind: 'ACTION',
+        title: nextStepDraft.title.trim(),
+        parentId: nextStepProjectId,
+        body: actionBodyWithLevels(
+          body,
+          nextStepDraft.importance,
+          nextStepDraft.urgency,
+        ),
+      });
+      setNextStepProjectId(null);
+      setNextStepDraft({ ...EMPTY_NEXT_STEP });
+      setNextStepNotesOpen(false);
+      await reloadItems();
+      notify('Next step added.');
     });
   }
 
@@ -1032,13 +1086,16 @@ function AppContent() {
                 ? `"${schedulePrompt.action.title}" needs a date for Schedule.`
                 : ''}
             </Text>
-            <TextInput
+            <DatePickerField
+              error={
+                scheduleDateDraft && !isValidDateOnly(scheduleDateDraft)
+                  ? 'Choose a date for Schedule'
+                  : undefined
+              }
+              label="Schedule date (required)"
+              onChange={setScheduleDateDraft}
+              required
               value={scheduleDateDraft}
-              onChangeText={setScheduleDateDraft}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.muted}
-              autoCapitalize="none"
-              style={styles.input}
             />
             <View style={styles.row}>
               <Button
@@ -1359,7 +1416,7 @@ function AppContent() {
             onIdeaTitleChange={setIdeaTitle}
             onSaveIdea={() => void saveIdea()}
             onQuickAction={(projectId) => {
-              openQuickCapture('action', projectId);
+              openNextStep(projectId);
             }}
             onEvaluate={(idea) => {
               setEvaluateId(idea.id);
@@ -1968,17 +2025,12 @@ function AppContent() {
                           quickActionUrgency,
                         ),
                       ) ? (
-                        <>
-                          <Text style={styles.fieldLabel}>Schedule date</Text>
-                          <TextInput
-                            value={captureScheduleDate}
-                            onChangeText={setCaptureScheduleDate}
-                            placeholder="YYYY-MM-DD"
-                            placeholderTextColor={colors.muted}
-                            autoCapitalize="none"
-                            style={styles.input}
-                          />
-                        </>
+                        <DatePickerField
+                          label="Schedule date (required)"
+                          onChange={setCaptureScheduleDate}
+                          required
+                          value={captureScheduleDate}
+                        />
                       ) : null}
                       <Text style={styles.fieldLabel}>Day</Text>
                       <View style={styles.chipRow}>
@@ -2060,10 +2112,8 @@ function AppContent() {
                           note: ideaNote.trim() || undefined,
                         };
                         if (quadrantRequiresScheduledDate(q)) {
-                          if (!/^\d{4}-\d{2}-\d{2}$/.test(captureScheduleDate)) {
-                            notify(
-                              'Schedule actions need a date (YYYY-MM-DD).',
-                            );
+                          if (!isValidDateOnly(captureScheduleDate)) {
+                            notify('Choose a date for Schedule.');
                             return;
                           }
                           body = actionBodyWithScheduledDate(
@@ -2262,10 +2312,10 @@ function AppContent() {
               onChangeText={setProjectOutcome}
               multiline
             />
-            <Field
-              label="Deadline (optional, YYYY-MM-DD)"
+            <DatePickerField
+              label="Deadline (optional)"
+              onChange={setProjectTargetDate}
               value={projectTargetDate}
-              onChangeText={setProjectTargetDate}
             />
             <Text style={styles.fieldLabel}>Area</Text>
             <View style={styles.chipRow}>
@@ -2294,16 +2344,42 @@ function AppContent() {
             {!sourceIdeaId || projectStep === 2 ? (
               <>
             <Field
-              label="First next action"
+              label="Next step"
               value={actionTitle}
               onChangeText={setActionTitle}
             />
-            <Field
-              label="Hours"
-              value={actionHours}
-              onChangeText={setActionHours}
-              keyboardType="decimal-pad"
-            />
+            <Text style={styles.listMeta}>
+              One concrete physical action — the smallest move that starts momentum.
+            </Text>
+            <Text style={styles.fieldLabel}>Estimate</Text>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  ['0.25', '15m'],
+                  ['0.5', '30m'],
+                  ['1', '1h'],
+                  ['2', '2h'],
+                ] as const
+              ).map(([value, label]) => (
+                <Pressable
+                  key={value}
+                  onPress={() => setActionHours(value)}
+                  style={[
+                    styles.chip,
+                    actionHours === value && styles.chipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      actionHours === value && styles.chipTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
             <Text style={styles.fieldLabel}>Importance</Text>
             <Text style={styles.listMeta}>
               Low / Medium / High with Urgency → Eisenhower quadrant for this
@@ -2363,11 +2439,17 @@ function AppContent() {
             {quadrantRequiresScheduledDate(
               quadrantFromLevels(actionImportance, actionUrgency),
             ) ? (
-              <Field
-                label="Schedule date (required, YYYY-MM-DD)"
+              <DatePickerField
+                error={projectScheduleError}
+                label="Schedule date (required)"
+                onChange={(value) => {
+                  setActionScheduleDate(value);
+                  if (projectScheduleError && isValidDateOnly(value)) {
+                    setProjectScheduleError('');
+                  }
+                }}
+                required
                 value={actionScheduleDate}
-                onChangeText={setActionScheduleDate}
-                placeholder="YYYY-MM-DD"
               />
             ) : null}
             <Text style={styles.fieldLabel}>Day</Text>
@@ -2454,9 +2536,9 @@ function AppContent() {
                       quadrantRequiresScheduledDate(
                         quadrantFromLevels(actionImportance, actionUrgency),
                       ) &&
-                      !/^\d{4}-\d{2}-\d{2}$/.test(actionScheduleDate)
+                      !isValidDateOnly(actionScheduleDate)
                     ) {
-                      notify('Schedule actions need a date (YYYY-MM-DD).');
+                      setProjectScheduleError('Choose a date for Schedule');
                       return;
                     }
                     setProjectStep(3);
@@ -2478,6 +2560,26 @@ function AppContent() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <NextStepComposerModal
+        busy={busy}
+        draft={nextStepDraft}
+        notesOpen={nextStepNotesOpen}
+        onClose={() => {
+          setNextStepProjectId(null);
+          setNextStepDraft({ ...EMPTY_NEXT_STEP });
+          setNextStepNotesOpen(false);
+        }}
+        onDraftChange={setNextStepDraft}
+        onNotesOpenChange={setNextStepNotesOpen}
+        onSave={() => void saveNextStep()}
+        projectTitle={
+          nextStepProjectId
+            ? items.find((item) => item.id === nextStepProjectId)?.title
+            : undefined
+        }
+        visible={nextStepProjectId != null}
+      />
 
       <AccountSheet
         visible={accountOpen}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ideaConversionMetadata,
   ideaStatusForAction,
+  isValidDateOnly,
 } from "@life-os/plan-domain";
 import {
   createLifeItem,
@@ -27,6 +28,7 @@ import {
 } from "../lib/api";
 import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
+import { DatePickerField } from "./date-picker-field";
 import { CalendarSyncPanel } from "./calendar-sync-panel";
 import { CapacityRing } from "./capacity-ring";
 import {
@@ -1015,9 +1017,7 @@ export function LifeOSApp() {
                     ? when
                     : null;
                 if (!date) {
-                  throw new Error(
-                    "Schedule actions need a calendar date (YYYY-MM-DD).",
-                  );
+                  throw new Error("Schedule actions need a calendar date.");
                 }
                 body = actionBodyWithScheduledDate(body, date);
               }
@@ -1511,18 +1511,14 @@ export function LifeOSApp() {
               &ldquo;{schedulePrompt.title}&rdquo; is Important &amp; not Urgent —
               set a date to place it in Schedule.
             </p>
-            <label className="mt-4 block space-y-1">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                Date
-              </span>
-              <input
-                type="date"
-                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+            <div className="mt-4">
+              <DatePickerField
+                label="Date"
+                onChange={setScheduleDateDraft}
+                required
                 value={scheduleDateDraft}
-                onChange={(e) => setScheduleDateDraft(e.target.value)}
               />
-              <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
-            </label>
+            </div>
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -1537,14 +1533,9 @@ export function LifeOSApp() {
               <button
                 type="button"
                 className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
-                disabled={
-                  busy || !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)
-                }
+                disabled={busy || !isValidDateOnly(scheduleDateDraft)}
                 onClick={() => {
-                  if (
-                    !schedulePrompt ||
-                    !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)
-                  ) {
+                  if (!schedulePrompt || !isValidDateOnly(scheduleDateDraft)) {
                     return;
                   }
                   const prompt = schedulePrompt;
