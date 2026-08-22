@@ -145,6 +145,7 @@ type UserRow = {
   preferredCurrency?: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
+  onboardingStep?: string | null;
   googleSub?: string | null;
   createdAt: Date;
 };
@@ -172,6 +173,7 @@ function publicUser(user: {
   preferredCurrency?: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
+  onboardingStep?: string | null;
   createdAt: Date;
 }) {
   return {
@@ -183,6 +185,9 @@ function publicUser(user: {
     preferredCurrency: user.preferredCurrency ?? 'GBP',
     activeHouseholdId: user.activeHouseholdId,
     onboardingCompletedAt: user.onboardingCompletedAt,
+    onboardingStep:
+      user.onboardingStep ??
+      (user.onboardingCompletedAt ? null : 'welcome'),
     createdAt: user.createdAt,
   };
 }
@@ -191,7 +196,8 @@ async function getUser(sql: Database, userId: string): Promise<UserRow> {
   const [user] = await sql<UserRow[]>`
     SELECT
       id, email, password_hash, display_name, avatar_url, timezone,
-      preferred_currency, active_household_id, onboarding_completed_at, created_at
+      preferred_currency, active_household_id, onboarding_completed_at,
+      onboarding_step, created_at
     FROM users
     WHERE id = ${userId}
   `;
