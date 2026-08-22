@@ -553,7 +553,7 @@ export async function buildApp(
           WHEN ${avatarProvided} THEN ${body.avatarUrl ?? null}
           ELSE avatar_url
         END,
-        profile_body = COALESCE(${profileBodyValue ? sql.json(profileBodyValue) : null}, profile_body),
+        profile_body = COALESCE(${profileBodyValue ? sql.json(profileBodyValue as JsonValue) : null}, profile_body),
         updated_at = now()
       WHERE id = ${request.authUser.id}
     `;

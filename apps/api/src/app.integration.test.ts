@@ -1483,4 +1483,51 @@ suite('account and couple household API', () => {
       title: 'Prepare quarterly plan',
     });
   });
+
+  it('persists primary move on profile while calendar tasks stay scheduled', async () => {
+    const user = await register('primary-move@example.com', 'Primary Move');
+    const action = await app.inject({
+      method: 'POST',
+      url: '/v1/items',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        kind: 'ACTION',
+        title: 'Ship integration branch',
+        body: {
+          day: 'Today',
+          importance: 'HIGH',
+          urgency: 'HIGH',
+          scheduledDate: '2027-03-01',
+        },
+      },
+    });
+    expect(action.statusCode).toBe(201);
+    const actionId = action.json<{ id: string }>().id;
+
+    const profile = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { body: { primaryMoveActionId: actionId } },
+    });
+    expect(profile.statusCode).toBe(200);
+    expect(
+      profile.json<{ user: { body: { primaryMoveActionId: string } } }>().user
+        .body.primaryMoveActionId,
+    ).toBe(actionId);
+
+    const calendar = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=3&types=task',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(calendar.statusCode).toBe(200);
+    expect(
+      calendar
+        .json<{ events: { id: string; date: string }[] }>()
+        .events.some(
+          (event) => event.id === `task:${actionId}` && event.date === '2027-03-01',
+        ),
+    ).toBe(true);
+  });
 });

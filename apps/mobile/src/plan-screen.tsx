@@ -29,6 +29,7 @@ import {
   bodyNumber,
   bodyString,
   childrenOf,
+  ideaScore,
   isOpen,
 } from './life-data';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
@@ -325,7 +326,6 @@ export function PlanScreen({
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
-  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [movingActionId, setMovingActionId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [priorityFilters, setPriorityFilters] = useState<PriorityFilters>(() =>
@@ -395,7 +395,6 @@ export function PlanScreen({
     visibleProjects.find((p) => p.id === selectedProjectId) ?? null;
   const selectedIdea = allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
   const selectedArea = pillars.find((p) => p.id === selectedAreaId) ?? null;
-  const selectedIdea = allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
   const priorityActions = useMemo(
     () =>
       items.filter(

@@ -18,6 +18,7 @@ import {
   register,
   resetPassword,
   updateLifeItem,
+  updateProfile,
   verifyResetCode,
   getWealthMeta,
   type Account,
