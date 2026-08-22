@@ -21,8 +21,10 @@ import {
   PROJECT_PRIORITIES,
   PROJECT_PRIORITY_META,
   actionPriorityQuadrant,
+  isProjectDeadlineOverdue,
   projectPriorityLevel,
   projectPriorityRank,
+  projectTargetDate,
   type PriorityQuadrant,
   type ProjectPriority,
 } from './priority-matrix';
@@ -86,6 +88,10 @@ type Props = {
   onSetProjectStatus: (
     project: LifeItem,
     status: 'ACTIVE' | 'PAUSED' | 'DONE',
+  ) => void;
+  onSetProjectDeadline: (
+    project: LifeItem,
+    targetDate: string | null,
   ) => void;
   onAddArea: (title: string) => void;
   onRemoveArea: (pillar: LifeItem) => void;
@@ -259,6 +265,7 @@ export function PlanScreen({
   onDeleteAction,
   onArchiveProject,
   onSetProjectStatus,
+  onSetProjectDeadline,
   onAddArea,
   onRemoveArea,
   onOpenProjectsMatrix,
@@ -437,6 +444,7 @@ export function PlanScreen({
           onDeleteAction={onDeleteAction}
           onArchiveProject={onArchiveProject}
           onSetProjectStatus={onSetProjectStatus}
+          onSetProjectDeadline={onSetProjectDeadline}
           showArchived={showArchived}
           onShowMatrix={() => {
             setSelectedProjectId(null);
@@ -637,6 +645,7 @@ export function PlanScreen({
         onDeleteAction={onDeleteAction}
         onArchiveProject={onArchiveProject}
         onSetProjectStatus={onSetProjectStatus}
+        onSetProjectDeadline={onSetProjectDeadline}
         showArchived={showArchived}
         onShowMatrix={() => {
           setSelectedProjectId(null);
@@ -712,6 +721,8 @@ export function PlanScreen({
           const level = projectPriorityLevel(project.body);
           const area = pillars.find((pillar) => pillar.id === project.parentId);
           const hours = projectHours(items, project.id);
+          const deadline = projectTargetDate(project.body);
+          const overdue = isProjectDeadlineOverdue(project.body, project.status);
           return (
             <SwipeableRow
               key={project.id}
@@ -729,14 +740,18 @@ export function PlanScreen({
                     <Text style={styles.cardTitle}>{project.title}</Text>
                     <Pill
                       tone={
-                        level === 'HIGH'
+                        overdue
                           ? 'danger'
-                          : level === 'MEDIUM'
-                            ? 'amber'
-                            : 'sage'
+                          : level === 'HIGH'
+                            ? 'danger'
+                            : level === 'MEDIUM'
+                              ? 'amber'
+                              : 'sage'
                       }
                     >
-                      {PROJECT_PRIORITY_META[level].title}
+                      {overdue
+                        ? 'Overdue'
+                        : PROJECT_PRIORITY_META[level].title}
                     </Pill>
                   </View>
                   <Text style={styles.listMeta}>
@@ -748,8 +763,16 @@ export function PlanScreen({
                       ? `Next: ${next.title}`
                       : 'Define next action'}
                   </Text>
-                  <Text style={styles.listMeta}>
+                  <Text
+                    style={[
+                      styles.listMeta,
+                      overdue ? { color: colors.danger, fontWeight: '700' } : null,
+                    ]}
+                  >
                     {hours.toFixed(1)}h this week
+                    {deadline
+                      ? ` · ${overdue ? 'Overdue' : 'Due'} ${deadline}`
+                      : ''}
                     {next ? ` · ${bodyNumber(next, 'hours', 1)}h next` : ''}
                   </Text>
                 </Card>
@@ -778,6 +801,7 @@ function ProjectDetail({
   onDeleteAction,
   onArchiveProject,
   onSetProjectStatus,
+  onSetProjectDeadline,
   onShowMatrix,
   showArchived = false,
 }: {
@@ -799,6 +823,10 @@ function ProjectDetail({
     project: LifeItem,
     status: 'ACTIVE' | 'PAUSED' | 'DONE',
   ) => void;
+  onSetProjectDeadline: (
+    project: LifeItem,
+    targetDate: string | null,
+  ) => void;
   onShowMatrix: () => void;
   showArchived?: boolean;
 }) {
@@ -807,6 +835,12 @@ function ProjectDetail({
   const statusLabel = projectStatusLabel(project.status);
   const isDone = project.status === 'DONE';
   const isArchived = project.status === 'ARCHIVED';
+  const deadline = projectTargetDate(project.body);
+  const overdue = isProjectDeadlineOverdue(project.body, project.status);
+  const [deadlineDraft, setDeadlineDraft] = useState(deadline ?? '');
+  useEffect(() => {
+    setDeadlineDraft(deadline ?? '');
+  }, [project.id, deadline]);
   const openProjectActions = childrenOf(items, project.id).filter(
     (item) =>
       item.kind === 'ACTION' &&
@@ -928,10 +962,18 @@ function ProjectDetail({
         <MicroLabel>Progress</MicroLabel>
         <Text style={styles.cardTitle}>{progress}%</Text>
         <ProgressBar value={progress} />
-        <Text style={styles.listMeta}>
+        <Text
+          style={[
+            styles.listMeta,
+            overdue ? { color: colors.danger, fontWeight: '700' } : null,
+          ]}
+        >
           {doneProjectActions.length} done ·{' '}
           {openProjectActions.filter(isOpen).length} open · {hours.toFixed(1)}h
           remaining
+          {deadline
+            ? ` · ${overdue ? 'Overdue' : 'Due'} ${deadline}`
+            : ' · No deadline'}
         </Text>
       </Card>
 
@@ -984,6 +1026,46 @@ function ProjectDetail({
             <View style={{ gap: 10, marginTop: 4 }}>
               <Text style={styles.fieldLabel}>Status</Text>
               <Text style={styles.listMeta}>{statusLabel}</Text>
+              <Text style={styles.fieldLabel}>Deadline (YYYY-MM-DD)</Text>
+              <TextInput
+                value={deadlineDraft}
+                onChangeText={setDeadlineDraft}
+                placeholder="Optional due date"
+                placeholderTextColor={colors.muted}
+                editable={!busy && !isDone && !isArchived}
+                style={styles.input}
+                autoCapitalize="none"
+              />
+              <View style={styles.chipRow}>
+                <Button
+                  disabled={
+                    busy ||
+                    isDone ||
+                    isArchived ||
+                    deadlineDraft === (deadline ?? '')
+                  }
+                  onPress={() =>
+                    onSetProjectDeadline(project, deadlineDraft.trim() || null)
+                  }
+                >
+                  Save deadline
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={busy || isDone || isArchived || !deadline}
+                  onPress={() => {
+                    setDeadlineDraft('');
+                    onSetProjectDeadline(project, null);
+                  }}
+                >
+                  Clear
+                </Button>
+              </View>
+              {overdue ? (
+                <Text style={[styles.listMeta, { color: colors.danger }]}>
+                  This project is past its deadline.
+                </Text>
+              ) : null}
               <Text style={styles.fieldLabel}>Project priority</Text>
               <Text style={styles.listMeta}>
                 How soon this project gets attention (High / Medium / Low) — not

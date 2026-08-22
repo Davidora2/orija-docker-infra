@@ -12,8 +12,10 @@ import {
   actionImportanceLevel,
   actionPriorityQuadrant,
   actionUrgencyLevel,
+  isProjectDeadlineOverdue,
   projectPriorityLevel,
   projectPriorityRank,
+  projectTargetDate,
   type PriorityLevel,
   type PriorityQuadrant,
   type ProjectPriority,
@@ -86,6 +88,7 @@ type Props = {
   projectOutcome: string;
   projectPillarId: string;
   projectPriority: ProjectPriority;
+  projectTargetDate: string;
   actionTitle: string;
   actionHours: string;
   actionImportance: PriorityLevel;
@@ -94,6 +97,7 @@ type Props = {
   onProjectOutcomeChange: (value: string) => void;
   onProjectPillarIdChange: (value: string) => void;
   onProjectPriorityChange: (value: ProjectPriority) => void;
+  onProjectTargetDateChange: (value: string) => void;
   onActionTitleChange: (value: string) => void;
   onActionHoursChange: (value: string) => void;
   onActionImportanceChange: (value: PriorityLevel) => void;
@@ -105,6 +109,10 @@ type Props = {
   onSetProjectStatus: (
     project: LifeItem,
     status: ProjectLifecycleStatus,
+  ) => void;
+  onSetProjectDeadline: (
+    project: LifeItem,
+    targetDate: string | null,
   ) => void;
   onQuickAddAction: (
     projectId: string,
@@ -543,6 +551,19 @@ export function PlanPanel(props: Props) {
                   </button>
                 ))}
               </div>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Deadline (optional)
+                </span>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  value={props.projectTargetDate}
+                  onChange={(e) =>
+                    props.onProjectTargetDateChange(e.target.value)
+                  }
+                />
+              </label>
               <button
                 type="button"
                 className="rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white"
@@ -979,6 +1000,7 @@ export function PlanPanel(props: Props) {
           onMovePriority={props.onMoveProjectPriority}
           onCompleteAction={props.onCompleteAction}
           onSetProjectStatus={props.onSetProjectStatus}
+          onSetProjectDeadline={props.onSetProjectDeadline}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -1110,11 +1132,20 @@ export function PlanPanel(props: Props) {
                 const next = nextAction(items, project.id);
                 const level = projectPriorityLevel(project.body);
                 const h = projectHours(items, project.id);
+                const deadline = projectTargetDate(project.body);
+                const overdue = isProjectDeadlineOverdue(
+                  project.body,
+                  project.status,
+                );
                 return (
                   <button
                     key={project.id}
                     type="button"
-                    className="block w-full rounded-2xl border border-[#dde2dd] bg-white p-4 text-left"
+                    className={`block w-full rounded-2xl border p-4 text-left ${
+                      overdue
+                        ? "border-[#e7b7ad] bg-[#fdf4f1]"
+                        : "border-[#dde2dd] bg-white"
+                    }`}
                     onClick={() => setSelectedProjectId(project.id)}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -1134,7 +1165,18 @@ export function PlanPanel(props: Props) {
                     <p className="mt-2 text-sm text-[#14241f]">
                       ○ Next: {next ? next.title : "Define next action"}
                     </p>
-                    <p className="mt-1 text-xs text-[#6c7771]">{h.toFixed(1)}h this week</p>
+                    <p
+                      className={`mt-1 text-xs ${
+                        overdue
+                          ? "font-bold text-[#c9634f]"
+                          : "text-[#6c7771]"
+                      }`}
+                    >
+                      {h.toFixed(1)}h this week
+                      {deadline
+                        ? ` · ${overdue ? "Overdue" : "Due"} ${deadline}`
+                        : ""}
+                    </p>
                   </button>
                 );
               })
@@ -1254,6 +1296,7 @@ export function PlanPanel(props: Props) {
           onMovePriority={props.onMoveProjectPriority}
           onCompleteAction={props.onCompleteAction}
           onSetProjectStatus={props.onSetProjectStatus}
+          onSetProjectDeadline={props.onSetProjectDeadline}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -1452,6 +1495,19 @@ export function PlanPanel(props: Props) {
                   </button>
                 ))}
               </div>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Deadline (optional)
+                </span>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  value={props.projectTargetDate}
+                  onChange={(e) =>
+                    props.onProjectTargetDateChange(e.target.value)
+                  }
+                />
+              </label>
               <input
                 className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
                 placeholder="First next action"
@@ -1511,11 +1567,20 @@ export function PlanPanel(props: Props) {
               const level = projectPriorityLevel(project.body);
               const area = pillars.find((pillar) => pillar.id === project.parentId);
               const hours = projectHours(items, project.id);
+              const deadline = projectTargetDate(project.body);
+              const overdue = isProjectDeadlineOverdue(
+                project.body,
+                project.status,
+              );
               return (
                 <button
                   key={project.id}
                   type="button"
-                  className="flex w-full items-center gap-3 rounded-2xl border border-[#dde2dd] bg-white p-4 text-left"
+                  className={`flex w-full items-center gap-3 rounded-2xl border p-4 text-left ${
+                    overdue
+                      ? "border-[#e7b7ad] bg-[#fdf4f1]"
+                      : "border-[#dde2dd] bg-white"
+                  }`}
                   onClick={() => {
                     setSelectedProjectId(project.id);
                     setProjectTab("actions");
@@ -1548,8 +1613,17 @@ export function PlanPanel(props: Props) {
                     <p className="mt-1 text-sm font-medium text-[#14241f]">
                       ○ Next: {next ? next.title : "Define next action"}
                     </p>
-                    <p className="mt-1 text-xs text-[#6c7771]">
+                    <p
+                      className={`mt-1 text-xs ${
+                        overdue
+                          ? "font-bold text-[#c9634f]"
+                          : "text-[#6c7771]"
+                      }`}
+                    >
                       {hours.toFixed(1)}h this week
+                      {deadline
+                        ? ` · ${overdue ? "Overdue" : "Due"} ${deadline}`
+                        : ""}
                     </p>
                   </div>
                   <span className="text-[#6c7771]">›</span>
@@ -1866,6 +1940,7 @@ function ProjectDetailView({
   onMovePriority,
   onCompleteAction,
   onSetProjectStatus,
+  onSetProjectDeadline,
   onShowMatrix,
   onOpenAddAction,
 }: {
@@ -1882,6 +1957,10 @@ function ProjectDetailView({
     project: LifeItem,
     status: ProjectLifecycleStatus,
   ) => void;
+  onSetProjectDeadline: (
+    project: LifeItem,
+    targetDate: string | null,
+  ) => void;
   onShowMatrix: () => void;
   onOpenAddAction: () => void;
 }) {
@@ -1889,6 +1968,12 @@ function ProjectDetailView({
   const level = projectPriorityLevel(project.body);
   const statusLabel = projectStatusLabel(project.status);
   const isDone = project.status === "DONE";
+  const deadline = projectTargetDate(project.body);
+  const overdue = isProjectDeadlineOverdue(project.body, project.status);
+  const [deadlineDraft, setDeadlineDraft] = useState(deadline ?? "");
+  useEffect(() => {
+    setDeadlineDraft(deadline ?? "");
+  }, [project.id, deadline]);
   const openActions = items.filter(
     (item) =>
       item.kind === "ACTION" && item.parentId === project.id && open(item),
@@ -2044,10 +2129,15 @@ function ProjectDetailView({
           {doneActions.length} of {total || "—"}
         </p>
         <ProgressBar value={progress} />
-        <p className="text-sm text-[#6c7771]">
-          {hours.toFixed(1)}h planned ·{" "}
-          {str(project, "startDate") || "No start"} →{" "}
-          {str(project, "targetDate") || "No target"}
+        <p
+          className={`text-sm ${
+            overdue ? "font-bold text-[#c9634f]" : "text-[#6c7771]"
+          }`}
+        >
+          {hours.toFixed(1)}h planned
+          {deadline
+            ? ` · ${overdue ? "Overdue" : "Due"} ${deadline}`
+            : " · No deadline"}
         </p>
       </article>
 
@@ -2141,7 +2231,7 @@ function ProjectDetailView({
         </article>
       ) : null}
       {projectTab === "details" ? (
-        <article className="space-y-2 rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm">
+        <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm">
           <p>
             <span className="text-[#6c7771]">Area · </span>
             {area?.title ?? "—"}
@@ -2154,6 +2244,46 @@ function ProjectDetailView({
             <span className="text-[#6c7771]">Status · </span>
             {statusLabel}
           </p>
+          <label className="block space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+              Deadline
+            </span>
+            <input
+              type="date"
+              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+              value={deadlineDraft}
+              disabled={busy || isDone}
+              onChange={(e) => setDeadlineDraft(e.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy || isDone || deadlineDraft === (deadline ?? "")}
+              className="rounded-xl bg-[#14241f] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+              onClick={() =>
+                onSetProjectDeadline(project, deadlineDraft || null)
+              }
+            >
+              Save deadline
+            </button>
+            <button
+              type="button"
+              disabled={busy || isDone || !deadline}
+              className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold disabled:opacity-50"
+              onClick={() => {
+                setDeadlineDraft("");
+                onSetProjectDeadline(project, null);
+              }}
+            >
+              Clear deadline
+            </button>
+          </div>
+          {overdue ? (
+            <p className="text-xs font-bold text-[#c9634f]">
+              This project is past its deadline.
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2 pt-2">
             {isDone ? (
               <button

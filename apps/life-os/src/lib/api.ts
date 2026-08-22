@@ -277,7 +277,7 @@ export async function resetPassword(input: {
 
 export type CalendarEvent = {
   id: string;
-  type: "task" | "payment" | "payday";
+  type: "task" | "payment" | "payday" | "milestone";
   date: string;
   title: string;
   amountCents: number | null;
@@ -298,7 +298,12 @@ export type CalendarPayload = {
   filters: { areaIds: string[]; types: string[] };
   days: { date: string; weekday: string; events: CalendarEvent[] }[];
   events: CalendarEvent[];
-  counts: { tasks: number; payments: number; paydays: number };
+  counts: {
+    tasks: number;
+    payments: number;
+    paydays: number;
+    milestones?: number;
+  };
 };
 
 export async function getCalendar(input: {

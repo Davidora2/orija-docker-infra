@@ -648,7 +648,10 @@ export function registerCalendarSyncRoutes(
 
       for (const connection of connections) {
         const types: string[] = [];
-        if (connection.syncTasks) types.push('task');
+        if (connection.syncTasks) {
+          types.push('task');
+          types.push('milestone');
+        }
         if (connection.syncPayments) types.push('payment');
         if (connection.syncPaydays) types.push('payday');
         if (types.length === 0) continue;
