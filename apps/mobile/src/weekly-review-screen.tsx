@@ -13,6 +13,7 @@ import {
   webAppUrl,
   type WeeklyReview,
 } from './api';
+import { FocusHero } from './ui';
 
 const colors = {
   ink: '#14241F',
@@ -133,18 +134,13 @@ export function WeeklyReviewScreen({
 
   return (
     <View style={styles.stack}>
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>Results · week of {mondayOfCurrentWeek()}</Text>
-        <Text style={styles.title}>
-          {completedActions} completed · {Math.max(0, totalActions - completedActions)} open
-        </Text>
-        <Text style={styles.body}>
-          {totalActions === 0
-            ? 0
-            : Math.round((completedActions / totalActions) * 100)}
-          % complete · {plannedHours.toFixed(1)}h planned / {availableHours}h available
-        </Text>
-      </View>
+      <FocusHero
+        accentDot
+        eyebrow={`Results · week of ${mondayOfCurrentWeek()}`}
+        meta={`${totalActions === 0 ? 0 : Math.round((completedActions / totalActions) * 100)}% complete · ${plannedHours.toFixed(1)}h planned / ${availableHours}h available`}
+        title={`${completedActions} completed · ${Math.max(0, totalActions - completedActions)} open`}
+        subtitle="Guided CEO-style check-in"
+      />
       <View style={styles.card}>
         <Text style={styles.title}>Guided review</Text>
         <Field

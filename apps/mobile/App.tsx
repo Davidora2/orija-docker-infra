@@ -41,7 +41,7 @@ import {
   EditorialState,
 } from './src/editorial-state';
 import { EvaluationRadar } from './src/evaluation-radar';
-import { LifeIcon } from './src/life-icon';
+import { LifeIcon, lifeIconFromLegacy } from './src/life-icon';
 import { OnboardingSheet } from './src/onboarding-sheet';
 import {
   ApiError,
@@ -65,6 +65,9 @@ import {
 } from './src/offline';
 import { PlanScreen } from './src/plan-screen';
 import { SwipeableRow } from './src/swipeable-row';
+import { TodayCapacityStrip } from './src/today-capacity-strip';
+import { TodayPrimaryHero } from './src/today-primary-hero';
+import { FocusHero, YouMenuHero } from './src/ui';
 import { WeeklyReviewScreen } from './src/weekly-review-screen';
 import {
   WEEK_DAYS,
@@ -109,6 +112,7 @@ const colors = {
   muted: '#6C7771',
   sage: '#DBE8D7',
   sageDeep: '#617A57',
+  sageSurface: '#EEF3EA',
   acid: '#D6F57A',
   acidInk: '#2F431E',
   amber: '#F2C66D',
@@ -301,6 +305,23 @@ function todayLabel(): string {
     day: '2-digit',
     month: 'long',
   }).format(new Date());
+}
+
+function actionContext(
+  action: LifeItem,
+  projects: LifeItem[],
+  pillars: LifeItem[],
+) {
+  const project = projects.find((row) => row.id === action.parentId);
+  const area = project
+    ? pillars.find((row) => row.id === project.parentId)
+    : undefined;
+  const label = [area?.title, project?.title].filter(Boolean).join(' · ');
+  return { project, area, label };
+}
+
+function formatHours(value: number) {
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}h`;
 }
 
 function AppContent() {
@@ -1095,97 +1116,142 @@ function AppContent() {
               Available · planned · remaining — pick your primary move for today.
             </Text>
 
-            <Card>
-              <Text style={styles.cardEyebrow}>Primary Move</Text>
-              {primary ? (
-                <>
-                  <Text
-                    style={[
-                      styles.cardTitle,
-                      primary.status === 'DONE' && styles.doneTitle,
-                    ]}
-                  >
-                    {primary.title}
-                  </Text>
-                  <Text style={styles.cardBody}>
-                    {bodyNumber(primary, 'hours', 1)}h
-                    {bodyString(primary, 'day')
-                      ? ` · ${bodyString(primary, 'day')}`
-                      : ''}
-                    {primary.status === 'DONE' ? ' · Done' : ''}
-                  </Text>
-                  <SwipeableRow
-                    disabled={busy}
-                    onArchive={() => void archiveItem(primary)}
-                    onDelete={() => confirmDeleteItem(primary)}
-                  >
+            <TodayCapacityStrip
+              available={capacity.available}
+              planned={capacity.planned}
+              onOpenCapacity={() => {
+                setTab('you');
+                setYouDest('capacity');
+              }}
+            />
+
+            {primary ? (
+              <SwipeableRow
+                disabled={busy}
+                onArchive={() => void archiveItem(primary)}
+                onDelete={() => confirmDeleteItem(primary)}
+              >
+                <TodayPrimaryHero
+                  busy={busy}
+                  pillars={pillars}
+                  primary={primary}
+                  projects={projects}
+                  onToggle={() => void completeAction(primary)}
+                  onViewCapacity={() => {
+                    setTab('you');
+                    setYouDest('capacity');
+                  }}
+                />
+              </SwipeableRow>
+            ) : (
+              <Card>
+                <EmptyState
+                  title="Make Today useful."
+                  body="Plan a project and its next action, or capture one concrete move now. Your highest-priority action will appear here."
+                  action={
                     <View style={styles.row}>
                       <Button
-                        onPress={() => void completeAction(primary)}
-                        disabled={busy}
-                        style={{ flex: 1 }}
-                      >
-                        {primary.status === 'DONE' ? 'Undo complete' : 'Mark done'}
-                      </Button>
-                      <Button
-                        variant="secondary"
                         onPress={() => {
-                          setTab('you');
-                          setYouDest('capacity');
+                          setTab('plan');
+                          setPlanSegment('projects');
                         }}
                         style={{ flex: 1 }}
                       >
-                        Capacity
+                        Open Plan
+                      </Button>
+                      <Button
+                        onPress={() => setCaptureOpen(true)}
+                        style={{ flex: 1 }}
+                        variant="secondary"
+                      >
+                        Quick Add
                       </Button>
                     </View>
-                  </SwipeableRow>
-                  <Text style={styles.listMeta}>Swipe left to archive</Text>
-                </>
-              ) : (
-                <EmptyState
-                  title="No primary move yet"
-                  body="Capture an idea and convert it into a project with a next action."
-                  action={
-                    <Button onPress={() => setCaptureOpen(true)} style={{ marginTop: 12 }}>
-                      Capture idea
-                    </Button>
                   }
                 />
-              )}
-            </Card>
+              </Card>
+            )}
 
-            <Card>
-              <Text style={styles.cardEyebrow}>Supporting actions</Text>
-              <Text style={styles.listMeta}>Swipe left to archive · Delete is optional</Text>
-              {supporting.length === 0 ? (
-                <Text style={styles.cardBody}>No other open actions this week.</Text>
-              ) : (
-                supporting.map((action) => (
-                  <SwipeableRow
-                    key={action.id}
-                    disabled={busy}
-                    onArchive={() => void archiveItem(action)}
-                    onDelete={() => confirmDeleteItem(action)}
+            {primary ? (
+              <Card style={styles.supportingCard}>
+                <View style={styles.supportingHeader}>
+                  <View style={styles.supportingHeaderCopy}>
+                    <Text style={styles.cardEyebrow}>Supporting moves</Text>
+                    <Text style={styles.supportingTitle}>Keep the list short.</Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      tap();
+                      setTab('plan');
+                    }}
                   >
-                    <Pressable
-                      onPress={() => void completeAction(action)}
-                      style={styles.listRow}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.listTitle}>{action.title}</Text>
-                        <Text style={styles.listMeta}>
-                          {bodyNumber(action, 'hours', 1)}h
-                          {bodyString(action, 'day')
-                            ? ` · ${bodyString(action, 'day')}`
-                            : ''}
-                        </Text>
-                      </View>
-                      <LifeIcon name="done" color={colors.sageDeep} />
-                    </Pressable>
-                  </SwipeableRow>
-                ))
-              )}
-            </Card>
+                    <Text style={styles.supportingPlanLink}>Plan</Text>
+                  </Pressable>
+                </View>
+                {supporting.length === 0 ? (
+                  <Text style={styles.supportingEmpty}>
+                    No other open actions this week.
+                  </Text>
+                ) : (
+                  supporting.slice(0, 3).map((action, index) => {
+                    const { area, label } = actionContext(action, projects, pillars);
+                    return (
+                      <SwipeableRow
+                        key={action.id}
+                        disabled={busy}
+                        onArchive={() => void archiveItem(action)}
+                        onDelete={() => confirmDeleteItem(action)}
+                      >
+                        <View style={styles.supportingRow}>
+                          <View style={styles.supportingIconWrap}>
+                            <LifeIcon
+                              name={lifeIconFromLegacy(area?.body.icon, index)}
+                              size={18}
+                            />
+                          </View>
+                          <View style={styles.supportingCopy}>
+                            <Text
+                              allowFontScaling
+                              maxFontSizeMultiplier={1.25}
+                              numberOfLines={2}
+                              style={styles.supportingItemTitle}
+                            >
+                              {action.title}
+                            </Text>
+                            <Text
+                              allowFontScaling
+                              maxFontSizeMultiplier={1.2}
+                              numberOfLines={2}
+                              style={styles.supportingItemMeta}
+                            >
+                              {formatHours(bodyNumber(action, 'hours', 1))}
+                              {bodyString(action, 'day')
+                                ? ` · ${bodyString(action, 'day')}`
+                                : ''}
+                              {label ? ` · ${label}` : ''}
+                            </Text>
+                          </View>
+                          <Pressable
+                            accessibilityLabel={`Mark ${action.title} done`}
+                            accessibilityRole="button"
+                            disabled={busy}
+                            onPress={() => void completeAction(action)}
+                            style={({ pressed }) => [
+                              styles.supportingDoneBtn,
+                              pressed && { opacity: 0.85 },
+                              busy && styles.buttonDisabled,
+                            ]}
+                          >
+                            <LifeIcon color={colors.sageDeep} name="done" size={17} />
+                          </Pressable>
+                        </View>
+                      </SwipeableRow>
+                    );
+                  })
+                )}
+              </Card>
+            ) : null}
 
             <Card>
               <View style={styles.ringSummary}>
@@ -1449,10 +1515,7 @@ function AppContent() {
 
         {tab === 'you' && youDest === 'menu' ? (
           <View style={styles.stack}>
-            <Text style={styles.sectionTitle}>You</Text>
-            <Text style={styles.lede}>
-              Capacity, review, household, integrations, and settings.
-            </Text>
+            <YouMenuHero />
             {(
               [
                 ['capacity', 'Capacity', 'Weekly hours and load', 'capacity'],
@@ -1475,7 +1538,9 @@ function AppContent() {
                   }
                 }}
               >
-                <LifeIcon name={icon} color={colors.sageDeep} size={22} />
+                <View style={styles.youRowIcon}>
+                  <LifeIcon name={icon} color={colors.sageDeep} size={22} />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.listTitle}>{title}</Text>
                   <Text style={styles.listMeta}>{body}</Text>
@@ -1492,7 +1557,17 @@ function AppContent() {
               <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Capacity</Text>
+            <FocusHero
+              accentDot
+              eyebrow="Capacity"
+              meta={
+                capacity.planned > capacity.available
+                  ? 'Overcommitted — reduce action hours below.'
+                  : 'Within capacity for this week.'
+              }
+              title={`${capacity.planned.toFixed(1)}h planned / ${capacity.available}h available`}
+              subtitle="Weekly load pulse"
+            />
             <Card>
               <View style={styles.ringSummary}>
                 <CapacityRing
@@ -1592,7 +1667,6 @@ function AppContent() {
               <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Weekly Review</Text>
             <WeeklyReviewScreen
               householdId={account!.activeHouseholdId!}
               completedActions={doneActions.length}
@@ -1610,7 +1684,12 @@ function AppContent() {
               <LifeIcon name="chevron-left" color={colors.sageDeep} />
               <Text style={styles.backText}>You</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Integrations</Text>
+            <FocusHero
+              accentDot
+              eyebrow="Integrations"
+              meta="Connect calendar providers and keep schedule sync honest."
+              title="Calendar connectors"
+            />
             <IntegrationsScreen notify={notify} />
           </View>
         ) : null}
@@ -1695,9 +1774,12 @@ function AppContent() {
                 },
               ]}
             >
-              <Text style={styles.sectionTitle}>
-                {fabKind === 'action' ? 'Quick add action' : 'Capture'}
-              </Text>
+              <View style={styles.modalHero}>
+                <Text style={styles.modalHeroEyebrow}>Quick capture</Text>
+                <Text style={styles.modalHeroTitle}>
+                  {fabKind === 'action' ? 'Quick add action' : 'Capture'}
+                </Text>
+              </View>
               <View style={styles.chipRow}>
                 {(
                   [
@@ -2557,6 +2639,73 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
   },
   riskRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  supportingCard: { gap: 0, paddingBottom: 6 },
+  supportingHeader: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  supportingHeaderCopy: { flex: 1, gap: 4, minWidth: 0 },
+  supportingTitle: {
+    color: colors.ink,
+    fontFamily: serif,
+    fontSize: 22,
+    lineHeight: 26,
+  },
+  supportingPlanLink: {
+    color: colors.sageDeep,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  supportingEmpty: {
+    backgroundColor: '#F4F5F0',
+    borderRadius: 12,
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  supportingRow: {
+    alignItems: 'center',
+    borderTopColor: '#EDF0EC',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  supportingIconWrap: {
+    alignItems: 'center',
+    backgroundColor: '#EEF3EA',
+    borderRadius: 12,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  supportingCopy: { flex: 1, gap: 2, minWidth: 0 },
+  supportingItemTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  supportingItemMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  supportingDoneBtn: {
+    alignItems: 'center',
+    borderColor: '#C9D6C4',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
   ringSummary: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -2643,7 +2792,7 @@ const styles = StyleSheet.create({
   },
   tabItem: { flex: 1, alignItems: 'center', gap: 4 },
   tabLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
-  tabLabelActive: { color: colors.ink },
+  tabLabelActive: { color: colors.sageDeep, fontWeight: '700' },
   segmentRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2677,15 +2826,23 @@ const styles = StyleSheet.create({
     color: colors.acid,
   },
   youRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     backgroundColor: colors.paper,
+    borderColor: colors.line,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.line,
+    flexDirection: 'row',
+    gap: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
+  },
+  youRowIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.sageSurface,
+    borderRadius: 12,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
   backRow: {
     flexDirection: 'row',
@@ -2739,8 +2896,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 18,
     gap: 12,
+    overflow: 'hidden',
+    padding: 18,
+  },
+  modalHero: {
+    backgroundColor: colors.ink,
+    gap: 6,
+    marginHorizontal: -18,
+    marginTop: -18,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+  },
+  modalHeroEyebrow: {
+    color: colors.acid,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
+  modalHeroTitle: {
+    color: colors.paper,
+    fontFamily: serif,
+    fontSize: 24,
+    lineHeight: 28,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {

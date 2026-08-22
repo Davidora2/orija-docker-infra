@@ -22,6 +22,7 @@ import {
   DelayedEditorialLoading,
   EditorialState,
 } from './editorial-state';
+import { AppButton, FocusHero, SegmentedControl } from './ui';
 
 const colors = {
   ink: '#14241F',
@@ -168,25 +169,27 @@ export function CalendarScreen({
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.card}>
-        <Text style={styles.title}>Calendar</Text>
-        <Text style={styles.sub}>
-          Tasks, project deadlines, saving targets, payments, and paydays together.
-        </Text>
+      <FocusHero
+        accentDot
+        eyebrow="Calendar"
+        meta="Tasks, deadlines, payments, and paydays in one rhythm."
+        title={view === 'month' ? monthLabel : 'This week'}
+        subtitle={
+          data
+            ? `${data.events.length} event${data.events.length === 1 ? '' : 's'} in view`
+            : 'Loading your schedule'
+        }
+      />
 
-        <View style={styles.row}>
-          {(['week', 'month'] as const).map((id) => (
-            <Pressable
-              key={id}
-              onPress={() => setView(id)}
-              style={[styles.chip, view === id && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, view === id && styles.chipTextActive]}>
-                {id === 'week' ? 'Week' : 'Month'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+      <View style={styles.card}>
+        <SegmentedControl
+          value={view}
+          onChange={setView}
+          options={[
+            { id: 'week', label: 'Week' },
+            { id: 'month', label: 'Month' },
+          ]}
+        />
 
         <View style={styles.row}>
           {view === 'month' ? (
@@ -354,18 +357,21 @@ export function CalendarScreen({
           <View style={styles.sheet}>
             {selectedEvent ? (
               <>
-                <Text style={styles.sheetEyebrow}>
-                  {calendarEventLabel(selectedEvent.type)}
-                </Text>
-                <Text style={styles.sheetTitle}>{selectedEvent.title}</Text>
-                <Text style={styles.sheetMeta}>
-                  {selectedEvent.date}
-                  {selectedEvent.areaTitle ? ` · ${selectedEvent.areaTitle}` : ''}
-                  {selectedEvent.amountCents != null
-                    ? ` · ${formatMoney(selectedEvent.amountCents)}`
-                    : ''}
-                </Text>
+                <View style={styles.sheetHero}>
+                  <Text style={styles.sheetHeroEyebrow}>
+                    {calendarEventLabel(selectedEvent.type)}
+                  </Text>
+                  <Text style={styles.sheetHeroTitle}>{selectedEvent.title}</Text>
+                  <Text style={styles.sheetHeroMeta}>
+                    {selectedEvent.date}
+                    {selectedEvent.areaTitle ? ` · ${selectedEvent.areaTitle}` : ''}
+                    {selectedEvent.amountCents != null
+                      ? ` · ${formatMoney(selectedEvent.amountCents)}`
+                      : ''}
+                  </Text>
+                </View>
 
+                <View style={styles.sheetBody}>
                 {selectedActionId && onRescheduleTask ? (
                   <TextInput
                     accessibilityLabel="Reschedule date"
@@ -453,6 +459,7 @@ export function CalendarScreen({
                     <Text style={styles.sheetBtnMuted}>Close</Text>
                   </Pressable>
                 </View>
+                </View>
               </>
             ) : null}
           </View>
@@ -527,18 +534,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
     gap: 12,
+    overflow: 'hidden',
+    paddingBottom: 20,
   },
-  sheetEyebrow: {
-    color: colors.sageDeep,
-    fontSize: 11,
+  sheetHero: {
+    backgroundColor: colors.ink,
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  sheetHeroEyebrow: {
+    color: colors.acid,
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 1.4,
     textTransform: 'uppercase',
   },
-  sheetTitle: { color: colors.ink, fontSize: 22, fontWeight: '700' },
-  sheetMeta: { color: colors.muted, fontSize: 13 },
+  sheetHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 28,
+  },
+  sheetHeroMeta: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  sheetBody: {
+    gap: 12,
+    paddingHorizontal: 20,
+  },
   dateInput: {
     borderColor: colors.line,
     borderRadius: 12,
@@ -556,10 +583,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingVertical: 12,
   },
-  sheetBtnPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
-  sheetBtnPrimaryText: { color: colors.acid, fontWeight: '700' },
-  sheetBtnSage: { backgroundColor: colors.sage, borderColor: colors.sage },
-  sheetBtnSageText: { color: colors.sageDeep, fontWeight: '700' },
+  sheetBtnPrimary: { backgroundColor: colors.acid, borderColor: colors.acid },
+  sheetBtnPrimaryText: { color: '#2F431E', fontWeight: '700' },
+  sheetBtnSage: { backgroundColor: colors.ink, borderColor: colors.ink },
+  sheetBtnSageText: { color: colors.acid, fontWeight: '700' },
   sheetBtnText: { color: colors.ink, fontWeight: '700' },
   sheetBtnMuted: { color: colors.muted, fontWeight: '700' },
   disabled: { opacity: 0.4 },
