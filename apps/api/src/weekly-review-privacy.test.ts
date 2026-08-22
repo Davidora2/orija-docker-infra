@@ -34,6 +34,9 @@ suite('weekly review and account privacy API', () => {
     smtpHost: 'smtp.gmail.com',
     smtpPort: 465,
     authDebugCodes: true,
+    authEmailVerificationDisabled: false,
+    skipEmailSend: false,
+    allowTestRegistrationEmails: true,
   };
 
   beforeAll(async () => {

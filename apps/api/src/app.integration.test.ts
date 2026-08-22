@@ -34,6 +34,9 @@ suite('account and couple household API', () => {
     smtpHost: 'smtp.gmail.com',
     smtpPort: 465,
     authDebugCodes: true,
+    authEmailVerificationDisabled: false,
+    skipEmailSend: false,
+    allowTestRegistrationEmails: true,
   };
 
   beforeAll(async () => {

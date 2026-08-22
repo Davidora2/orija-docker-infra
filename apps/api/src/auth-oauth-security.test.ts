@@ -43,6 +43,9 @@ suite('OAuth email account takeover prevention', () => {
     smtpHost: 'smtp.gmail.com',
     smtpPort: 465,
     authDebugCodes: true,
+    authEmailVerificationDisabled: false,
+    skipEmailSend: false,
+    allowTestRegistrationEmails: true,
   };
 
   beforeAll(async () => {
