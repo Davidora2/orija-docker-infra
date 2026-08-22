@@ -349,8 +349,17 @@ export function PriorityScreen({
                           <Pressable
                             disabled={busy}
                             onPress={() => onCompleteAction(action)}
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              action.status === 'DONE'
+                                ? 'Mark action open'
+                                : 'Mark action done'
+                            }
+                            hitSlop={8}
                           >
-                            <Text style={styles.doneLink}>Done</Text>
+                            <Text style={styles.doneDot}>
+                              {action.status === 'DONE' ? '●' : '○'}
+                            </Text>
                           </Pressable>
                         </View>
                       </View>
@@ -733,6 +742,7 @@ const styles = StyleSheet.create({
   actionAside: { alignItems: 'flex-end', gap: 4 },
   actionHours: { color: colors.ink, fontWeight: '700', fontSize: 12 },
   doneLink: { color: colors.sageDeep, fontWeight: '700', fontSize: 10 },
+  doneDot: { color: colors.sageDeep, fontWeight: '700', fontSize: 16, lineHeight: 18 },
   tipCard: {
     backgroundColor: colors.tipBg,
     borderRadius: 18,

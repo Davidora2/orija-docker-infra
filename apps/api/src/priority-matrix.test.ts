@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   actionBodyWithFlags,
   actionBodyWithLevels,
+  actionBodyWithScheduledDate,
+  actionMeetsScheduleDateRequirement,
+  actionScheduledDate,
+  isActionDone,
+  quadrantRequiresScheduledDate,
+  toggledActionStatus,
   actionImportanceLevel,
   actionPriorityQuadrant,
   actionUrgencyLevel,
@@ -201,5 +207,38 @@ describe('migrateActionBody', () => {
     expect(seeded.urgency).toBe('HIGH');
     expect(seeded.important).toBe(true);
     expect(seeded.urgent).toBe(true);
+  });
+});
+
+describe('action schedule date + complete toggle', () => {
+  it('reads and writes scheduledDate on actions', () => {
+    expect(actionScheduledDate({ scheduledDate: '2026-09-15' })).toBe('2026-09-15');
+    expect(actionScheduledDate({ dueAt: '2026-09-16T09:00:00Z' })).toBe('2026-09-16');
+    expect(actionScheduledDate({ day: '2026-09-17' })).toBe('2026-09-17');
+    expect(actionScheduledDate({ day: 'This week' })).toBeNull();
+    expect(
+      actionBodyWithScheduledDate({ hours: 1, day: 'This week' }, '2026-10-01'),
+    ).toEqual({ hours: 1, day: 'This week', scheduledDate: '2026-10-01' });
+    expect(
+      actionBodyWithScheduledDate({ hours: 1, day: '2026-09-01' }, '2026-10-02'),
+    ).toEqual({ hours: 1, day: '2026-10-02', scheduledDate: '2026-10-02' });
+    expect(actionBodyWithScheduledDate({ scheduledDate: '2026-10-01' }, null)).toEqual({});
+  });
+
+  it('requires a date for Schedule quadrant only', () => {
+    expect(quadrantRequiresScheduledDate('SCHEDULE')).toBe(true);
+    expect(quadrantRequiresScheduledDate('DO_FIRST')).toBe(false);
+    expect(actionMeetsScheduleDateRequirement({ scheduledDate: '2026-09-01' }, 'SCHEDULE')).toBe(
+      true,
+    );
+    expect(actionMeetsScheduleDateRequirement({ day: 'This week' }, 'SCHEDULE')).toBe(false);
+    expect(actionMeetsScheduleDateRequirement({}, 'DO_FIRST')).toBe(true);
+  });
+
+  it('toggles DONE ↔ ACTIVE', () => {
+    expect(toggledActionStatus('ACTIVE')).toBe('DONE');
+    expect(toggledActionStatus('DONE')).toBe('ACTIVE');
+    expect(isActionDone('DONE')).toBe(true);
+    expect(isActionDone('ACTIVE')).toBe(false);
   });
 });

@@ -31,7 +31,10 @@ import {
   PRIORITY_QUADRANT_META,
   actionBodyWithFlags,
   actionBodyWithLevels,
+  actionBodyWithScheduledDate,
+  actionMeetsScheduleDateRequirement,
   actionPriorityQuadrant,
+  actionScheduledDate,
   flagsFromQuadrant,
   levelsFromQuadrant,
   priorityRank,
@@ -40,7 +43,11 @@ import {
   projectPriorityFromImportance,
   projectPriorityLevel,
   projectPriorityRank,
+  quadrantFromLevels,
+  quadrantRequiresScheduledDate,
+  toggledActionStatus,
   type PriorityLevel,
+  type PriorityQuadrant,
   type ProjectPriority,
 } from "../lib/priority-matrix";
 
@@ -109,6 +116,14 @@ export function LifeOSApp() {
   const [actionImportance, setActionImportance] =
     useState<PriorityLevel>("HIGH");
   const [actionUrgency, setActionUrgency] = useState<PriorityLevel>("LOW");
+  const [schedulePrompt, setSchedulePrompt] = useState<{
+    actionId: string;
+    title: string;
+    body: Record<string, unknown>;
+    importance: PriorityLevel;
+    urgency: PriorityLevel;
+  } | null>(null);
+  const [scheduleDateDraft, setScheduleDateDraft] = useState("");
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
@@ -600,11 +615,11 @@ export function LifeOSApp() {
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      await updateLifeItem(primary.id, { status: "DONE" });
+                      await updateLifeItem(primary.id, { status: toggledActionStatus(primary.status) });
                     })
                   }
                 >
-                  Mark done
+                  {primary.status === "DONE" ? "Undo complete" : "Mark done"}
                 </button>
               </>
             ) : (
@@ -743,12 +758,34 @@ export function LifeOSApp() {
                   projectPriorityFromImportance(actionImportance),
                 ),
               });
+              const createQuadrant = quadrantFromLevels(
+                actionImportance,
+                actionUrgency,
+              );
+              if (
+                quadrantRequiresScheduledDate(createQuadrant) &&
+                !projectTargetDate
+              ) {
+                throw new Error(
+                  "Schedule actions need a date — set the project deadline or pick Schedule after adding.",
+                );
+              }
+              let actionBody: Record<string, unknown> = {
+                hours,
+                day: "This week",
+              };
+              if (quadrantRequiresScheduledDate(createQuadrant) && projectTargetDate) {
+                actionBody = actionBodyWithScheduledDate(
+                  actionBody,
+                  projectTargetDate,
+                );
+              }
               await createLifeItem({
                 kind: "ACTION",
                 title: actionTitle.trim(),
                 parentId: project.id,
                 body: actionBodyWithLevels(
-                  { hours, day: "This week" },
+                  actionBody,
                   actionImportance,
                   actionUrgency,
                 ),
@@ -768,17 +805,33 @@ export function LifeOSApp() {
               });
             })
           }
-          onMoveAction={(action, quadrant) =>
+          onMoveAction={(action, quadrant) => {
+            const { importance, urgency } = levelsFromQuadrant(quadrant);
+            if (
+              quadrantRequiresScheduledDate(quadrant) &&
+              !actionMeetsScheduleDateRequirement(action.body, quadrant)
+            ) {
+              setScheduleDateDraft(actionScheduledDate(action.body) ?? "");
+              setSchedulePrompt({
+                actionId: action.id,
+                title: action.title,
+                body: action.body,
+                importance,
+                urgency,
+              });
+              return;
+            }
             void run(async () => {
-              const { importance, urgency } = levelsFromQuadrant(quadrant);
               await updateLifeItem(action.id, {
                 body: actionBodyWithLevels(action.body, importance, urgency),
               });
-            })
-          }
+            });
+          }}
           onCompleteAction={(action) =>
             void run(async () => {
-              await updateLifeItem(action.id, { status: "DONE" });
+              await updateLifeItem(action.id, {
+                status: toggledActionStatus(action.status),
+              });
             })
           }
           onSetProjectStatus={(project, status) =>
@@ -805,15 +858,29 @@ export function LifeOSApp() {
             when,
           ) =>
             void run(async () => {
+              const quadrant = quadrantFromLevels(importance, urgency);
+              let body: Record<string, unknown> = {
+                hours,
+                day: when ?? "This week",
+              };
+              if (quadrantRequiresScheduledDate(quadrant)) {
+                const date =
+                  typeof when === "string" &&
+                  /^\d{4}-\d{2}-\d{2}$/.test(when)
+                    ? when
+                    : null;
+                if (!date) {
+                  throw new Error(
+                    "Schedule actions need a calendar date (YYYY-MM-DD).",
+                  );
+                }
+                body = actionBodyWithScheduledDate(body, date);
+              }
               await createLifeItem({
                 kind: "ACTION",
                 title,
                 parentId: projectId,
-                body: actionBodyWithLevels(
-                  { hours, day: when ?? "This week" },
-                  importance,
-                  urgency,
-                ),
+                body: actionBodyWithLevels(body, importance, urgency),
               });
             })
           }
@@ -822,13 +889,31 @@ export function LifeOSApp() {
             setPlanSegment("priority");
           }}
           preferPriorityMatrix={preferPriorityMatrix}
-          onUpdateActionLevels={(action, importance, urgency) =>
-            void run(async () => {
-              await updateLifeItem(action.id, {
-                body: actionBodyWithLevels(action.body, importance, urgency),
+          onUpdateActionLevels={(action, importance, urgency) => {
+            const quadrant = quadrantFromLevels(importance, urgency);
+            const nextBody = actionBodyWithLevels(
+              action.body,
+              importance,
+              urgency,
+            );
+            if (
+              quadrantRequiresScheduledDate(quadrant) &&
+              !actionMeetsScheduleDateRequirement(nextBody, quadrant)
+            ) {
+              setScheduleDateDraft(actionScheduledDate(action.body) ?? "");
+              setSchedulePrompt({
+                actionId: action.id,
+                title: action.title,
+                body: action.body,
+                importance,
+                urgency,
               });
-            })
-          }
+              return;
+            }
+            void run(async () => {
+              await updateLifeItem(action.id, { body: nextBody });
+            });
+          }}
           onMoveProjectToIdea={(project) =>
             void run(async () => {
               await moveProjectToIdea(project.id);
@@ -1011,11 +1096,13 @@ export function LifeOSApp() {
                     disabled={busy}
                     onClick={() =>
                       void run(async () => {
-                        await updateLifeItem(action.id, { status: "DONE" });
+                        await updateLifeItem(action.id, {
+                          status: toggledActionStatus(action.status),
+                        });
                       })
                     }
                   >
-                    Done
+                    {action.status === "DONE" ? "Undo" : "Done"}
                   </button>
                 </div>
               </article>
@@ -1052,6 +1139,85 @@ export function LifeOSApp() {
           </article>
         </section>
       ) : null}
+    
+      {schedulePrompt ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="schedule-date-title"
+            className="w-full max-w-md rounded-2xl border border-[#dde2dd] bg-white p-5 shadow-lg"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              Schedule
+            </p>
+            <h3
+              id="schedule-date-title"
+              className="mt-1 font-serif text-2xl text-[#14241f]"
+            >
+              Pick a date
+            </h3>
+            <p className="mt-1 text-sm text-[#6c7771]">
+              &ldquo;{schedulePrompt.title}&rdquo; is Important &amp; not Urgent —
+              set a date to place it in Schedule.
+            </p>
+            <label className="mt-4 block space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                Date
+              </span>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                value={scheduleDateDraft}
+                onChange={(e) => setScheduleDateDraft(e.target.value)}
+              />
+            </label>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-[#dde2dd] px-4 py-3 text-xs font-bold"
+                onClick={() => {
+                  setSchedulePrompt(null);
+                  setScheduleDateDraft("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+                disabled={
+                  busy || !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)
+                }
+                onClick={() => {
+                  if (
+                    !schedulePrompt ||
+                    !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)
+                  ) {
+                    return;
+                  }
+                  const prompt = schedulePrompt;
+                  const date = scheduleDateDraft;
+                  void run(async () => {
+                    await updateLifeItem(prompt.actionId, {
+                      body: actionBodyWithLevels(
+                        actionBodyWithScheduledDate(prompt.body, date),
+                        prompt.importance,
+                        prompt.urgency,
+                      ),
+                    });
+                    setSchedulePrompt(null);
+                    setScheduleDateDraft("");
+                  });
+                }}
+              >
+                Save Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
     </main>
   );
 }

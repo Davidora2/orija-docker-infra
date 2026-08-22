@@ -485,3 +485,71 @@ export function migrateActionBody(
     existingUrg ?? urgency,
   );
 }
+
+
+/** Canonical action schedule date (`scheduledDate`, or ISO `day` / `dueAt`). */
+export function actionScheduledDate(
+  body: Record<string, unknown> | null | undefined,
+): string | null {
+  const source = body ?? {};
+  for (const key of ['scheduledDate', 'dueAt'] as const) {
+    const value = source[key];
+    if (typeof value === 'string') {
+      const sliced = value.slice(0, 10);
+      if (DATE_ONLY.test(sliced)) return sliced;
+    }
+  }
+  const day = source.day;
+  if (typeof day === 'string') {
+    const sliced = day.slice(0, 10);
+    if (DATE_ONLY.test(sliced)) return sliced;
+  }
+  return null;
+}
+
+/** Write/clear canonical `scheduledDate` for Schedule-quadrant actions. */
+export function actionBodyWithScheduledDate(
+  body: Record<string, unknown>,
+  scheduledDate: string | null | undefined,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...body };
+  delete next.dueAt;
+  if (typeof scheduledDate === 'string' && DATE_ONLY.test(scheduledDate.slice(0, 10))) {
+    const date = scheduledDate.slice(0, 10);
+    next.scheduledDate = date;
+    // Keep soft `day` label in sync when it was already an ISO date or empty.
+    const existingDay = next.day;
+    if (
+      existingDay == null ||
+      existingDay === '' ||
+      (typeof existingDay === 'string' && DATE_ONLY.test(existingDay.slice(0, 10)))
+    ) {
+      next.day = date;
+    }
+  } else {
+    delete next.scheduledDate;
+  }
+  return next;
+}
+
+/** Eisenhower Schedule (important, not urgent) requires a calendar date. */
+export function quadrantRequiresScheduledDate(quadrant: PriorityQuadrant): boolean {
+  return quadrant === 'SCHEDULE';
+}
+
+export function actionMeetsScheduleDateRequirement(
+  body: Record<string, unknown> | null | undefined,
+  quadrant: PriorityQuadrant = actionPriorityQuadrant(body),
+): boolean {
+  if (!quadrantRequiresScheduledDate(quadrant)) return true;
+  return actionScheduledDate(body) != null;
+}
+
+/** Toggle action completion: DONE ↔ ACTIVE (open). */
+export function toggledActionStatus(status: string): 'DONE' | 'ACTIVE' {
+  return status === 'DONE' ? 'ACTIVE' : 'DONE';
+}
+
+export function isActionDone(status: string): boolean {
+  return status === 'DONE';
+}

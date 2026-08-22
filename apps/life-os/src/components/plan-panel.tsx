@@ -17,6 +17,8 @@ import {
   projectPriorityLevel,
   projectPriorityRank,
   projectTargetDate,
+  quadrantFromLevels,
+  quadrantRequiresScheduledDate,
   type PriorityLevel,
   type PriorityQuadrant,
   type ProjectPriority,
@@ -342,6 +344,7 @@ export function PlanPanel(props: Props) {
   );
   const [quickImportance, setQuickImportance] = useState<PriorityLevel>("HIGH");
   const [quickUrgency, setQuickUrgency] = useState<PriorityLevel>("LOW");
+  const [quickScheduledDate, setQuickScheduledDate] = useState("");
 
   const [evalImpact, setEvalImpact] = useState(7);
   const [evalEffort, setEvalEffort] = useState(4);
@@ -464,19 +467,27 @@ export function PlanPanel(props: Props) {
   function submitQuickAction(projectId: string) {
     if (!quickTitle.trim()) return;
     const hours = Number(quickHours);
+    const quadrant = quadrantFromLevels(quickImportance, quickUrgency);
+    if (
+      quadrantRequiresScheduledDate(quadrant) &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(quickScheduledDate)
+    ) {
+      return;
+    }
     props.onQuickAddAction(
       projectId,
       quickTitle.trim(),
       Number.isFinite(hours) && hours > 0 ? hours : 0.5,
       quickImportance,
       quickUrgency,
-      quickWhen,
+      quadrantRequiresScheduledDate(quadrant) ? quickScheduledDate : quickWhen,
     );
     setQuickTitle("");
     setQuickHours("0.5");
     setQuickWhen("This week");
     setQuickImportance("HIGH");
     setQuickUrgency("LOW");
+    setQuickScheduledDate("");
     setAddActionOpen(false);
     setActionDetailsOpen(false);
   }
@@ -1310,6 +1321,7 @@ export function PlanPanel(props: Props) {
             title={quickTitle}
             hours={quickHours}
             when={quickWhen}
+            scheduledDate={quickScheduledDate}
             importance={quickImportance}
             urgency={quickUrgency}
             projects={projects.filter(
@@ -1323,6 +1335,7 @@ export function PlanPanel(props: Props) {
             onTitle={setQuickTitle}
             onHours={setQuickHours}
             onWhen={setQuickWhen}
+            onScheduledDate={setQuickScheduledDate}
             onImportance={setQuickImportance}
             onUrgency={setQuickUrgency}
             onOpenDetails={() => setActionDetailsOpen(true)}
@@ -1770,6 +1783,7 @@ function AddActionSheet({
   title,
   hours,
   when,
+  scheduledDate,
   importance,
   urgency,
   projects,
@@ -1778,6 +1792,7 @@ function AddActionSheet({
   onTitle,
   onHours,
   onWhen,
+  onScheduledDate,
   onImportance,
   onUrgency,
   onOpenDetails,
@@ -1788,6 +1803,7 @@ function AddActionSheet({
   title: string;
   hours: string;
   when: "Today" | "This week" | "Later";
+  scheduledDate: string;
   importance: PriorityLevel;
   urgency: PriorityLevel;
   projects: LifeItem[];
@@ -1796,6 +1812,7 @@ function AddActionSheet({
   onTitle: (value: string) => void;
   onHours: (value: string) => void;
   onWhen: (value: "Today" | "This week" | "Later") => void;
+  onScheduledDate: (value: string) => void;
   onImportance: (value: PriorityLevel) => void;
   onUrgency: (value: PriorityLevel) => void;
   onOpenDetails: () => void;
@@ -1873,6 +1890,21 @@ function AddActionSheet({
           />
         ))}
       </div>
+      {quadrantRequiresScheduledDate(
+        quadrantFromLevels(importance, urgency),
+      ) ? (
+        <label className="mb-4 block space-y-1">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+            Schedule date (required)
+          </span>
+          <input
+            type="date"
+            className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+            value={scheduledDate}
+            onChange={(e) => onScheduledDate(e.target.value)}
+          />
+        </label>
+      ) : null}
 
       {detailsOpen ? (
         <>
@@ -1909,7 +1941,14 @@ function AddActionSheet({
       <button
         type="button"
         className="w-full rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
-        disabled={busy || !title.trim()}
+        disabled={
+          busy ||
+          !title.trim() ||
+          (quadrantRequiresScheduledDate(
+            quadrantFromLevels(importance, urgency),
+          ) &&
+            !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate))
+        }
         onClick={onSave}
       >
         {detailsOpen ? "Save" : "Add action"}
@@ -2004,6 +2043,11 @@ function ProjectDetailView({
           action.id !== next?.id && str(action, "day") === "Later",
       ),
     },
+      {
+      id: "done",
+      title: "Done",
+      actions: doneActions,
+    },
   ];
 
   return (
@@ -2083,15 +2127,25 @@ function ProjectDetailView({
           <div className="flex items-start gap-3">
             <button
               type="button"
-              className="mt-1 flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px]"
-              disabled={busy || isDone}
+              className="mt-1 flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
+              disabled={busy}
               onClick={() => onCompleteAction(next)}
-              aria-label="Complete next action"
+              aria-label={
+                next.status === "DONE"
+                  ? "Mark next action open"
+                  : "Mark next action done"
+              }
             >
-              ○
+              {next.status === "DONE" ? "●" : "○"}
             </button>
             <div>
-              <h3 className="font-serif text-2xl">{next.title}</h3>
+              <h3
+                className={`font-serif text-2xl ${
+                  next.status === "DONE" ? "text-[#6c7771] line-through" : ""
+                }`}
+              >
+                {next.title}
+              </h3>
               <p className="text-sm text-[#6c7771]">
                 {num(next, "hours", 1)}h
                 {str(next, "day") ? ` · ${str(next, "day")}` : ""} ·{" "}
@@ -2165,27 +2219,60 @@ function ProjectDetailView({
                 {group.actions.length === 0 ? (
                   <p className="text-sm text-[#6c7771]">None yet.</p>
                 ) : (
-                  group.actions.map((action) => (
-                    <div
-                      key={action.id}
-                      className="rounded-2xl border border-[#dde2dd] bg-white px-4 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="font-semibold">{action.title}</p>
-                        <span className="rounded-full bg-[#eef3ea] px-2 py-0.5 text-[10px] font-bold text-[#617a57]">
-                          {
-                            PRIORITY_QUADRANT_META[
-                              actionPriorityQuadrant(action.body, project.body)
-                            ].label
-                          }
-                        </span>
+                  group.actions.map((action) => {
+                    const done = action.status === "DONE";
+                    return (
+                      <div
+                        key={action.id}
+                        className={`rounded-2xl border border-[#dde2dd] px-4 py-3 ${
+                          done ? "bg-[#f7f8f5]" : "bg-white"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
+                            disabled={busy}
+                            onClick={() => onCompleteAction(action)}
+                            aria-label={
+                              done ? "Mark action open" : "Mark action done"
+                            }
+                          >
+                            {done ? "●" : "○"}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p
+                                className={`font-semibold ${
+                                  done
+                                    ? "text-[#6c7771] line-through"
+                                    : ""
+                                }`}
+                              >
+                                {action.title}
+                              </p>
+                              <span className="rounded-full bg-[#eef3ea] px-2 py-0.5 text-[10px] font-bold text-[#617a57]">
+                                {
+                                  PRIORITY_QUADRANT_META[
+                                    actionPriorityQuadrant(
+                                      action.body,
+                                      project.body,
+                                    )
+                                  ].label
+                                }
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#6c7771]">
+                              {num(action, "hours", 1)}h
+                              {str(action, "day")
+                                ? ` · ${str(action, "day")}`
+                                : ""}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-xs text-[#6c7771]">
-                        {num(action, "hours", 1)}h
-                        {str(action, "day") ? ` · ${str(action, "day")}` : ""}
-                      </p>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             ),

@@ -71,13 +71,18 @@ import {
   PRIORITY_LEVEL_META,
   PRIORITY_QUADRANT_META,
   actionBodyWithLevels,
+  actionBodyWithScheduledDate,
+  actionMeetsScheduleDateRequirement,
   actionPriorityQuadrant,
+  actionScheduledDate,
   levelsFromQuadrant,
   projectBodyWithPriority,
   projectBodyWithTargetDate,
   projectPriorityFromImportance,
   projectPriorityLevel,
   quadrantFromLevels,
+  quadrantRequiresScheduledDate,
+  toggledActionStatus,
   type PriorityLevel,
   type PriorityQuadrant,
   type ProjectPriority,
@@ -319,6 +324,11 @@ function AppContent() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [schedulePrompt, setSchedulePrompt] = useState<{
+    action: LifeItem;
+    quadrant: PriorityQuadrant;
+  } | null>(null);
+  const [scheduleDateDraft, setScheduleDateDraft] = useState('');
   const [actionMoreOpen, setActionMoreOpen] = useState(false);
   const [ideaTitle, setIdeaTitle] = useState('');
   const [ideaNote, setIdeaNote] = useState('');
@@ -337,6 +347,7 @@ function AppContent() {
   const [actionTitle, setActionTitle] = useState('');
   const [actionHours, setActionHours] = useState('2');
   const [actionDay, setActionDay] = useState<string>('Fri');
+  const [captureScheduleDate, setCaptureScheduleDate] = useState('');
   const [actionImportance, setActionImportance] =
     useState<PriorityLevel>('HIGH');
   const [actionUrgency, setActionUrgency] = useState<PriorityLevel>('LOW');
@@ -656,15 +667,29 @@ function AppContent() {
           projectPriorityFromImportance(actionImportance),
         ),
       });
+      const createQuadrant = quadrantFromLevels(
+        actionImportance,
+        actionUrgency,
+      );
+      let actionBody: Record<string, unknown> = {
+        hours,
+        day: actionDay,
+      };
+      if (quadrantRequiresScheduledDate(createQuadrant)) {
+        const date = projectTargetDate.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          throw new Error(
+            'Schedule actions need a date — set the project deadline.',
+          );
+        }
+        actionBody = actionBodyWithScheduledDate(actionBody, date);
+      }
       await createLifeItem({
         kind: 'ACTION',
         title: actionTitle.trim(),
         parentId: project.id,
         body: actionBodyWithLevels(
-          {
-            hours,
-            day: actionDay,
-          },
+          actionBody,
           actionImportance,
           actionUrgency,
         ),
@@ -697,12 +722,43 @@ function AppContent() {
   }
 
   async function moveActionQuadrant(action: LifeItem, quadrant: PriorityQuadrant) {
+    if (
+      quadrantRequiresScheduledDate(quadrant) &&
+      !actionMeetsScheduleDateRequirement(action.body, quadrant)
+    ) {
+      setScheduleDateDraft(actionScheduledDate(action.body) ?? '');
+      setSchedulePrompt({ action, quadrant });
+      return;
+    }
     await run('Update action priority', async () => {
       const { importance, urgency } = levelsFromQuadrant(quadrant);
       await updateLifeItem(action.id, {
         body: actionBodyWithLevels(action.body, importance, urgency),
       });
       await reloadItems();
+    });
+  }
+
+  async function confirmSchedulePrompt() {
+    if (!schedulePrompt) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)) {
+      notify('Schedule requires a date (YYYY-MM-DD).');
+      return;
+    }
+    const { action, quadrant } = schedulePrompt;
+    const { importance, urgency } = levelsFromQuadrant(quadrant);
+    await run('Schedule action', async () => {
+      await updateLifeItem(action.id, {
+        body: actionBodyWithLevels(
+          actionBodyWithScheduledDate(action.body, scheduleDateDraft),
+          importance,
+          urgency,
+        ),
+      });
+      await reloadItems();
+      setSchedulePrompt(null);
+      setScheduleDateDraft('');
+      notify('Action scheduled.');
     });
   }
 
@@ -728,11 +784,17 @@ function AppContent() {
   }
 
   async function completeAction(action: LifeItem) {
-    await run('Complete action', async () => {
-      await updateLifeItem(action.id, { status: 'DONE' });
-      await reloadItems();
-      notify('Action completed.');
-    });
+    const nextStatus = toggledActionStatus(action.status);
+    await run(
+      nextStatus === 'DONE' ? 'Complete action' : 'Reopen action',
+      async () => {
+        await updateLifeItem(action.id, { status: nextStatus });
+        await reloadItems();
+        notify(
+          nextStatus === 'DONE' ? 'Action completed.' : 'Action reopened.',
+        );
+      },
+    );
   }
 
   async function updateActionHours(action: LifeItem, nextHours: number) {
@@ -859,7 +921,54 @@ function AppContent() {
         <Button onPress={() => setAccountOpen(true)} style={{ marginTop: 18 }}>
           Sign in or create account
         </Button>
-        <AccountSheet
+  
+      <Modal
+        visible={schedulePrompt != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSchedulePrompt(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.cardEyebrow}>Schedule</Text>
+            <Text style={styles.cardTitle}>Pick a date</Text>
+            <Text style={styles.cardBody}>
+              {schedulePrompt
+                ? `"${schedulePrompt.action.title}" needs a date for Schedule.`
+                : ''}
+            </Text>
+            <TextInput
+              value={scheduleDateDraft}
+              onChangeText={setScheduleDateDraft}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              style={styles.input}
+            />
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setSchedulePrompt(null);
+                  setScheduleDateDraft('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                style={{ flex: 1 }}
+                disabled={busy}
+                onPress={() => void confirmSchedulePrompt()}
+              >
+                Save Schedule
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <AccountSheet
           visible={accountOpen}
           account={null}
           initialInviteToken={inviteToken ?? undefined}
@@ -947,7 +1056,7 @@ function AppContent() {
                         disabled={busy}
                         style={{ flex: 1 }}
                       >
-                        Mark done
+                        {primary.status === 'DONE' ? 'Undo complete' : 'Mark done'}
                       </Button>
                       <Button
                         variant="secondary"
@@ -1641,6 +1750,24 @@ function AppContent() {
                           ].title
                         }
                       </Text>
+                      {quadrantRequiresScheduledDate(
+                        quadrantFromLevels(
+                          quickActionImportance,
+                          quickActionUrgency,
+                        ),
+                      ) ? (
+                        <>
+                          <Text style={styles.fieldLabel}>Schedule date</Text>
+                          <TextInput
+                            value={captureScheduleDate}
+                            onChangeText={setCaptureScheduleDate}
+                            placeholder="YYYY-MM-DD"
+                            placeholderTextColor={colors.muted}
+                            autoCapitalize="none"
+                            style={styles.input}
+                          />
+                        </>
+                      ) : null}
                       <Text style={styles.fieldLabel}>Day</Text>
                       <View style={styles.chipRow}>
                         {WEEK_DAYS.map((day) => (
@@ -1710,17 +1837,34 @@ function AppContent() {
                           return;
                         }
                         const hours = Number(actionHours);
+                        const q = quadrantFromLevels(
+                          quickActionImportance,
+                          quickActionUrgency,
+                        );
+                        let body: Record<string, unknown> = {
+                          hours:
+                            Number.isFinite(hours) && hours > 0 ? hours : 1,
+                          day: actionMoreOpen ? actionDay : undefined,
+                          note: ideaNote.trim() || undefined,
+                        };
+                        if (quadrantRequiresScheduledDate(q)) {
+                          if (!/^\d{4}-\d{2}-\d{2}$/.test(captureScheduleDate)) {
+                            notify(
+                              'Schedule actions need a date (YYYY-MM-DD).',
+                            );
+                            return;
+                          }
+                          body = actionBodyWithScheduledDate(
+                            body,
+                            captureScheduleDate,
+                          );
+                        }
                         await createLifeItem({
                           kind: 'ACTION',
                           title: ideaTitle.trim(),
                           parentId: quickActionProjectId,
                           body: actionBodyWithLevels(
-                            {
-                              hours:
-                                Number.isFinite(hours) && hours > 0 ? hours : 1,
-                              day: actionMoreOpen ? actionDay : undefined,
-                              note: ideaNote.trim() || undefined,
-                            },
+                            body,
                             quickActionImportance,
                             quickActionUrgency,
                           ),
@@ -1728,6 +1872,7 @@ function AppContent() {
                         setIdeaTitle('');
                         setIdeaNote('');
                         setQuickActionProjectId(null);
+                        setCaptureScheduleDate('');
                         setActionMoreOpen(false);
                         setCaptureOpen(false);
                         await reloadItems();
@@ -2321,6 +2466,12 @@ const styles = StyleSheet.create({
   },
   modalSheetWrap: {
     maxHeight: '92%',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(20,36,31,0.45)',
+    justifyContent: 'center',
+    padding: 20,
   },
   modalCard: {
     backgroundColor: colors.canvas,

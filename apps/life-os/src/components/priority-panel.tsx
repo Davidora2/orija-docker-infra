@@ -418,11 +418,16 @@ export function PriorityPanel({
                               </span>
                               <button
                                 type="button"
-                                className="text-[10px] font-bold text-[#617a57]"
+                                className="flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
                                 disabled={busy}
                                 onClick={() => onCompleteAction(action)}
+                                aria-label={
+                                  action.status === "DONE"
+                                    ? "Mark action open"
+                                    : "Mark action done"
+                                }
                               >
-                                Done
+                                {action.status === "DONE" ? "●" : "○"}
                               </button>
                             </div>
                           </li>
