@@ -53,7 +53,10 @@ export function CalendarSyncPanel({ onError, onNotice }: Props) {
     setBusy(true);
     onError(null);
     try {
-      const { url } = await startCalendarConnect(provider, "/?tab=calendar");
+      const { url } = await startCalendarConnect(
+        provider,
+        "/?tab=you&dest=integrations",
+      );
       window.location.href = url;
     } catch (error) {
       onError(
@@ -103,10 +106,10 @@ export function CalendarSyncPanel({ onError, onNotice }: Props) {
   return (
     <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
       <div>
-        <h3 className="font-serif text-xl">Push to your calendar</h3>
+        <h3 className="font-serif text-xl">Calendar sync</h3>
         <p className="mt-1 text-sm text-[#6c7771]">
           Connect your own Google or Microsoft account. Life OS will add tasks,
-          payments, and paydays with notifications — each user connects their
+          payments, and paydays with calendar reminders — each user connects their
           own calendar.
         </p>
       </div>

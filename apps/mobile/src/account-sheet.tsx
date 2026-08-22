@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AccountPrivacySection } from './account-privacy-section';
 import {
   acceptPartnerInvite,
   apiBaseUrl,
@@ -762,6 +763,27 @@ export function AccountSheet({
                     />
                   </View>
                 )}
+
+                <View style={styles.sectionHeading}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Settings & privacy</Text>
+                    <Text style={styles.sectionCaption}>
+                      Email reminders, export, and account control.
+                    </Text>
+                  </View>
+                </View>
+                <AccountPrivacySection
+                  account={account}
+                  busy={busy}
+                  setBusy={setBusy}
+                  notify={notify}
+                  onError={setError}
+                  onDeleted={() => {
+                    onAccountChange(null);
+                    onClose();
+                    notify('Your account was permanently deleted.');
+                  }}
+                />
 
                 <ActionButton
                   disabled={busy}

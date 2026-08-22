@@ -41,6 +41,32 @@ textarea {
   font: inherit;
 }
 
+@media print {
+  @page {
+    size: auto;
+    margin: 14mm;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-review {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .print-review article,
+  .print-review section {
+    break-inside: avoid;
+  }
+}
+
 /* Do not force `color: inherit` on buttons — it beats Tailwind text utilities
    (unlayered CSS > @layer utilities) and hides labels on dark primary buttons. */
 

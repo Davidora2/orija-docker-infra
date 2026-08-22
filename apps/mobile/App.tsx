@@ -30,6 +30,7 @@ import { AccountSheet } from './src/account-sheet';
 import { BudgetScreen } from './src/budget-screen';
 import { CalendarScreen } from './src/calendar-screen';
 import { CapacityRing } from './src/capacity-ring';
+import { IntegrationsScreen } from './src/integrations-screen';
 import { LifeIcon } from './src/life-icon';
 import { OnboardingSheet } from './src/onboarding-sheet';
 import {
@@ -53,6 +54,7 @@ import {
 } from './src/offline';
 import { PlanScreen } from './src/plan-screen';
 import { SwipeableRow } from './src/swipeable-row';
+import { WeeklyReviewScreen } from './src/weekly-review-screen';
 import {
   WEEK_DAYS,
   bodyNumber,
@@ -1330,7 +1332,7 @@ function AppContent() {
                 ['review', 'Weekly Review', 'CEO-style check-in', 'review'],
                 ['household', 'Household', 'Partner link and shared space', 'household'],
                 ['integrations', 'Integrations', 'Calendar sync connectors', 'integrations'],
-                ['settings', 'Settings', 'Account, currency, notifications', 'settings'],
+                ['settings', 'Settings', 'Account, export, email reminders', 'settings'],
               ] as const
             ).map(([id, title, body, icon]) => (
               <Pressable
@@ -1338,7 +1340,7 @@ function AppContent() {
                 style={styles.youRow}
                 onPress={() => {
                   tap();
-                  if (id === 'settings' || id === 'household' || id === 'integrations') {
+                  if (id === 'settings' || id === 'household') {
                     setAccountOpen(true);
                     setYouDest('menu');
                   } else {
@@ -1464,58 +1466,25 @@ function AppContent() {
               <Text style={styles.backText}>You</Text>
             </Pressable>
             <Text style={styles.sectionTitle}>Weekly Review</Text>
-            <Card>
-              <View style={styles.ringSummary}>
-                <CapacityRing
-                  planned={capacity.planned}
-                  available={capacity.available}
-                  label="Weekly review planned capacity"
-                />
-                <View style={styles.ringSummaryCopy}>
-                  <Text style={styles.cardEyebrow}>Scorecard</Text>
-                  <Text style={styles.cardTitle}>
-                    {doneActions.length} completed · {capacity.openActions.length} still open
-                  </Text>
-                  <Text style={styles.cardBody}>
-                    Planned load {capacity.planned.toFixed(1)}h against {capacity.available}h
-                    available. Completion rate{' '}
-                    {actions.length === 0
-                      ? '0'
-                      : Math.round((doneActions.length / actions.length) * 100)}
-                    %.
-                  </Text>
-                </View>
-              </View>
-            </Card>
-            <Card>
-              <Text style={styles.cardEyebrow}>Open actions to close</Text>
-              {capacity.openActions.length === 0 ? (
-                <Text style={styles.cardBody}>
-                  Nothing open — capture the next idea or enjoy the clear week.
-                </Text>
-              ) : (
-                capacity.openActions.map((action) => (
-                  <Pressable
-                    key={action.id}
-                    style={styles.listRow}
-                    onPress={() => void completeAction(action)}
-                  >
-                    <Text style={[styles.listTitle, { flex: 1 }]}>{action.title}</Text>
-                    <LifeIcon name="done" color={colors.sageDeep} />
-                  </Pressable>
-                ))
-              )}
-            </Card>
-            {risks.length > 0 ? (
-              <Card>
-                <Text style={styles.cardEyebrow}>Carry into next week</Text>
-                {risks.map((risk) => (
-                  <Text key={risk} style={styles.cardBody}>
-                    • {risk}
-                  </Text>
-                ))}
-              </Card>
-            ) : null}
+            <WeeklyReviewScreen
+              householdId={account!.activeHouseholdId!}
+              completedActions={doneActions.length}
+              totalActions={actions.length}
+              plannedHours={capacity.planned}
+              availableHours={capacity.available}
+              notify={notify}
+            />
+          </View>
+        ) : null}
+
+        {tab === 'you' && youDest === 'integrations' ? (
+          <View style={styles.stack}>
+            <Pressable onPress={() => setYouDest('menu')} style={styles.backRow}>
+              <LifeIcon name="chevron-left" color={colors.sageDeep} />
+              <Text style={styles.backText}>You</Text>
+            </Pressable>
+            <Text style={styles.sectionTitle}>Integrations</Text>
+            <IntegrationsScreen notify={notify} />
           </View>
         ) : null}
       </ScrollView>
