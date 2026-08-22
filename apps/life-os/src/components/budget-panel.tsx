@@ -51,7 +51,7 @@ export function BudgetPanel({
         const list = await listBudgets();
         setBudgets(list);
         const nextId = pickDefaultBudgetId(list, account.user.id, {
-          preferredId: preferredId ?? activeId,
+          preferredId,
           storedId: loadLastBudgetId(account.user.id),
         });
         setActiveId(nextId);
@@ -70,7 +70,7 @@ export function BudgetPanel({
         setLoading(false);
       }
     },
-    [account.user.id, activeId, onError],
+    [account.user.id, onError],
   );
 
   useEffect(() => {

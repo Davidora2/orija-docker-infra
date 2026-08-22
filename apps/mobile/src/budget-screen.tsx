@@ -58,7 +58,7 @@ export function BudgetScreen({ account, notify }: Props) {
       const list = await listBudgets();
       setBudgets(list);
       const nextId = pickDefaultBudgetId(list, account.user.id, {
-        preferredId: preferredId ?? activeId,
+        preferredId,
         storedId: await loadLastBudgetId(account.user.id),
       });
       setActiveId(nextId);
@@ -69,7 +69,7 @@ export function BudgetScreen({ account, notify }: Props) {
         setDetail(null);
       }
     },
-    [account.user.id, activeId],
+    [account.user.id],
   );
 
   useEffect(() => {
