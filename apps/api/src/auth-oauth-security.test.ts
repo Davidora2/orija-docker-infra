@@ -46,6 +46,9 @@ suite('OAuth email account takeover prevention', () => {
     authEmailVerificationDisabled: false,
     skipEmailSend: false,
     allowTestRegistrationEmails: true,
+    authEmailVerificationDisabled: false,
+    skipEmailSend: false,
+    allowTestRegistrationEmails: true,
   };
 
   beforeAll(async () => {

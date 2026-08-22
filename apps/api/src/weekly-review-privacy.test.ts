@@ -37,6 +37,9 @@ suite('weekly review and account privacy API', () => {
     authEmailVerificationDisabled: false,
     skipEmailSend: false,
     allowTestRegistrationEmails: true,
+    authEmailVerificationDisabled: false,
+    skipEmailSend: false,
+    allowTestRegistrationEmails: true,
   };
 
   beforeAll(async () => {
