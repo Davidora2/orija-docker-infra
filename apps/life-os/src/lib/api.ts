@@ -430,6 +430,28 @@ export async function updateLifeItem(
   return mapItem(raw);
 }
 
+export type MoveProjectToIdeaResult = {
+  idea: LifeItem;
+  project: LifeItem;
+  archivedActionCount: number;
+};
+
+/** Soft-convert a project to Ideas (archives project + open actions). */
+export async function moveProjectToIdea(
+  id: string,
+): Promise<MoveProjectToIdeaResult> {
+  const raw = await request<{
+    idea: Record<string, unknown>;
+    project: Record<string, unknown>;
+    archivedActionCount: number;
+  }>(`/v1/items/${id}/move-to-idea`, { method: "POST", body: "{}" });
+  return {
+    idea: mapItem(raw.idea),
+    project: mapItem(raw.project),
+    archivedActionCount: raw.archivedActionCount,
+  };
+}
+
 export type AreaSuggestion = { title: string; icon: string };
 
 export const SUGGESTED_LIFE_AREAS: AreaSuggestion[] = [
