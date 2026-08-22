@@ -607,6 +607,7 @@ function AppContent() {
     setProjectOutcome(bodyString(idea, 'note'));
     setProjectPillarId(idea.parentId);
     setProjectPriority('MEDIUM');
+    setProjectTargetDate('');
     setActionTitle(`Next: ${idea.title}`);
     setActionHours('2');
     setActionDay('Fri');

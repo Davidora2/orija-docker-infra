@@ -756,7 +756,7 @@ export async function buildApp(
         ${body.visibility},
         ${body.title},
         ${body.status},
-        ${sql.json(itemBody)},
+        ${sql.json(itemBody as JsonValue)},
         ${body.sortOrder}
       )
       RETURNING *
@@ -804,7 +804,7 @@ export async function buildApp(
           ELSE parent_id
         END,
         body = CASE
-          WHEN ${bodyProvided} THEN ${sql.json(nextBody)}
+          WHEN ${bodyProvided} THEN ${sql.json(nextBody as JsonValue)}
           ELSE body
         END,
         sort_order = COALESCE(${body.sortOrder ?? null}, sort_order),
