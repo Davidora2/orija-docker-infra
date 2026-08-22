@@ -472,7 +472,8 @@ export function LifeOSApp() {
         <div>
           <p className="font-serif text-3xl">Life OS</p>
           <p className="text-sm text-[#6c7771]">
-            {account.user.displayName} · {online ? "Online" : "Offline"} ·{" "}
+            {account.user.displayName}
+            {!online ? " · Offline" : ""} ·{" "}
             {account.user.preferredCurrency || "GBP"}
           </p>
         </div>
