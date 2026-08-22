@@ -16,9 +16,14 @@ import { WealthPanel } from "./wealth-panel";
 type Props = {
   account: Account;
   onError: (message: string) => void;
+  spendCaptureNonce?: number;
 };
 
-export function BudgetPanel({ account, onError }: Props) {
+export function BudgetPanel({
+  account,
+  onError,
+  spendCaptureNonce = 0,
+}: Props) {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
@@ -46,6 +51,10 @@ export function BudgetPanel({ account, onError }: Props) {
       onError(error instanceof Error ? error.message : "Could not load budgets."),
     );
   }, [reload, onError, account.user.preferredCurrency]);
+
+  useEffect(() => {
+    if (spendCaptureNonce > 0) setSection("outgoings");
+  }, [spendCaptureNonce]);
 
   async function create(visibility: "PRIVATE" | "SHARED") {
     setBusy(true);
@@ -132,7 +141,7 @@ export function BudgetPanel({ account, onError }: Props) {
           <div className="flex flex-wrap gap-2">
             {(
               [
-                ["outgoings", "Outgoings", "spending"],
+                ["outgoings", "Spending", "spending"],
                 ["wealth", "Savings & investing", "wealth"],
                 ["dashboard", "Dashboard", "overview"],
               ] as const
@@ -163,6 +172,7 @@ export function BudgetPanel({ account, onError }: Props) {
               preferredCurrency={currency}
               onError={onError}
               onChanged={() => void reload()}
+              focusDailyExpense={spendCaptureNonce}
             />
           ) : null}
 

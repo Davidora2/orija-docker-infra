@@ -3,6 +3,16 @@ export const apiBaseUrl =
 
 const sessionKey = "life-os-web-session";
 
+export type OnboardingStep =
+  | "welcome"
+  | "areas"
+  | "capacity"
+  | "ideas"
+  | "project"
+  | "action"
+  | "payoff"
+  | "deferred";
+
 export type AccountUser = {
   id: string;
   email: string;
@@ -12,6 +22,7 @@ export type AccountUser = {
   preferredCurrency: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: string | null;
+  onboardingStep: OnboardingStep | null;
 };
 
 export type Account = {
@@ -479,10 +490,23 @@ export async function listAreaSuggestions(): Promise<AreaSuggestion[]> {
 export async function completeOnboarding(
   areas: { title: string; icon?: string }[],
   preferredCurrency?: string,
+  options?: {
+    complete?: boolean;
+    nextStep?: OnboardingStep;
+  },
 ): Promise<Account> {
   return request<Account>("/v1/onboarding/complete", {
     method: "POST",
-    body: JSON.stringify({ areas, preferredCurrency }),
+    body: JSON.stringify({ areas, preferredCurrency, ...options }),
+  });
+}
+
+export async function updateOnboardingStep(
+  step: OnboardingStep,
+): Promise<Account> {
+  return request<Account>("/v1/onboarding/progress", {
+    method: "PATCH",
+    body: JSON.stringify({ step }),
   });
 }
 

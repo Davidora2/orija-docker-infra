@@ -71,6 +71,12 @@ const migrations = [
       new URL('../migrations/013_email_verification_oauth_link.sql', import.meta.url),
     ),
   },
+  {
+    version: '014_onboarding_progress',
+    path: fileURLToPath(
+      new URL('../migrations/014_onboarding_progress.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {
