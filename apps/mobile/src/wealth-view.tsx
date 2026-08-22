@@ -33,6 +33,10 @@ import {
   type NetWorth,
   type SavingGoal,
 } from './api';
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from './editorial-state';
 
 const colors = {
   ink: '#14241F',
@@ -109,6 +113,7 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   const [draftName, setDraftName] = useState('');
   const [draftAmount, setDraftAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const money = (cents: number) =>
     formatMoney(cents, account.user.preferredCurrency || currency);
@@ -137,9 +142,11 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
   }, [budgetId]);
 
   useEffect(() => {
-    void reload().catch((err) =>
-      notify(err instanceof Error ? err.message : 'Could not load wealth'),
-    );
+    void reload().catch((err) => {
+      const message = err instanceof Error ? err.message : 'Could not load wealth';
+      setLoadError(message);
+      notify(message);
+    });
   }, [reload, notify]);
 
   async function run(work: () => Promise<void>) {
@@ -176,6 +183,41 @@ export function WealthView({ account, budgetId, currency, notify }: Props) {
     setEditInvCustom(item.customLabel ?? '');
     setEditInvGoal((item.goalCents / 100).toFixed(2));
     setEditInvCurrent((item.currentCents / 100).toFixed(2));
+  }
+
+  if (!meta && loadError) {
+    return (
+      <EditorialState
+        kind="error"
+        title="Money could not open"
+        description={loadError}
+        action={
+          <Pressable
+            style={styles.retryButton}
+            onPress={() => {
+              setLoadError(null);
+              void reload().catch((err) => {
+                const message =
+                  err instanceof Error ? err.message : 'Could not load wealth';
+                setLoadError(message);
+                notify(message);
+              });
+            }}
+          >
+            <Text style={styles.retryButtonText}>Try again</Text>
+          </Pressable>
+        }
+      />
+    );
+  }
+
+  if (!meta) {
+    return (
+      <DelayedEditorialLoading
+        title="Balancing your money view"
+        description="Gathering savings, investments, debts, and net worth."
+      />
+    );
   }
 
   return (
@@ -981,4 +1023,12 @@ const styles = StyleSheet.create({
   impactBad: { backgroundColor: colors.dangerSoft },
   flag: { color: colors.danger, fontWeight: '700', marginTop: 4 },
   meta: { fontSize: 11, color: colors.muted },
+  retryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  retryButtonText: { color: colors.paper, fontSize: 13, fontWeight: '700' },
 });

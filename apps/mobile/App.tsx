@@ -4,7 +4,6 @@ import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import {
-  ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -30,6 +29,11 @@ import { AccountSheet } from './src/account-sheet';
 import { BudgetScreen } from './src/budget-screen';
 import { CalendarScreen } from './src/calendar-screen';
 import { CapacityRing } from './src/capacity-ring';
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from './src/editorial-state';
+import { EvaluationRadar } from './src/evaluation-radar';
 import { LifeIcon } from './src/life-icon';
 import { OnboardingSheet } from './src/onboarding-sheet';
 import {
@@ -268,11 +272,13 @@ function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <Card style={styles.emptyCard}>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyBody}>{body}</Text>
-      {action}
-    </Card>
+    <EditorialState
+      kind="empty"
+      compact
+      title={title}
+      description={body}
+      action={action}
+    />
   );
 }
 
@@ -901,8 +907,10 @@ function AppContent() {
   if (loading) {
     return (
       <SafeAreaView style={styles.boot}>
-        <ActivityIndicator color={colors.ink} size="large" />
-        <Text style={styles.bootText}>Loading your Life OS…</Text>
+        <DelayedEditorialLoading
+          title="Opening your day"
+          description="Bringing Today, Plan, Money, and Calendar into focus."
+        />
       </SafeAreaView>
     );
   }
@@ -1948,8 +1956,7 @@ function AppContent() {
           >
             <Text style={styles.sectionTitle}>Evaluate idea</Text>
             <Text style={styles.cardBody}>
-              Score each dimension 1–10. Overall blends impact, alignment, and
-              timing against effort.
+              Score each dimension 1–10. The shape keeps every trade-off visible.
             </Text>
             {(
               [
@@ -1984,14 +1991,9 @@ function AppContent() {
                 />
               </View>
             ))}
-            <Pill tone="ink">
-              Overall{' '}
-              {(
-                (impact + alignment + timing + (10 - effort)) /
-                4
-              ).toFixed(1)}
-              /10
-            </Pill>
+            <EvaluationRadar
+              scores={{ impact, effort, alignment, timing }}
+            />
             <View style={styles.row}>
               <Button
                 variant="secondary"

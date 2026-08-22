@@ -24,6 +24,10 @@ import {
 import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
 import { CapacityRing } from "./capacity-ring";
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from "./editorial-state";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { LifeIcon, type LifeIconName } from "./life-icon";
 import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
@@ -272,7 +276,12 @@ export function LifeOSApp() {
   if (loading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl items-center justify-center p-8 text-[#14241f]">
-        Loading Life OS…
+        <div className="w-full max-w-lg">
+          <DelayedEditorialLoading
+            title="Opening your day"
+            description="Bringing Today, Plan, Money, and Calendar into focus."
+          />
+        </div>
       </main>
     );
   }
@@ -621,9 +630,14 @@ export function LifeOSApp() {
       ) : null}
 
       {error ? (
-        <p className="mb-4 rounded-xl bg-[#f8e4df] px-3 py-2 text-sm text-[#c9634f]">
-          {error}
-        </p>
+        <div className="mb-4">
+          <EditorialState
+            kind="error"
+            compact
+            title="That did not land"
+            description={error}
+          />
+        </div>
       ) : null}
 
       {tab === "today" ? (
@@ -674,9 +688,14 @@ export function LifeOSApp() {
                 </button>
               </>
             ) : (
-              <p className="mt-2 text-sm text-[#6c7771]">
-                No open actions yet. Capture an idea and turn it into a project.
-              </p>
+              <div className="mt-3">
+                <EditorialState
+                  kind="empty"
+                  compact
+                  title="Your runway is clear"
+                  description="Capture an idea, turn it into a project, and choose one concrete next action."
+                />
+              </div>
             )}
           </article>
           <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">

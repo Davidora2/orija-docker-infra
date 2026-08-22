@@ -11,6 +11,10 @@ import {
   type CalendarEvent,
   type CalendarPayload,
 } from './api';
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from './editorial-state';
 
 const colors = {
   ink: '#14241F',
@@ -62,9 +66,11 @@ export function CalendarScreen({
   ]);
   const [data, setData] = useState<CalendarPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const next = await getCalendar({
         view,
@@ -76,7 +82,9 @@ export function CalendarScreen({
       });
       setData(next);
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not load calendar');
+      const message = err instanceof Error ? err.message : 'Could not load calendar';
+      setLoadError(message);
+      notify(message);
     } finally {
       setLoading(false);
     }
@@ -117,7 +125,9 @@ export function CalendarScreen({
     <View style={styles.wrap}>
       <View style={styles.card}>
         <Text style={styles.title}>Calendar</Text>
-        <Text style={styles.sub}>Tasks, payments, and paydays together.</Text>
+        <Text style={styles.sub}>
+          Tasks, project deadlines, saving targets, payments, and paydays together.
+        </Text>
 
         <View style={styles.row}>
           {(['week', 'month'] as const).map((id) => (
@@ -181,7 +191,7 @@ export function CalendarScreen({
                 {type === 'task'
                   ? 'Tasks'
                   : type === 'milestone'
-                    ? 'Deadlines'
+                    ? 'Milestones'
                     : type === 'payment'
                       ? 'Payments'
                       : 'Paydays'}
@@ -226,15 +236,41 @@ export function CalendarScreen({
 
         {data ? (
           <Text style={styles.counts}>
-            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} deadlines ·{' '}
+            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} milestones ·{' '}
             {data.counts.payments} payments · {data.counts.paydays} paydays
           </Text>
         ) : null}
       </View>
 
-      {loading ? <Text style={styles.sub}>Loading calendar…</Text> : null}
+      {loading ? (
+        <DelayedEditorialLoading
+          title="Laying out your calendar"
+          description="Gathering tasks, milestones, payments, and paydays."
+        />
+      ) : null}
 
-      {!loading && data
+      {!loading && loadError ? (
+        <EditorialState
+          kind="error"
+          title="Calendar could not open"
+          description={loadError}
+          action={
+            <Pressable style={styles.retryButton} onPress={() => void load()}>
+              <Text style={styles.retryButtonText}>Try again</Text>
+            </Pressable>
+          }
+        />
+      ) : null}
+
+      {!loading && !loadError && data?.events.length === 0 ? (
+        <EditorialState
+          kind="empty"
+          title="A quiet stretch"
+          description="No tasks, deadlines, saving targets, payments, or paydays match these filters."
+        />
+      ) : null}
+
+      {!loading && !loadError && data && data.events.length > 0
         ? data.days.map((day) => (
             <View key={day.date} style={styles.dayCard}>
               <Text style={styles.dayLabel}>
@@ -318,4 +354,12 @@ const styles = StyleSheet.create({
   eventMilestone: { backgroundColor: colors.amberSoft },
   eventTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   eventMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  retryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  retryButtonText: { color: colors.paper, fontSize: 13, fontWeight: '700' },
 });
