@@ -567,6 +567,40 @@ export async function deleteLifeItemOnline(id: string): Promise<void> {
   await requestOnline<void>(`/v1/items/${id}`, { method: 'DELETE' });
 }
 
+export type MoveProjectToIdeaResult = {
+  idea: LifeItem;
+  project: LifeItem;
+  archivedActionCount: number;
+};
+
+/** Soft-convert a project to Ideas (archives project + open actions). */
+export async function moveProjectToIdea(
+  id: string,
+): Promise<MoveProjectToIdeaResult> {
+  const raw = await requestOnline<{
+    idea: Record<string, unknown>;
+    project: Record<string, unknown>;
+    archivedActionCount: number;
+  }>(`/v1/items/${id}/move-to-idea`, { method: 'POST', body: '{}' });
+  const idea = mapItem(raw.idea);
+  const project = mapItem(raw.project);
+  const cached = (await loadCachedItems()) ?? [];
+  const next = cached
+    .filter((row) => row.id !== idea.id && row.id !== project.id)
+    .concat([idea, project])
+    .map((row) =>
+      row.parentId === project.id && row.kind === 'ACTION'
+        ? { ...row, status: 'ARCHIVED' }
+        : row,
+    );
+  await cacheItems(next);
+  return {
+    idea,
+    project,
+    archivedActionCount: raw.archivedActionCount,
+  };
+}
+
 export async function createLifeItem(input: {
   kind: ItemKind;
   title: string;

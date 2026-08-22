@@ -9,6 +9,7 @@ import {
   listLifeItems,
   login,
   logout,
+  moveProjectToIdea,
   pingApi,
   register,
   resetPassword,
@@ -84,7 +85,8 @@ export function LifeOSApp() {
     | "money"
     | "you"
   >("today");
-  const [planSegment, setPlanSegment] = useState<"areas" | "projects" | "ideas">("areas");
+  const [planSegment, setPlanSegment] = useState<"priority" | "areas" | "projects" | "ideas">("priority");
+  const [preferPriorityMatrix, setPreferPriorityMatrix] = useState(false);
   const [youDest, setYouDest] = useState<"menu" | "capacity" | "review">("menu");
   const [authMode, setAuthMode] = useState<
     "login" | "register" | "forgot" | "reset"
@@ -546,6 +548,7 @@ export function LifeOSApp() {
         <div className="mb-4 flex flex-wrap gap-2">
           {(
             [
+              ["priority", "Priority"],
               ["areas", "Areas"],
               ["projects", "Projects"],
               ["ideas", "Ideas"],
@@ -555,7 +558,10 @@ export function LifeOSApp() {
               key={id}
               type="button"
               className={`rounded-full px-3 py-1 text-xs font-bold ${planSegment === id ? "bg-[#617a57] text-white" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
-              onClick={() => setPlanSegment(id)}
+              onClick={() => {
+                setPlanSegment(id);
+                if (id !== "priority") setPreferPriorityMatrix(false);
+              }}
             >
               {label}
             </button>
@@ -811,11 +817,27 @@ export function LifeOSApp() {
               });
             })
           }
-          onOpenProjectsMatrix={() => setPlanSegment("projects")}
+          onOpenProjectsMatrix={() => {
+            setPreferPriorityMatrix(true);
+            setPlanSegment("priority");
+          }}
+          preferPriorityMatrix={preferPriorityMatrix}
           onUpdateActionLevels={(action, importance, urgency) =>
             void run(async () => {
               await updateLifeItem(action.id, {
                 body: actionBodyWithLevels(action.body, importance, urgency),
+              });
+            })
+          }
+          onMoveProjectToIdea={(project) =>
+            void run(async () => {
+              await moveProjectToIdea(project.id);
+            })
+          }
+          onParkAction={(action) =>
+            void run(async () => {
+              await updateLifeItem(action.id, {
+                body: { ...action.body, day: "Later" },
               });
             })
           }

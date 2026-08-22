@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
@@ -35,6 +36,7 @@ import {
   deleteLifeItem,
   getAccount,
   loadSession,
+  moveProjectToIdea,
   pingApi,
   syncPendingChanges,
   updateLifeItem,
@@ -104,7 +106,7 @@ const serif = Platform.select({
 });
 
 type Tab = 'today' | 'plan' | 'calendar' | 'money' | 'you';
-type PlanSegment = 'areas' | 'projects' | 'ideas';
+type PlanSegment = 'priority' | 'areas' | 'projects' | 'ideas';
 type YouDest = 'menu' | 'capacity' | 'review' | 'household' | 'integrations' | 'settings';
 type FabKind = 'idea' | 'action' | 'project' | 'spend';
 
@@ -298,7 +300,9 @@ function AppContent() {
   const insets = useSafeAreaInsets();
   const incomingUrl = Linking.useURL();
   const [tab, setTab] = useState<Tab>('today');
-  const [planSegment, setPlanSegment] = useState<PlanSegment>('areas');
+  const [planSegment, setPlanSegment] = useState<PlanSegment>('priority');
+  const [preferPriorityMatrix, setPreferPriorityMatrix] = useState(false);
+  const [priorityTipDismissed, setPriorityTipDismissed] = useState(false);
   const [youDest, setYouDest] = useState<YouDest>('menu');
   const [fabKind, setFabKind] = useState<FabKind>('action');
   const [account, setAccount] = useState<Account | null>(null);
@@ -462,6 +466,12 @@ function AppContent() {
   useEffect(() => {
     void load('boot');
   }, [load]);
+
+  useEffect(() => {
+    void AsyncStorage.getItem('life-os-priority-tip-dismissed').then((value) => {
+      if (value === '1') setPriorityTipDismissed(true);
+    });
+  }, []);
 
   useEffect(() => {
     return subscribeSyncStatus((phase, meta) => {
@@ -1036,6 +1046,7 @@ function AppContent() {
           <View style={styles.segmentRow}>
             {(
               [
+                ['priority', 'Priority'],
                 ['areas', 'Areas'],
                 ['projects', 'Projects'],
                 ['ideas', 'Ideas'],
@@ -1046,6 +1057,7 @@ function AppContent() {
                 onPress={() => {
                   tap();
                   setPlanSegment(id);
+                  if (id !== 'priority') setPreferPriorityMatrix(false);
                 }}
                 style={[styles.segmentChip, planSegment === id && styles.segmentChipActive]}
               >
@@ -1139,9 +1151,32 @@ function AppContent() {
             onAddArea={() => void addLifeArea()}
             onRemoveArea={(pillar) => void removeLifeArea(pillar)}
             onOpenProjectsMatrix={() => {
-              setPlanSegment('projects');
+              setPreferPriorityMatrix(true);
+              setPlanSegment('priority');
             }}
-            preferMatrix={false}
+            preferMatrix={preferPriorityMatrix}
+            onMoveProjectToIdea={(project) =>
+              void run('Move to Ideas', async () => {
+                await moveProjectToIdea(project.id);
+                await reloadItems();
+                notify('Project parked in Ideas.');
+                setPlanSegment('ideas');
+              })
+            }
+            onParkAction={(action) =>
+              void run('Park action', async () => {
+                await updateLifeItem(action.id, {
+                  body: { ...action.body, day: 'Later' },
+                });
+                await reloadItems();
+                notify('Moved to Later.');
+              })
+            }
+            tipDismissed={priorityTipDismissed}
+            onDismissTip={() => {
+              setPriorityTipDismissed(true);
+              void AsyncStorage.setItem('life-os-priority-tip-dismissed', '1');
+            }}
             showArchived={showArchived}
             onShowArchivedChange={setShowArchived}
           />
@@ -1358,7 +1393,7 @@ function AppContent() {
               tap();
               setTab(id);
               if (id === 'you') setYouDest('menu');
-              if (id === 'plan' && planSegment == null) setPlanSegment('areas');
+              if (id === 'plan' && planSegment == null) setPlanSegment('priority');
             }}
             style={styles.tabItem}
           >
@@ -2207,17 +2242,20 @@ const styles = StyleSheet.create({
   tabLabelActive: { color: colors.ink },
   segmentRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 14,
   },
   segmentChip: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '22%',
     alignItems: 'center',
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.paper,
-    paddingVertical: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 4,
   },
   segmentChipActive: {
     backgroundColor: colors.ink,
@@ -2226,7 +2264,7 @@ const styles = StyleSheet.create({
   segmentChipText: {
     color: colors.ink,
     fontWeight: '700',
-    fontSize: 12,
+    fontSize: 11,
   },
   segmentChipTextActive: {
     color: colors.acid,

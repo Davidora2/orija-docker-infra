@@ -25,6 +25,12 @@ import {
   verifyPassword,
 } from './security.js';
 import { normalizeProjectDeadlineBody } from './priority-matrix.js';
+import {
+  actionBodyAfterMoveToIdea,
+  buildIdeaFromProject,
+  isOpenActionStatus,
+  projectBodyAfterMoveToIdea,
+} from './project-to-idea.js';
 
 const credentialsSchema = z.object({
   email: z.string().email().max(320).transform((value) => value.toLowerCase()),
@@ -814,6 +820,169 @@ export async function buildApp(
     `;
     return updated;
   });
+
+  /** Soft-convert PROJECT → IDEA (archives project + open actions). Never auto-runs. */
+  app.post(
+    '/v1/items/:id/move-to-idea',
+    { preHandler: auth.authenticate },
+    async (request, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const userId = request.authUser.id;
+
+      const result = await sql.begin(async (tx) => {
+        const [project] = await tx<
+          {
+            id: string;
+            title: string;
+            status: string;
+            kind: string;
+            parentId: string | null;
+            visibility: 'PRIVATE' | 'SHARED';
+            body: Record<string, unknown>;
+            sortOrder: number;
+            householdId: string | null;
+          }[]
+        >`
+          SELECT id, title, status, kind, parent_id, visibility, body, sort_order, household_id
+          FROM life_items
+          WHERE id = ${id} AND owner_user_id = ${userId}
+          FOR UPDATE
+        `;
+        if (!project) {
+          throw new ApiError(
+            404,
+            'item_not_found',
+            'The item does not exist or is not yours.',
+          );
+        }
+        if (project.kind !== 'PROJECT') {
+          throw new ApiError(
+            400,
+            'not_a_project',
+            'Only projects can be moved to Ideas.',
+          );
+        }
+        if (
+          project.status === 'ARCHIVED' ||
+          project.status === 'CONVERTED' ||
+          project.status === 'CANCELLED'
+        ) {
+          throw new ApiError(
+            400,
+            'project_not_active',
+            'This project is already archived or converted.',
+          );
+        }
+
+        const childActions = await tx<
+          {
+            id: string;
+            title: string;
+            status: string;
+            body: Record<string, unknown>;
+          }[]
+        >`
+          SELECT id, title, status, body
+          FROM life_items
+          WHERE parent_id = ${project.id}
+            AND owner_user_id = ${userId}
+            AND kind = 'ACTION'
+          FOR UPDATE
+        `;
+        const openActions = childActions.filter((action) =>
+          isOpenActionStatus(action.status),
+        );
+
+        const fromIdeaId =
+          typeof project.body?.fromIdeaId === 'string'
+            ? project.body.fromIdeaId
+            : null;
+        let linkedIdeaBody: Record<string, unknown> | null = null;
+        if (fromIdeaId) {
+          const [linked] = await tx<{ body: Record<string, unknown> }[]>`
+            SELECT body
+            FROM life_items
+            WHERE id = ${fromIdeaId}
+              AND owner_user_id = ${userId}
+              AND kind = 'IDEA'
+          `;
+          linkedIdeaBody = linked?.body ?? null;
+        }
+
+        const draft = buildIdeaFromProject(
+          project,
+          openActions,
+          linkedIdeaBody,
+        );
+        const [idea] = await tx`
+          INSERT INTO life_items (
+            owner_user_id, household_id, parent_id, kind, visibility,
+            title, status, body, sort_order
+          ) VALUES (
+            ${userId},
+            ${project.householdId},
+            ${draft.parentId},
+            'IDEA',
+            ${draft.visibility},
+            ${draft.title},
+            ${draft.status},
+            ${tx.json(draft.body as JsonValue)},
+            ${draft.sortOrder}
+          )
+          RETURNING *
+        `;
+        if (!idea) {
+          throw new ApiError(
+            500,
+            'idea_create_failed',
+            'Could not create idea from project.',
+          );
+        }
+
+        for (const action of openActions) {
+          const nextActionBody = actionBodyAfterMoveToIdea(
+            action.body ?? {},
+            idea.id as string,
+          );
+          await tx`
+            UPDATE life_items SET
+              status = 'ARCHIVED',
+              body = ${tx.json(nextActionBody as JsonValue)},
+              updated_at = now()
+            WHERE id = ${action.id} AND owner_user_id = ${userId}
+          `;
+        }
+
+        const nextProjectBody = projectBodyAfterMoveToIdea(
+          normalizeProjectDeadlineBody(project.body ?? {}),
+          idea.id as string,
+        );
+        const [archivedProject] = await tx`
+          UPDATE life_items SET
+            status = 'ARCHIVED',
+            body = ${tx.json(nextProjectBody as JsonValue)},
+            updated_at = now()
+          WHERE id = ${project.id} AND owner_user_id = ${userId}
+          RETURNING *
+        `;
+        if (!archivedProject) {
+          throw new ApiError(
+            500,
+            'project_archive_failed',
+            'Could not archive project after move to Ideas.',
+          );
+        }
+
+        return {
+          idea,
+          project: archivedProject,
+          archivedActionCount: openActions.length,
+        };
+      });
+
+      return reply.code(200).send(result);
+    },
+  );
 
   app.delete('/v1/items/:id', { preHandler: auth.authenticate }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);

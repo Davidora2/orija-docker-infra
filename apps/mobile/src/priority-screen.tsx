@@ -1,0 +1,819 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import type { LifeItem } from './api';
+import { bodyNumber, bodyString } from './life-data';
+import {
+  PRIORITY_MATRIX_ORDER,
+  PRIORITY_QUADRANT_META,
+  actionPriorityQuadrant,
+  type PriorityQuadrant,
+} from './priority-matrix';
+
+const colors = {
+  ink: '#14241F',
+  inkSoft: '#24362F',
+  canvas: '#F4F5F0',
+  paper: '#FFFFFF',
+  line: '#DDE2DD',
+  muted: '#6C7771',
+  sage: '#DBE8D7',
+  sageDeep: '#617A57',
+  danger: '#C9634F',
+  dangerSoft: '#FDF4F1',
+  tipBg: '#EEF3EA',
+};
+
+const ACCORDION_COPY: Record<
+  PriorityQuadrant,
+  { title: string; subtitle: string; empty?: string }
+> = {
+  DO_FIRST: {
+    title: 'DO NOW',
+    subtitle: 'Urgent & important',
+    empty: 'Nothing needs immediate attention.',
+  },
+  SCHEDULE: {
+    title: 'SCHEDULE',
+    subtitle: 'Important, not urgent',
+  },
+  DELEGATE: {
+    title: 'DELEGATE',
+    subtitle: 'Urgent, less important',
+  },
+  ELIMINATE: {
+    title: 'DELETE',
+    subtitle: 'Neither urgent nor important',
+  },
+};
+
+const AREA_ICONS = ['🌿', '💪', '💼', '🏠', '🎯', '📚', '💚', '✨'];
+
+function hoursOf(action: LifeItem) {
+  return bodyNumber(action, 'hours', 1);
+}
+
+function isThisWeek(action: LifeItem) {
+  const day = bodyString(action, 'day');
+  if (!day) return true;
+  return day !== 'Later' && day !== 'Someday';
+}
+
+type Props = {
+  pillars: LifeItem[];
+  projects: LifeItem[];
+  openActions: LifeItem[];
+  availableHours: number;
+  busy: boolean;
+  tipDismissed: boolean;
+  onDismissTip: () => void;
+  onOpenMatrix: () => void;
+  onCompleteAction: (action: LifeItem) => void;
+  onMoveActionQuadrant: (action: LifeItem, quadrant: PriorityQuadrant) => void;
+  onMoveProjectToIdea?: (project: LifeItem) => void;
+  onParkAction?: (action: LifeItem) => void;
+};
+
+export function PriorityScreen({
+  pillars,
+  projects,
+  openActions,
+  availableHours,
+  busy,
+  tipDismissed,
+  onDismissTip,
+  onOpenMatrix,
+  onCompleteAction,
+  onMoveActionQuadrant,
+  onMoveProjectToIdea,
+  onParkAction,
+}: Props) {
+  const [areaFilter, setAreaFilter] = useState('');
+  const [windowFilter, setWindowFilter] = useState<'week' | 'all'>('week');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [areaPickerOpen, setAreaPickerOpen] = useState(false);
+  const [windowPickerOpen, setWindowPickerOpen] = useState(false);
+  const [quadrantFilter, setQuadrantFilter] = useState<PriorityQuadrant | ''>(
+    '',
+  );
+  const [rebalanceOpen, setRebalanceOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<PriorityQuadrant, boolean>>({
+    DO_FIRST: true,
+    SCHEDULE: true,
+    DELEGATE: false,
+    ELIMINATE: false,
+  });
+
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
+
+  const filteredActions = useMemo(() => {
+    return openActions.filter((action) => {
+      const project = projectById.get(action.parentId ?? '');
+      if (areaFilter && project?.parentId !== areaFilter) return false;
+      if (windowFilter === 'week' && !isThisWeek(action)) return false;
+      if (quadrantFilter) {
+        const q = actionPriorityQuadrant(action.body, project?.body);
+        if (q !== quadrantFilter) return false;
+      }
+      return true;
+    });
+  }, [openActions, areaFilter, windowFilter, quadrantFilter, projectById]);
+
+  const plannedHours = filteredActions.reduce(
+    (sum, action) => sum + hoursOf(action),
+    0,
+  );
+  const overHours = Math.max(0, plannedHours - availableHours);
+  const overCapacity = overHours > 0.05;
+
+  const byQuadrant = useMemo(() => {
+    const groups: Record<PriorityQuadrant, LifeItem[]> = {
+      DO_FIRST: [],
+      SCHEDULE: [],
+      DELEGATE: [],
+      ELIMINATE: [],
+    };
+    for (const action of filteredActions) {
+      const project = projectById.get(action.parentId ?? '');
+      const q = actionPriorityQuadrant(action.body, project?.body);
+      groups[q].push(action);
+    }
+    return groups;
+  }, [filteredActions, projectById]);
+
+  const heavyProjects = useMemo(() => {
+    const hoursByProject = new Map<string, number>();
+    for (const action of filteredActions) {
+      if (!action.parentId) continue;
+      hoursByProject.set(
+        action.parentId,
+        (hoursByProject.get(action.parentId) ?? 0) + hoursOf(action),
+      );
+    }
+    return [...hoursByProject.entries()]
+      .map(([id, hours]) => ({
+        project: projectById.get(id),
+        hours,
+      }))
+      .filter(
+        (row): row is { project: LifeItem; hours: number } =>
+          Boolean(row.project) && row.hours >= 2,
+      )
+      .sort((a, b) => b.hours - a.hours);
+  }, [filteredActions, projectById]);
+
+  const rankedActions = useMemo(
+    () =>
+      [...filteredActions].sort(
+        (a, b) => hoursOf(b) - hoursOf(a) || a.title.localeCompare(b.title),
+      ),
+    [filteredActions],
+  );
+
+  const areaLabel =
+    pillars.find((p) => p.id === areaFilter)?.title ?? 'All areas';
+
+  useEffect(() => {
+    if (!overCapacity) setRebalanceOpen(false);
+  }, [overCapacity]);
+
+  return (
+    <View style={styles.stack}>
+      <View style={styles.headerRow}>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Priority</Text>
+          <Text style={styles.subtitle}>
+            Focus on what deserves your attention.
+          </Text>
+        </View>
+        <Pressable onPress={onOpenMatrix} style={styles.matrixBtn}>
+          <Text style={styles.matrixBtnText}>Matrix</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.filterRow}>
+        <Pressable
+          style={styles.filterChip}
+          onPress={() => setAreaPickerOpen(true)}
+        >
+          <Text style={styles.filterChipText} numberOfLines={1}>
+            {areaLabel} ▾
+          </Text>
+        </Pressable>
+        <Pressable
+          style={styles.filterChip}
+          onPress={() => setWindowPickerOpen(true)}
+        >
+          <Text style={styles.filterChipText}>
+            {windowFilter === 'week' ? 'This week' : 'All time'} ▾
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.filterChip,
+            (quadrantFilter || filterOpen) && styles.filterChipActive,
+          ]}
+          onPress={() => setFilterOpen(true)}
+        >
+          <Text
+            style={[
+              styles.filterChipText,
+              (quadrantFilter || filterOpen) && styles.filterChipTextActive,
+            ]}
+          >
+            Filters
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.capacityCard}>
+        <View style={styles.capacityRow}>
+          <View style={styles.capacityCell}>
+            <Text style={styles.capacityValue} numberOfLines={1}>
+              {plannedHours.toFixed(plannedHours % 1 === 0 ? 0 : 1)}h
+            </Text>
+            <Text style={styles.capacityLabel} numberOfLines={1}>
+              Planned
+            </Text>
+          </View>
+          <View style={styles.capacityCell}>
+            <Text style={styles.capacityValue} numberOfLines={1}>
+              {availableHours}h
+            </Text>
+            <Text style={styles.capacityLabel} numberOfLines={1}>
+              Capacity
+            </Text>
+          </View>
+          <View style={styles.capacityCell}>
+            <Text
+              style={[
+                styles.capacityValue,
+                { color: overCapacity ? colors.danger : colors.sageDeep },
+              ]}
+              numberOfLines={1}
+            >
+              {overCapacity
+                ? `${overHours.toFixed(overHours % 1 === 0 ? 0 : 1)}h over`
+                : 'On track'}
+            </Text>
+            <Text style={styles.capacityLabel} numberOfLines={1}>
+              {overCapacity ? 'Over' : 'Balance'}
+            </Text>
+          </View>
+        </View>
+        {overCapacity ? (
+          <Pressable
+            style={styles.rebalanceLink}
+            onPress={() => setRebalanceOpen(true)}
+          >
+            <Text style={styles.rebalanceLinkText} numberOfLines={1}>
+              Rebalance your week
+            </Text>
+            <Text style={styles.rebalanceLinkText}>›</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {PRIORITY_MATRIX_ORDER.map((quadrant) => {
+        const copy = ACCORDION_COPY[quadrant];
+        const actions = byQuadrant[quadrant];
+        const hours = actions.reduce((sum, a) => sum + hoursOf(a), 0);
+        const open = expanded[quadrant];
+        return (
+          <View key={quadrant} style={styles.accordion}>
+            <Pressable
+              style={styles.accordionHeader}
+              onPress={() =>
+                setExpanded((current) => ({
+                  ...current,
+                  [quadrant]: !current[quadrant],
+                }))
+              }
+            >
+              <View style={styles.accordionHeaderText}>
+                <Text style={styles.micro}>{copy.title}</Text>
+                <Text style={styles.accordionSubtitle} numberOfLines={1}>
+                  {copy.subtitle}
+                </Text>
+                <Text style={styles.accordionMeta}>
+                  {actions.length} action{actions.length === 1 ? '' : 's'} ·{' '}
+                  {hours.toFixed(hours % 1 === 0 ? 0 : 1)}h
+                </Text>
+              </View>
+              <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
+            </Pressable>
+            {open ? (
+              <View style={styles.accordionBody}>
+                {actions.length === 0 ? (
+                  <Text style={styles.emptyCopy}>
+                    {copy.empty ?? 'No actions here.'}
+                  </Text>
+                ) : (
+                  actions.map((action, index) => {
+                    const project = projectById.get(action.parentId ?? '');
+                    const area = pillars.find(
+                      (p) => p.id === project?.parentId,
+                    );
+                    const icon =
+                      (area && bodyString(area, 'icon')) ||
+                      AREA_ICONS[index % AREA_ICONS.length];
+                    return (
+                      <View key={action.id} style={styles.actionRow}>
+                        <View style={styles.actionIcon}>
+                          <Text style={{ fontSize: 16 }}>
+                            {icon.length <= 3 ? icon : '📌'}
+                          </Text>
+                        </View>
+                        <View style={styles.actionText}>
+                          <Text style={styles.actionTitle} numberOfLines={1}>
+                            {action.title}
+                          </Text>
+                          <Text style={styles.actionMeta} numberOfLines={1}>
+                            {area?.title ?? 'Unassigned'}
+                            {project ? ` · ${project.title}` : ''}
+                          </Text>
+                        </View>
+                        <View style={styles.actionAside}>
+                          <Text style={styles.actionHours}>
+                            {hoursOf(action)}h
+                          </Text>
+                          <Pressable
+                            disabled={busy}
+                            onPress={() => onCompleteAction(action)}
+                          >
+                            <Text style={styles.doneLink}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+
+      {!tipDismissed ? (
+        <View style={styles.tipCard}>
+          <Pressable style={styles.tipDismiss} onPress={onDismissTip}>
+            <Text style={styles.tipDismissText}>×</Text>
+          </Pressable>
+          <Text style={styles.micro}>Tip</Text>
+          <Text style={styles.tipBody}>
+            Protect Do Now for high-importance, high-urgency work. Schedule what
+            matters; park or delete the rest when capacity is tight.
+          </Text>
+        </View>
+      ) : null}
+
+      <Modal
+        visible={areaPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAreaPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setAreaPickerOpen(false)}
+        >
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Area</Text>
+            <Pressable
+              style={styles.sheetRow}
+              onPress={() => {
+                setAreaFilter('');
+                setAreaPickerOpen(false);
+              }}
+            >
+              <Text style={styles.sheetRowText}>All areas</Text>
+            </Pressable>
+            {pillars.map((pillar) => (
+              <Pressable
+                key={pillar.id}
+                style={styles.sheetRow}
+                onPress={() => {
+                  setAreaFilter(pillar.id);
+                  setAreaPickerOpen(false);
+                }}
+              >
+                <Text style={styles.sheetRowText} numberOfLines={1}>
+                  {pillar.title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={windowPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWindowPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setWindowPickerOpen(false)}
+        >
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Window</Text>
+            {(
+              [
+                ['week', 'This week'],
+                ['all', 'All time'],
+              ] as const
+            ).map(([id, label]) => (
+              <Pressable
+                key={id}
+                style={styles.sheetRow}
+                onPress={() => {
+                  setWindowFilter(id);
+                  setWindowPickerOpen(false);
+                }}
+              >
+                <Text style={styles.sheetRowText}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={filterOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFilterOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable
+            style={styles.modalDismiss}
+            onPress={() => setFilterOpen(false)}
+          />
+          <View style={styles.bottomSheet}>
+            <Text style={styles.sheetTitle}>Filters</Text>
+            <Text style={styles.sheetHint}>Narrow actions on Priority.</Text>
+            <Text style={styles.micro}>Quadrant</Text>
+            <View style={styles.chipWrap}>
+              <Pressable
+                style={[styles.chip, !quadrantFilter && styles.chipActive]}
+                onPress={() => setQuadrantFilter('')}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    !quadrantFilter && styles.chipTextActive,
+                  ]}
+                >
+                  Any
+                </Text>
+              </Pressable>
+              {PRIORITY_MATRIX_ORDER.map((id) => (
+                <Pressable
+                  key={id}
+                  style={[
+                    styles.chip,
+                    quadrantFilter === id && styles.chipActive,
+                  ]}
+                  onPress={() => setQuadrantFilter(id)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      quadrantFilter === id && styles.chipTextActive,
+                    ]}
+                  >
+                    {PRIORITY_QUADRANT_META[id].label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              style={styles.primaryBtn}
+              onPress={() => setFilterOpen(false)}
+            >
+              <Text style={styles.primaryBtnText}>Apply</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={rebalanceOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRebalanceOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable
+            style={styles.modalDismiss}
+            onPress={() => setRebalanceOpen(false)}
+          />
+          <View style={[styles.bottomSheet, { maxHeight: '85%' }]}>
+            <Text style={styles.sheetTitle}>Rebalance your week</Text>
+            <Text style={styles.sheetHint}>
+              {overHours.toFixed(1)}h over capacity — park heavy work or move
+              projects to Ideas.
+            </Text>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {heavyProjects.length > 0 && onMoveProjectToIdea ? (
+                <View style={{ gap: 8, marginBottom: 16 }}>
+                  <Text style={styles.micro}>Move to Ideas</Text>
+                  {heavyProjects.slice(0, 5).map(({ project, hours }) => (
+                    <View key={project.id} style={styles.rebalanceRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.actionTitle} numberOfLines={1}>
+                          {project.title}
+                        </Text>
+                        <Text style={styles.actionMeta} numberOfLines={1}>
+                          {hours.toFixed(1)}h across open actions
+                        </Text>
+                      </View>
+                      <Pressable
+                        disabled={busy}
+                        onPress={() => {
+                          onMoveProjectToIdea(project);
+                          setRebalanceOpen(false);
+                        }}
+                        style={styles.smallBtn}
+                      >
+                        <Text style={styles.smallBtnText}>Park</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              <Text style={styles.micro}>Actions by hours</Text>
+              <View style={{ gap: 8, marginTop: 8 }}>
+                {rankedActions.map((action) => {
+                  const project = projectById.get(action.parentId ?? '');
+                  return (
+                    <View key={action.id} style={styles.rebalanceRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.actionTitle} numberOfLines={1}>
+                          {action.title}
+                        </Text>
+                        <Text style={styles.actionMeta} numberOfLines={1}>
+                          {hoursOf(action)}h
+                          {project ? ` · ${project.title}` : ''}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {onParkAction ? (
+                          <Pressable
+                            disabled={busy}
+                            onPress={() => onParkAction(action)}
+                            style={styles.smallBtn}
+                          >
+                            <Text style={styles.smallBtnText}>Later</Text>
+                          </Pressable>
+                        ) : null}
+                        <Pressable
+                          disabled={busy}
+                          onPress={() =>
+                            onMoveActionQuadrant(action, 'ELIMINATE')
+                          }
+                          style={styles.smallBtn}
+                        >
+                          <Text style={styles.smallBtnText}>Delete</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+            <Pressable
+              style={[styles.primaryBtn, { marginTop: 12 }]}
+              onPress={() => setRebalanceOpen(false)}
+            >
+              <Text style={styles.primaryBtnText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  stack: { gap: 12 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerText: { flex: 1, minWidth: 0 },
+  title: {
+    fontFamily: 'serif',
+    fontSize: 34,
+    color: colors.ink,
+  },
+  subtitle: { marginTop: 4, color: colors.muted, fontSize: 14, lineHeight: 20 },
+  matrixBtn: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  matrixBtnText: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: '48%',
+  },
+  filterChipActive: { backgroundColor: colors.sageDeep, borderColor: colors.sageDeep },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  filterChipTextActive: { color: '#fff' },
+  capacityCard: {
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 14,
+    overflow: 'hidden',
+  },
+  capacityRow: { flexDirection: 'row', gap: 8 },
+  capacityCell: { flex: 1, minWidth: 0, alignItems: 'center' },
+  capacityValue: {
+    fontFamily: 'serif',
+    fontSize: 22,
+    color: colors.ink,
+  },
+  capacityLabel: { marginTop: 2, fontSize: 11, color: colors.muted },
+  rebalanceLink: {
+    marginTop: 12,
+    backgroundColor: colors.dangerSoft,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rebalanceLinkText: { color: colors.danger, fontWeight: '700', fontSize: 14 },
+  accordion: {
+    backgroundColor: colors.paper,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    overflow: 'hidden',
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  accordionHeaderText: { flex: 1, minWidth: 0 },
+  micro: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.sageDeep,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  accordionSubtitle: { marginTop: 2, color: colors.muted, fontSize: 13 },
+  accordionMeta: {
+    marginTop: 4,
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  chevron: { color: colors.muted, marginTop: 2 },
+  accordionBody: {
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    paddingTop: 8,
+    gap: 8,
+  },
+  emptyCopy: { color: colors.muted, fontSize: 14, padding: 8 },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F7F8F5',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  actionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionText: { flex: 1, minWidth: 0 },
+  actionTitle: { color: colors.ink, fontWeight: '600', fontSize: 14 },
+  actionMeta: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  actionAside: { alignItems: 'flex-end', gap: 4 },
+  actionHours: { color: colors.ink, fontWeight: '700', fontSize: 12 },
+  doneLink: { color: colors.sageDeep, fontWeight: '700', fontSize: 10 },
+  tipCard: {
+    backgroundColor: colors.tipBg,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#C9D6C4',
+    padding: 14,
+    paddingRight: 36,
+  },
+  tipDismiss: { position: 'absolute', right: 8, top: 6, padding: 6 },
+  tipDismissText: { color: colors.muted, fontSize: 18, fontWeight: '700' },
+  tipBody: { marginTop: 6, color: colors.inkSoft, fontSize: 14, lineHeight: 20 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(20,36,31,0.35)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  sheet: {
+    backgroundColor: colors.canvas,
+    borderRadius: 18,
+    padding: 16,
+    gap: 4,
+  },
+  sheetTitle: {
+    fontFamily: 'serif',
+    fontSize: 22,
+    color: colors.ink,
+    marginBottom: 8,
+  },
+  sheetHint: { color: colors.muted, fontSize: 13, marginBottom: 12 },
+  sheetRow: { paddingVertical: 12 },
+  sheetRowText: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  modalWrap: { flex: 1, justifyContent: 'flex-end' },
+  modalDismiss: {
+    flex: 1,
+    backgroundColor: 'rgba(20,36,31,0.35)',
+  },
+  bottomSheet: {
+    backgroundColor: colors.canvas,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    gap: 10,
+  },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipText: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  chipTextActive: { color: '#F4F5F0' },
+  primaryBtn: {
+    marginTop: 8,
+    backgroundColor: colors.ink,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: '#F4F5F0', fontWeight: '700', fontSize: 13 },
+  rebalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  smallBtn: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  smallBtnText: { fontSize: 10, fontWeight: '700', color: colors.sageDeep },
+});

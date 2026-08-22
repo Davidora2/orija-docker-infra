@@ -29,6 +29,7 @@ import {
   type ProjectPriority,
 } from './priority-matrix';
 import { SwipeableRow } from './swipeable-row';
+import { PriorityScreen } from './priority-screen';
 
 const colors = {
   ink: '#14241F',
@@ -60,7 +61,7 @@ const QUADRANT_TONE: Record<
   ELIMINATE: { bg: '#F7F8F5', border: '#DDE2DD' },
 };
 
-type PlanSegment = 'areas' | 'projects' | 'ideas';
+type PlanSegment = 'priority' | 'areas' | 'projects' | 'ideas';
 type ProjectsView = 'list' | 'matrix';
 type IdeasTab = 'inbox' | 'evaluated';
 
@@ -96,6 +97,10 @@ type Props = {
   onAddArea: (title: string) => void;
   onRemoveArea: (pillar: LifeItem) => void;
   onOpenProjectsMatrix: () => void;
+  onMoveProjectToIdea?: (project: LifeItem) => void;
+  onParkAction?: (action: LifeItem) => void;
+  tipDismissed?: boolean;
+  onDismissTip?: () => void;
   areaTitle: string;
   onAreaTitleChange: (value: string) => void;
   /** When parent switches to Projects for matrix, prefer matrix view */
@@ -269,6 +274,10 @@ export function PlanScreen({
   onAddArea,
   onRemoveArea,
   onOpenProjectsMatrix,
+  onMoveProjectToIdea,
+  onParkAction,
+  tipDismissed = false,
+  onDismissTip,
   areaTitle,
   onAreaTitleChange,
   preferMatrix = false,
@@ -302,7 +311,10 @@ export function PlanScreen({
     setSelectedAreaId(null);
     setDetailsOpen(false);
     setMovingActionId(null);
-  }, [planSegment]);
+    if (planSegment === 'priority' && !preferMatrix) {
+      setProjectsView('list');
+    }
+  }, [planSegment, preferMatrix]);
 
   const inboxIdeas = useMemo(
     () =>
@@ -340,6 +352,51 @@ export function PlanScreen({
         </Text>
       </Pressable>
     ) : null;
+
+  if (planSegment === 'priority') {
+    if (projectsView === 'matrix') {
+      return (
+        <View style={styles.stack}>
+          <Pressable
+            onPress={() => setProjectsView('list')}
+            style={styles.backRow}
+          >
+            <Text style={styles.backText}>← Priority</Text>
+          </Pressable>
+          <ActionMatrixView
+            openActions={openActions}
+            projects={visibleProjects}
+            movingActionId={movingActionId}
+            onSelectAction={(id) =>
+              setMovingActionId((current) => (current === id ? null : id))
+            }
+            onPlaceInQuadrant={(quadrant) => {
+              const action = openActions.find((a) => a.id === movingActionId);
+              if (!action) return;
+              onMoveActionQuadrant(action, quadrant);
+              setMovingActionId(null);
+            }}
+          />
+        </View>
+      );
+    }
+    return (
+      <PriorityScreen
+        pillars={pillars}
+        projects={projects}
+        openActions={openActions}
+        availableHours={availableHours}
+        busy={busy}
+        tipDismissed={tipDismissed}
+        onDismissTip={() => onDismissTip?.()}
+        onOpenMatrix={() => setProjectsView('matrix')}
+        onCompleteAction={onCompleteAction}
+        onMoveActionQuadrant={onMoveActionQuadrant}
+        onMoveProjectToIdea={onMoveProjectToIdea}
+        onParkAction={onParkAction}
+      />
+    );
+  }
 
   if (planSegment === 'ideas') {
     const list = ideasTab === 'inbox' ? inboxIdeas : evaluatedIdeas;
@@ -737,7 +794,9 @@ export function PlanScreen({
               >
                 <Card>
                   <View style={styles.rowBetween}>
-                    <Text style={styles.cardTitle}>{project.title}</Text>
+                    <Text style={[styles.cardTitle, { flex: 1 }]} numberOfLines={2}>
+                      {project.title}
+                    </Text>
                     <Pill
                       tone={
                         overdue
@@ -754,11 +813,11 @@ export function PlanScreen({
                         : PROJECT_PRIORITY_META[level].title}
                     </Pill>
                   </View>
-                  <Text style={styles.listMeta}>
+                  <Text style={styles.listMeta} numberOfLines={1}>
                     {projectStatusLabel(project.status)} ·{' '}
                     {area?.title ?? 'Unassigned'}
                   </Text>
-                  <Text style={styles.nextLine}>
+                  <Text style={styles.nextLine} numberOfLines={1}>
                     {next
                       ? `Next: ${next.title}`
                       : 'Define next action'}

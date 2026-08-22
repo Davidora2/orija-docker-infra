@@ -90,7 +90,7 @@ Do **not** put everything in bottom nav. Secondary destinations live inside Plan
 | Tab | Nav label | Page title (optional) | Job |
 |-----|-----------|----------------------|-----|
 | 1 | **Today** | May still say **COMMAND** | Focus now: available / planned / remaining + primary move |
-| 2 | **Plan** | Plan | Segmented: **Areas \| Projects \| Ideas** |
+| 2 | **Plan** | Plan | Segmented: **Priority \| Areas \| Projects \| Ideas** |
 | 3 | **Calendar** | Calendar | Actions, bills, paydays, milestones colliding |
 | 4 | **Money** | Money *(not “Budget”)* | Segmented: **Overview \| Spending \| Wealth** |
 | 5 | **You** | You | Capacity, Weekly Review, Household, Integrations, Settings |
@@ -99,6 +99,7 @@ Do **not** put everything in bottom nav. Secondary destinations live inside Plan
 
 | Segment | Shows | Primary CTAs |
 |---------|-------|--------------|
+| **Priority** | Open Actions by Eisenhower accordion + capacity / rebalance; Matrix = 2×2 | Complete · rebalance · open matrix |
 | **Areas** | Life areas + health / neglect signals | Open area → projects & ideas |
 | **Projects** | Active / paused projects across areas (priority H/M/L; Actions matrix is a view) | Open project · add project · list/matrix toggle |
 | **Ideas** | Inbox of unclassified captures | Capture · Evaluate · Convert |

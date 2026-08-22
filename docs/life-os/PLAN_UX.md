@@ -61,11 +61,12 @@ Plan tab uses a segmented control:
 
 | Segment | Job |
 |---------|-----|
+| **Priority** | Action focus: Do Now / Schedule / Delegate / Delete accordion + capacity; Matrix opens true 2×2 |
 | **Areas** | Life domains; health / neglect; drill into projects & ideas for that area |
 | **Projects** | Outcomes across areas; list + detail; High/Med/Low priority |
 | **Ideas** | Inbox of unclassified captures; evaluate; convert to Project |
 
-Default segment for first open: **Areas** (unless deep-linked to Projects / Ideas / a specific entity).
+Default segment for first open: **Priority** (unless deep-linked to Areas / Projects / Ideas / a specific entity).
 
 Segment switches must not destroy in-progress Quick Add draft (best effort: keep sheet/draft until dismissed).
 
