@@ -308,7 +308,7 @@ export function registerOnboardingAndBudgetRoutes(
         b.*,
         COALESCE(entry_stats.entry_count, 0) AS entry_count,
         COALESCE(recurring_stats.recurring_count, 0) AS recurring_count,
-        COALESCE(recurring_stats.recurring_total_cents, 0) AS recurring_total_cents
+        COALESCE(recurring_stats.recurring_total_cents, 0)::int AS recurring_total_cents
       FROM budgets b
       LEFT JOIN LATERAL (
         SELECT COUNT(*)::int AS entry_count
@@ -318,7 +318,7 @@ export function registerOnboardingAndBudgetRoutes(
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*)::int AS recurring_count,
-          COALESCE(SUM(amount_cents), 0)::bigint AS recurring_total_cents
+          COALESCE(SUM(amount_cents), 0)::int AS recurring_total_cents
         FROM budget_recurring_outgoings ro
         WHERE ro.budget_id = b.id AND ro.active = TRUE
       ) recurring_stats ON TRUE

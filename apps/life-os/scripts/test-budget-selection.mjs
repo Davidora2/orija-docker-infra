@@ -8,6 +8,7 @@ import {
   dedupeBudgetsForDisplay,
   pickDefaultBudgetId,
   resolveBudgetSelection,
+  resolveVisibleBudgetId,
 } from "../../life-os-shared/src/index.ts";
 
 const davidId = "f5d5994a-7883-4894-b77e-8bc226a868cd";
@@ -178,5 +179,20 @@ const resolvedDisplay = resolveBudgetSelection(duplicateRows, davidId, {
 });
 assert.equal(resolvedDisplay.displayBudgets.length, 1);
 assert.equal(resolvedDisplay.selectedId, "personal-full-old");
+
+assert.equal(
+  resolveVisibleBudgetId(duplicateRows, "personal-empty-new", "CAD"),
+  "personal-full-old",
+  "hidden thin duplicate should map to visible populated sibling",
+);
+
+assert.equal(
+  resolveBudgetSelection(duplicateRows, davidId, {
+    profileCurrency: "CAD",
+    preferredId: "personal-empty-new",
+  }).selectedId,
+  "personal-full-old",
+  "preferred hidden duplicate should resolve to visible sibling",
+);
 
 console.log("web budget-selection tests passed");

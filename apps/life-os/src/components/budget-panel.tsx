@@ -77,7 +77,14 @@ export function BudgetPanel({
           }
         } else if (nextId) {
           saveLastBudgetId(account.user.id, nextId);
-          void getBudget(nextId).then(setDetail);
+          try {
+            setDetail(await getBudget(nextId));
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Could not load money.";
+            setLoadError(message);
+            onError(message);
+          }
         }
       } catch (error) {
         const message =
@@ -112,12 +119,24 @@ export function BudgetPanel({
         currency,
       });
       setActiveId(created.id);
+      activeIdRef.current = created.id;
       await reload(created.id);
     } catch (error) {
       onError(error instanceof Error ? error.message : "Could not create budget.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function focusOrCreate(visibility: "PRIVATE" | "SHARED") {
+    const existing = displayBudgets.find(
+      (budget) => budget.visibility === visibility,
+    );
+    if (existing) {
+      await selectBudget(existing.id);
+      return;
+    }
+    await create(visibility);
   }
 
   async function selectBudget(id: string) {
@@ -205,7 +224,7 @@ export function BudgetPanel({
               type="button"
               disabled={busy}
               className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[#dde2dd] px-3 text-[11px] font-bold disabled:opacity-50"
-              onClick={() => void create("PRIVATE")}
+              onClick={() => void focusOrCreate("PRIVATE")}
             >
               <LifeIcon name="add" size={13} color="currentColor" />
               Personal
@@ -215,7 +234,7 @@ export function BudgetPanel({
                 type="button"
                 disabled={busy}
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[#dde2dd] px-3 text-[11px] font-bold disabled:opacity-50"
-                onClick={() => void create("SHARED")}
+                onClick={() => void focusOrCreate("SHARED")}
               >
                 <LifeIcon name="add" size={13} color="currentColor" />
                 Shared
@@ -289,7 +308,7 @@ export function BudgetPanel({
                 type="button"
                 disabled={busy}
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#14241f] px-4 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
-                onClick={() => void create("PRIVATE")}
+                onClick={() => void focusOrCreate("PRIVATE")}
               >
                 <LifeIcon name="add" size={15} color="currentColor" />
                 Create personal space
@@ -299,7 +318,7 @@ export function BudgetPanel({
                   type="button"
                   disabled={busy}
                   className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#cfd8ce] bg-white px-4 text-xs font-bold disabled:opacity-50"
-                  onClick={() => void create("SHARED")}
+                  onClick={() => void focusOrCreate("SHARED")}
                 >
                   <LifeIcon name="household" size={15} color="#617a57" />
                   Create shared space

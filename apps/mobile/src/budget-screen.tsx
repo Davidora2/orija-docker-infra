@@ -18,7 +18,7 @@ import {
   loadLastBudgetId,
   saveLastBudgetId,
 } from './budget-selection';
-import { resolveBudgetSelection } from '@life-os/shared';
+import { resolveBudgetSelection, type BudgetListItem } from '@life-os/shared';
 import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
@@ -45,8 +45,8 @@ type Props = {
 };
 
 export function BudgetScreen({ account, notify }: Props) {
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [displayBudgets, setDisplayBudgets] = useState<Budget[]>([]);
+  const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
+  const [displayBudgets, setDisplayBudgets] = useState<BudgetListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,6 +100,7 @@ export function BudgetScreen({ account, notify }: Props) {
         currency,
       });
       setActiveId(created.id);
+      activeIdRef.current = created.id;
       await reload(created.id);
       notify(
         visibility === 'SHARED'
@@ -111,6 +112,28 @@ export function BudgetScreen({ account, notify }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function selectBudget(id: string) {
+    setActiveId(id);
+    activeIdRef.current = id;
+    await saveLastBudgetId(account.user.id, id);
+    try {
+      setDetail(await getBudget(id));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not open this budget.');
+    }
+  }
+
+  async function focusOrCreate(visibility: 'PRIVATE' | 'SHARED') {
+    const existing = displayBudgets.find(
+      (budget) => budget.visibility === visibility,
+    );
+    if (existing) {
+      await selectBudget(existing.id);
+      return;
+    }
+    await create(visibility);
   }
 
   return (
@@ -125,7 +148,7 @@ export function BudgetScreen({ account, notify }: Props) {
       <View style={styles.row}>
         <AppButton
           disabled={busy}
-          onPress={() => void create('PRIVATE')}
+          onPress={() => void focusOrCreate('PRIVATE')}
           style={{ flex: 1 }}
           variant="acid"
         >
@@ -135,7 +158,7 @@ export function BudgetScreen({ account, notify }: Props) {
         </AppButton>
         <AppButton
           disabled={!canShare || busy}
-          onPress={() => void create('SHARED')}
+          onPress={() => void focusOrCreate('SHARED')}
           style={{ flex: 1 }}
           variant="secondary"
         >
@@ -162,12 +185,7 @@ export function BudgetScreen({ account, notify }: Props) {
               <Pressable
                 key={budget.id}
                 style={[styles.tab, activeId === budget.id && styles.tabActive]}
-                onPress={() => {
-                  setActiveId(budget.id);
-                  activeIdRef.current = budget.id;
-                  void saveLastBudgetId(account.user.id, budget.id);
-                  void getBudget(budget.id).then(setDetail);
-                }}
+                onPress={() => void selectBudget(budget.id)}
               >
                 <Text
                   style={[

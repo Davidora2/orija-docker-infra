@@ -240,6 +240,22 @@ export function dedupeBudgetsForDisplay<T extends BudgetListItem>(
   return unique.filter((budget) => !dropIds.has(budget.id));
 }
 
+/** Map a budget id to the visible row when display dedupe hid a thin duplicate. */
+export function resolveVisibleBudgetId(
+  budgets: BudgetListItem[],
+  budgetId: string | null,
+  profileCurrency?: string | null,
+): string | null {
+  if (!budgetId) return null;
+  const unique = dedupeBudgetsById(budgets);
+  const visible = dedupeBudgetsForDisplay(unique, profileCurrency);
+  if (visible.some((budget) => budget.id === budgetId)) return budgetId;
+  const target = unique.find((budget) => budget.id === budgetId);
+  if (!target) return budgetId;
+  const targetKey = budgetGroupKey(target);
+  return visible.find((budget) => budgetGroupKey(budget) === targetKey)?.id ?? budgetId;
+}
+
 /** Dedupe list rows and resolve the budget id that should stay selected. */
 export function resolveBudgetSelection(
   budgets: BudgetListItem[],
@@ -257,13 +273,15 @@ export function resolveBudgetSelection(
 } {
   const unique = dedupeBudgetsById(budgets);
   const profileCurrency = options?.profileCurrency;
+  const displayBudgets = dedupeBudgetsForDisplay(unique, profileCurrency);
+  const rawSelectedId = pickDefaultBudgetId(unique, userId, {
+    ...options,
+    profileCurrency,
+  });
   return {
     budgets: unique,
-    displayBudgets: dedupeBudgetsForDisplay(unique, profileCurrency),
-    selectedId: pickDefaultBudgetId(unique, userId, {
-      ...options,
-      profileCurrency,
-    }),
+    displayBudgets,
+    selectedId: resolveVisibleBudgetId(unique, rawSelectedId, profileCurrency),
   };
 }
 
