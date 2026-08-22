@@ -32,6 +32,7 @@ import {
 } from './priority-matrix';
 import { SwipeableRow } from './swipeable-row';
 import { PriorityScreen } from './priority-screen';
+import { NotesEditor } from './notes-editor';
 
 const colors = {
   ink: '#14241F',
@@ -102,6 +103,10 @@ type Props = {
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
   onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onSaveNotes: (
+    item: LifeItem,
+    body: Record<string, unknown>,
+  ) => Promise<LifeItem | void>;
   onRequestPlanSegment?: (segment: PlanSegment) => void;
   tipDismissed?: boolean;
   onDismissTip?: () => void;
@@ -281,6 +286,7 @@ export function PlanScreen({
   onMoveProjectToIdea,
   onParkAction,
   onSetScheduledDate,
+  onSaveNotes,
   onRequestPlanSegment,
   tipDismissed = false,
   onDismissTip,
@@ -295,6 +301,7 @@ export function PlanScreen({
   );
   const [ideasTab, setIdeasTab] = useState<IdeasTab>('inbox');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [movingActionId, setMovingActionId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -319,6 +326,9 @@ export function PlanScreen({
     if (planSegment !== 'projects') {
       setSelectedProjectId(null);
     }
+    if (planSegment !== 'ideas') {
+      setSelectedIdeaId(null);
+    }
     if (planSegment === 'priority' && !preferMatrix) {
       setProjectsView('list');
     }
@@ -342,6 +352,7 @@ export function PlanScreen({
 
   const selectedProject =
     visibleProjects.find((p) => p.id === selectedProjectId) ?? null;
+  const selectedIdea = allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
   const selectedArea = pillars.find((p) => p.id === selectedAreaId) ?? null;
 
   const archivedToggle =
@@ -413,6 +424,56 @@ export function PlanScreen({
   }
 
   if (planSegment === 'ideas') {
+    if (selectedIdea) {
+      const area = pillars.find((pillar) => pillar.id === selectedIdea.parentId);
+      return (
+        <View style={styles.stack}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setSelectedIdeaId(null)}
+            style={styles.backRow}
+          >
+            <LifeIcon name="chevron-left" size={16} />
+            <Text style={styles.backText}>Ideas</Text>
+          </Pressable>
+          <View style={styles.areaHeading}>
+            <View style={styles.areaIcon}>
+              <LifeIcon name="ideas" size={24} />
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={styles.sectionTitle}>{selectedIdea.title}</Text>
+              <Text style={styles.listMeta}>
+                {area?.title ?? 'No area'} ·{' '}
+                {selectedIdea.status === 'EVALUATED' ? 'Evaluated' : 'Inbox'}
+              </Text>
+            </View>
+          </View>
+          <NotesEditor
+            item={selectedIdea}
+            label="Idea notes"
+            onSave={onSaveNotes}
+          />
+          <View style={styles.row}>
+            <Button
+              variant="secondary"
+              style={{ flex: 1 }}
+              onPress={() => onEvaluate(selectedIdea)}
+            >
+              Evaluate
+            </Button>
+            <Button
+              style={{ flex: 1 }}
+              onPress={() => onConvert(selectedIdea)}
+            >
+              Turn into project
+            </Button>
+          </View>
+          <Button variant="ghost" onPress={() => onArchiveIdea(selectedIdea)}>
+            Archive
+          </Button>
+        </View>
+      );
+    }
     const list = ideasTab === 'inbox' ? inboxIdeas : evaluatedIdeas;
     return (
       <View style={styles.stack}>
@@ -468,6 +529,12 @@ export function PlanScreen({
                 {bodyString(idea, 'note') ? (
                   <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
                 ) : null}
+                <Button
+                  variant="secondary"
+                  onPress={() => setSelectedIdeaId(idea.id)}
+                >
+                  Open notes
+                </Button>
                 <View style={styles.row}>
                   {ideasTab === 'inbox' ? (
                     <Button
@@ -516,6 +583,7 @@ export function PlanScreen({
           onArchiveProject={onArchiveProject}
           onSetProjectStatus={onSetProjectStatus}
           onSetProjectDeadline={onSetProjectDeadline}
+          onSaveNotes={onSaveNotes}
           showArchived={showArchived}
           onShowMatrix={() => {
             setSelectedProjectId(null);
@@ -759,6 +827,7 @@ export function PlanScreen({
         onArchiveProject={onArchiveProject}
         onSetProjectStatus={onSetProjectStatus}
         onSetProjectDeadline={onSetProjectDeadline}
+        onSaveNotes={onSaveNotes}
         showArchived={showArchived}
         onShowMatrix={() => {
           setSelectedProjectId(null);
@@ -921,6 +990,7 @@ function ProjectDetail({
   onArchiveProject,
   onSetProjectStatus,
   onSetProjectDeadline,
+  onSaveNotes,
   onShowMatrix,
   showArchived = false,
 }: {
@@ -946,6 +1016,10 @@ function ProjectDetail({
     project: LifeItem,
     targetDate: string | null,
   ) => void;
+  onSaveNotes: (
+    item: LifeItem,
+    body: Record<string, unknown>,
+  ) => Promise<LifeItem | void>;
   onShowMatrix: () => void;
   showArchived?: boolean;
 }) {
@@ -1035,6 +1109,12 @@ function ProjectDetail({
           {outcome || 'Add an outcome so this project has a clear finish line.'}
         </Text>
       </Card>
+
+      <NotesEditor
+        item={project}
+        label="Project notes"
+        onSave={onSaveNotes}
+      />
 
       <Card>
         <MicroLabel>Next action</MicroLabel>

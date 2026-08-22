@@ -1297,6 +1297,15 @@ function AppContent() {
                 notify('Schedule date saved.');
               })
             }
+            onSaveNotes={async (item, body) => {
+              const updated = await updateLifeItem(item.id, { body });
+              setItems((current) =>
+                current.map((entry) =>
+                  entry.id === updated.id ? updated : entry,
+                ),
+              );
+              return updated;
+            }}
             onRequestPlanSegment={(segment) => {
               setPlanSegment(segment);
               if (segment !== 'priority') setPreferPriorityMatrix(false);
