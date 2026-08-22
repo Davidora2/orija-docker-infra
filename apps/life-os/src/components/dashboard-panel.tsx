@@ -62,6 +62,7 @@ export function DashboardPanel({
   const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
+    await Promise.resolve();
     setStatus("loading");
     setLoadError("");
     const now = new Date();
@@ -83,7 +84,8 @@ export function DashboardPanel({
   }, [budget.id, onError]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const maxValue = useMemo(() => {
@@ -375,14 +377,14 @@ export function DashboardPanel({
         </div>
         {data?.series.length ? (
           <BarChart
-              series={data.series}
-              maxValue={maxValue}
-              currency={currency}
-              bars={[
+            series={data.series}
+            maxValue={maxValue}
+            currency={currency}
+            bars={[
               { key: "incomeCents", label: "Income", color: "#617a57" },
               { key: "expenseCents", label: "Outgoings", color: "#d88b77" },
-              ]}
-            />
+            ]}
+          />
         ) : (
           <div className="mt-4 rounded-xl bg-[#f7f8f5] p-4">
             <p className="text-sm font-semibold">No cashflow history yet</p>
