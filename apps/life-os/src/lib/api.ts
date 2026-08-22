@@ -667,6 +667,7 @@ export type Budget = {
   name: string;
   currency: string;
   period: "weekly" | "monthly";
+  createdAt?: string;
   payFrequency?: "weekly" | "biweekly" | "four_weekly" | "monthly" | null;
   nextPayDate?: string | null;
   typicalPayCents?: number | null;
@@ -763,6 +764,7 @@ function mapBudget(raw: Record<string, unknown>): Budget {
     name: String(raw.name),
     currency: String(raw.currency ?? "GBP"),
     period: (raw.period as "weekly" | "monthly") ?? "monthly",
+    createdAt: String(raw.createdAt ?? raw.created_at ?? ""),
     payFrequency: (raw.payFrequency ?? raw.pay_frequency ?? null) as Budget["payFrequency"],
     nextPayDate: (raw.nextPayDate ?? raw.next_pay_date ?? null) as string | null,
     typicalPayCents:

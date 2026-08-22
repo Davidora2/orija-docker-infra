@@ -48,4 +48,35 @@ assert.equal(
   'falls back to first budget when user has no owned spaces',
 );
 
+const duplicatePersonal = [
+  {
+    id: 'personal-empty-new',
+    ownerUserId: davidId,
+    visibility: 'PRIVATE',
+    createdAt: '2026-08-22T23:08:25.261Z',
+  },
+  {
+    id: 'personal-full-old',
+    ownerUserId: davidId,
+    visibility: 'PRIVATE',
+    createdAt: '2026-08-08T11:45:54.663Z',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+  },
+];
+
+assert.equal(
+  pickDefaultBudgetId(duplicatePersonal, davidId),
+  'personal-full-old',
+  'populated personal budget should win over newer empty duplicate',
+);
+
+assert.equal(
+  pickDefaultBudgetId(duplicatePersonal, davidId, {
+    storedId: 'personal-empty-new',
+  }),
+  'personal-full-old',
+  'stored thin duplicate should not hide populated personal budget',
+);
+
 console.log('budget-selection tests passed');
