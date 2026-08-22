@@ -838,7 +838,7 @@ function AppContent() {
 
   async function confirmSchedulePrompt() {
     if (!schedulePrompt) return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDateDraft)) {
+    if (!isValidDateOnly(scheduleDateDraft)) {
       notify('Choose a date for Schedule.');
       return;
     }
