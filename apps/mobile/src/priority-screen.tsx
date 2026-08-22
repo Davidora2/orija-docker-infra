@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_PRIORITY_FILTERS,
+  isValidDateOnly,
   resetPriorityFilters,
   type PriorityFilters,
 } from '@life-os/plan-domain';
@@ -26,6 +27,7 @@ import {
 import { LandscapeHero } from './landscape-hero';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
 import { CapacityStrip } from './ui';
+import { DatePickerField } from './ui/date-picker-field';
 
 const colors = {
   ink: '#14241F',
@@ -854,23 +856,25 @@ export function PriorityScreen({
             </Text>
             <Text style={styles.sheetHint}>
               {dateEdit
-                ? `"${dateEdit.action.title}" needs a calendar date (YYYY-MM-DD)${
+                ? `"${dateEdit.action.title}" needs a calendar date${
                     dateEdit.completeAfter ? ' before marking it done' : ''
                   }.`
                 : ''}
             </Text>
-            <TextInput
-              value={dateEdit?.draft ?? ''}
-              onChangeText={(value) =>
+            <DatePickerField
+              error={
+                dateEdit?.draft && !isValidDateOnly(dateEdit.draft)
+                  ? 'Choose a date for Schedule'
+                  : undefined
+              }
+              label="Date"
+              onChange={(value) =>
                 setDateEdit((current) =>
                   current ? { ...current, draft: value } : current,
                 )
               }
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.dateInput}
+              required
+              value={dateEdit?.draft ?? ''}
             />
             <View style={styles.dateModalActions}>
               <Pressable
@@ -885,13 +889,13 @@ export function PriorityScreen({
                   styles.dateModalBtnPrimary,
                   (busy ||
                     !dateEdit ||
-                    !/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)) &&
+                    !isValidDateOnly(dateEdit.draft)) &&
                     styles.dateModalBtnDisabled,
                 ]}
                 disabled={
                   busy ||
                   !dateEdit ||
-                  !/^\d{4}-\d{2}-\d{2}$/.test(dateEdit.draft)
+                  !isValidDateOnly(dateEdit.draft)
                 }
                 onPress={saveScheduleDate}
               >

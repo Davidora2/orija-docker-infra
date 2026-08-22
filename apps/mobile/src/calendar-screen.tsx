@@ -23,6 +23,7 @@ import {
   EditorialState,
 } from './editorial-state';
 import { AppButton, FocusHero, SegmentedControl } from './ui';
+import { DatePickerField } from './ui/date-picker-field';
 
 const colors = {
   ink: '#14241F',
@@ -373,14 +374,10 @@ export function CalendarScreen({
 
                 <View style={styles.sheetBody}>
                 {selectedActionId && onRescheduleTask ? (
-                  <TextInput
-                    accessibilityLabel="Reschedule date"
-                    autoCapitalize="none"
-                    editable={!busy}
-                    onChangeText={setRescheduleDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.muted}
-                    style={styles.dateInput}
+                  <DatePickerField
+                    label="Reschedule"
+                    onChange={setRescheduleDate}
+                    required
                     value={rescheduleDate}
                   />
                 ) : null}

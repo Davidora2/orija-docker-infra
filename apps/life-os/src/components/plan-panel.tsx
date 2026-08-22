@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ideaOverallScore,
   ideaScoreNarrative,
+  isValidDateOnly,
   type IdeaLifecycleAction,
 } from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
@@ -14,6 +15,7 @@ import { EvaluationRadar } from "./evaluation-radar";
 import { LandscapeHero } from "./landscape-hero";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { NotesEditor } from "./notes-editor";
+import { DatePickerField } from "./date-picker-field";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import { PriorityPanel } from "./priority-panel";
 import {
@@ -474,7 +476,7 @@ export function PlanPanel(props: Props) {
     const quadrant = quadrantFromLevels(quickImportance, quickUrgency);
     if (
       quadrantRequiresScheduledDate(quadrant) &&
-      !/^\d{4}-\d{2}-\d{2}$/.test(quickScheduledDate)
+      !isValidDateOnly(quickScheduledDate)
     ) {
       return;
     }
@@ -586,20 +588,11 @@ export function PlanPanel(props: Props) {
                   </option>
                 ))}
               </select>
-              <label className="block space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                  Deadline (optional)
-                </span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                  value={props.projectTargetDate}
-                  onChange={(e) =>
-                    props.onProjectTargetDateChange(e.target.value)
-                  }
-                />
-                <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
-              </label>
+              <DatePickerField
+                label="Deadline (optional)"
+                onChange={props.onProjectTargetDateChange}
+                value={props.projectTargetDate}
+              />
               <button
                 type="button"
                 className="rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white"
@@ -613,26 +606,45 @@ export function PlanPanel(props: Props) {
           {convertStep === 2 ? (
             <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
               <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-                First action
+                Next step
+              </p>
+              <p className="text-sm text-[#6c7771]">
+                One concrete physical action — the smallest move that starts
+                momentum.
               </p>
               <input
                 className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
                 value={props.actionTitle}
                 onChange={(e) => props.onActionTitleChange(e.target.value)}
-                placeholder="What needs to happen?"
+                placeholder="What will you do next?"
               />
-              <label className="block space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                  Hours
-                </span>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                Estimate
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ["0.25", "15m"],
+                    ["0.5", "30m"],
+                    ["1", "1h"],
+                    ["2", "2h"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Chip
+                    key={value}
+                    active={props.actionHours === value}
+                    onClick={() => props.onActionHoursChange(value)}
+                    label={label}
+                  />
+                ))}
                 <input
-                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  className="w-20 rounded-full border border-[#dde2dd] px-3 py-1.5 text-xs"
                   value={props.actionHours}
                   onChange={(e) => props.onActionHoursChange(e.target.value)}
-                  placeholder="e.g. 2"
+                  placeholder="Custom"
                   inputMode="decimal"
                 />
-              </label>
+              </div>
               <LevelChips
                 label="Importance"
                 value={props.actionImportance}
@@ -653,22 +665,12 @@ export function PlanPanel(props: Props) {
                   props.actionUrgency,
                 ),
               ) ? (
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                    Schedule date (required)
-                  </span>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                    value={props.actionScheduleDate}
-                    onChange={(e) =>
-                      props.onActionScheduleDateChange(e.target.value)
-                    }
-                  />
-                  <span className="text-[11px] text-[#6c7771]">
-                    YYYY-MM-DD
-                  </span>
-                </label>
+                <DatePickerField
+                  label="Schedule date (required)"
+                  onChange={props.onActionScheduleDateChange}
+                  required
+                  value={props.actionScheduleDate}
+                />
               ) : null}
               <div className="rounded-xl border border-[#dde2dd] bg-[#f7f8f5] p-3">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
@@ -705,7 +707,7 @@ export function PlanPanel(props: Props) {
                         props.actionUrgency,
                       ),
                     ) &&
-                    !/^\d{4}-\d{2}-\d{2}$/.test(props.actionScheduleDate)
+                    !isValidDateOnly(props.actionScheduleDate)
                   }
                   onClick={() => setConvertStep(3)}
                 >
@@ -1567,14 +1569,14 @@ export function PlanPanel(props: Props) {
                 project.status !== "CONVERTED",
             )}
             projectId={selectedProject.id}
-            detailsOpen={actionDetailsOpen}
+            detailsOpen={false}
             onTitle={setQuickTitle}
             onHours={setQuickHours}
             onWhen={setQuickWhen}
             onScheduledDate={setQuickScheduledDate}
             onImportance={setQuickImportance}
             onUrgency={setQuickUrgency}
-            onOpenDetails={() => setActionDetailsOpen(true)}
+            onOpenDetails={() => {}}
             onClose={() => {
               setAddActionOpen(false);
               setActionDetailsOpen(false);
@@ -1741,38 +1743,48 @@ export function PlanPanel(props: Props) {
                   </option>
                 ))}
               </select>
-              <label className="block space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                  Deadline (optional)
-                </span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                  value={props.projectTargetDate}
-                  onChange={(e) =>
-                    props.onProjectTargetDateChange(e.target.value)
-                  }
-                />
-                <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
-              </label>
+              <DatePickerField
+                label="Deadline (optional)"
+                onChange={props.onProjectTargetDateChange}
+                value={props.projectTargetDate}
+              />
               <input
                 className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                placeholder="First next action"
+                placeholder="Next step"
                 value={props.actionTitle}
                 onChange={(e) => props.onActionTitleChange(e.target.value)}
               />
-              <label className="block space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                  Hours
-                </span>
+              <p className="text-sm text-[#6c7771]">
+                One concrete physical action — the smallest move that starts
+                momentum.
+              </p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                Estimate
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ["0.25", "15m"],
+                    ["0.5", "30m"],
+                    ["1", "1h"],
+                    ["2", "2h"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Chip
+                    key={value}
+                    active={props.actionHours === value}
+                    onClick={() => props.onActionHoursChange(value)}
+                    label={label}
+                  />
+                ))}
                 <input
-                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                  placeholder="e.g. 2"
+                  className="w-20 rounded-full border border-[#dde2dd] px-3 py-1.5 text-xs"
                   value={props.actionHours}
                   onChange={(e) => props.onActionHoursChange(e.target.value)}
+                  placeholder="Custom"
                   inputMode="decimal"
                 />
-              </label>
+              </div>
               <LevelChips
                 label="Importance"
                 value={props.actionImportance}
@@ -1793,22 +1805,12 @@ export function PlanPanel(props: Props) {
                   props.actionUrgency,
                 ),
               ) ? (
-                <label className="block space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                    Schedule date (required)
-                  </span>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                    value={props.actionScheduleDate}
-                    onChange={(e) =>
-                      props.onActionScheduleDateChange(e.target.value)
-                    }
-                  />
-                  <span className="text-[11px] text-[#6c7771]">
-                    YYYY-MM-DD
-                  </span>
-                </label>
+                <DatePickerField
+                  label="Schedule date (required)"
+                  onChange={props.onActionScheduleDateChange}
+                  required
+                  value={props.actionScheduleDate}
+                />
               ) : null}
               <button
                 className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
@@ -2131,30 +2133,31 @@ function AddActionSheet({
     ["1", "1h"],
     ["2", "2h"],
   ] as const;
+  const [scheduleError, setScheduleError] = useState("");
   const quadrant =
     PRIORITY_QUADRANT_META[
       actionPriorityQuadrant({ importance, urgency })
     ].label;
+  const scheduleRequired = quadrantRequiresScheduledDate(
+    quadrantFromLevels(importance, urgency),
+  );
 
   return (
     <Sheet
-      title={detailsOpen ? "Action details" : "Add action"}
-      subtitle={
-        detailsOpen
-          ? "Importance and Urgency are Low / Medium / High — not yes/no."
-          : "Capture one actionable step"
-      }
+      title="Add next step"
+      subtitle="One concrete physical action — the smallest move that starts momentum."
       onClose={onClose}
     >
       <label className="mb-3 block space-y-1">
         <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-          What needs to happen?
+          Action title
         </span>
         <input
+          autoFocus
           className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
           value={title}
           onChange={(e) => onTitle(e.target.value)}
-          placeholder="Concrete next move"
+          placeholder="What will you do next?"
         />
       </label>
       <div className="mb-3 rounded-xl border border-[#dde2dd] bg-white px-3 py-3 text-sm">
@@ -2182,82 +2185,66 @@ function AddActionSheet({
           placeholder="Custom"
         />
       </div>
-      <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-        When
+      <LevelChips
+        label="Importance"
+        value={importance}
+        onChange={onImportance}
+      />
+      <div className="h-3" />
+      <LevelChips label="Urgency" value={urgency} onChange={onUrgency} />
+      <p className="mb-2 mt-2 text-xs text-[#6c7771]">
+        Matrix preview: {quadrant}
       </p>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {(["Today", "This week", "Later"] as const).map((option) => (
-          <Chip
-            key={option}
-            active={when === option}
-            onClick={() => onWhen(option)}
-            label={option}
-          />
-        ))}
-      </div>
-      {quadrantRequiresScheduledDate(
-        quadrantFromLevels(importance, urgency),
-      ) ? (
-        <label className="mb-4 block space-y-1">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-            Schedule date (required)
-          </span>
-          <input
-            type="date"
-            className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+      {scheduleRequired ? (
+        <div className="mb-4">
+          <DatePickerField
+            error={scheduleError}
+            label="Schedule date (required)"
+            onChange={(value) => {
+              onScheduledDate(value);
+              if (scheduleError && isValidDateOnly(value)) {
+                setScheduleError("");
+              }
+            }}
+            required
             value={scheduledDate}
-            onChange={(e) => onScheduledDate(e.target.value)}
           />
-          <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
-        </label>
-      ) : null}
-
-      {detailsOpen ? (
+        </div>
+      ) : (
         <>
-          <LevelChips
-            label="Importance"
-            value={importance}
-            onChange={onImportance}
-          />
-          <div className="h-3" />
-          <LevelChips label="Urgency" value={urgency} onChange={onUrgency} />
-          <p className="mb-2 mt-2 text-xs text-[#6c7771]">
-            Importance × Urgency place this action on the Eisenhower matrix.
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+            When
           </p>
-          <div className="my-4 rounded-xl border border-[#dde2dd] bg-white p-3 text-sm">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-              Preview
-            </p>
-            <p className="font-semibold">{title || "—"}</p>
-            <p className="text-xs text-[#6c7771]">
-              {hours || "?"}h · {when} · {quadrant}
-            </p>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(["Today", "This week", "Later"] as const).map((option) => (
+              <Chip
+                key={option}
+                active={when === option}
+                onClick={() => onWhen(option)}
+                label={option}
+              />
+            ))}
           </div>
         </>
-      ) : (
-        <button
-          type="button"
-          className="mb-4 text-left text-sm font-bold text-[#617a57]"
-          onClick={onOpenDetails}
-        >
-          Tip: set Importance × Urgency for matrix placement → More options
-        </button>
       )}
 
       <button
         type="button"
-        className="w-full rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-[#d6f57a] px-4 py-3 text-xs font-bold text-[#2f431e] disabled:opacity-50"
         disabled={
           busy ||
           !title.trim() ||
-          (quadrantRequiresScheduledDate(
-            quadrantFromLevels(importance, urgency),
-          ) &&
-            !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate))
+          (scheduleRequired && !isValidDateOnly(scheduledDate))
         }
-        onClick={onSave}
+        onClick={() => {
+          if (scheduleRequired && !isValidDateOnly(scheduledDate)) {
+            setScheduleError("Choose a date for Schedule");
+            return;
+          }
+          onSave();
+        }}
       >
-        {detailsOpen ? "Save" : "Add action"}
+        Add next step
       </button>
     </Sheet>
   );
@@ -2435,50 +2422,75 @@ function ProjectDetailView({
 
       <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
         <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-          Next action
+          Next step
         </p>
         {next ? (
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              className="mt-1 flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
-              disabled={busy}
-              onClick={() => onCompleteAction(next)}
-              aria-label={
-                next.status === "DONE"
-                  ? "Mark next action open"
-                  : "Mark next action done"
-              }
-            >
-              <LifeIcon
-                name="done"
-                size={14}
-                weight={next.status === "DONE" ? "fill" : "regular"}
-              />
-            </button>
-            <div>
-              <h3
-                className={`font-serif text-2xl ${
-                  next.status === "DONE" ? "text-[#6c7771] line-through" : ""
-                }`}
-              >
-                {next.title}
-              </h3>
-              <p className="text-sm text-[#6c7771]">
-                {num(next, "hours", 1)}h
-                {str(next, "day") ? ` · ${str(next, "day")}` : ""} ·{" "}
-                {
-                  PRIORITY_QUADRANT_META[
-                    actionPriorityQuadrant(next.body, project.body)
-                  ].label
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                className="mt-1 flex h-5 w-5 items-center justify-center rounded-full border border-[#617a57] text-[10px] text-[#617a57]"
+                disabled={busy}
+                onClick={() => onCompleteAction(next)}
+                aria-label={
+                  next.status === "DONE"
+                    ? "Mark next action open"
+                    : "Mark next action done"
                 }
-              </p>
+              >
+                <LifeIcon
+                  name="done"
+                  size={14}
+                  weight={next.status === "DONE" ? "fill" : "regular"}
+                />
+              </button>
+              <div>
+                <h3
+                  className={`font-serif text-2xl ${
+                    next.status === "DONE" ? "text-[#6c7771] line-through" : ""
+                  }`}
+                >
+                  {next.title}
+                </h3>
+                <p className="text-sm text-[#6c7771]">
+                  {num(next, "hours", 1)}h
+                  {str(next, "day") ? ` · ${str(next, "day")}` : ""} ·{" "}
+                  {
+                    PRIORITY_QUADRANT_META[
+                      actionPriorityQuadrant(next.body, project.body)
+                    ].label
+                  }
+                </p>
+              </div>
             </div>
+            {!isDone ? (
+              <button
+                type="button"
+                className="w-full rounded-xl bg-[#d6f57a] px-4 py-3 text-xs font-bold text-[#2f431e]"
+                onClick={onOpenAddAction}
+              >
+                Add next step
+              </button>
+            ) : null}
           </div>
         ) : (
-          <p className="text-sm text-[#6c7771]">
-            Active projects need a concrete next move — add one below.
-          </p>
+          <div className="space-y-3 rounded-2xl border border-[#d6f57a] bg-[#eef3ea] p-4">
+            <p className="font-serif text-xl text-[#14241f]">
+              What is the very next physical action?
+            </p>
+            <p className="text-sm text-[#6c7771]">
+              Name one small move you can do without planning further.
+            </p>
+            {!isDone ? (
+              <button
+                type="button"
+                className="w-full rounded-xl bg-[#d6f57a] px-4 py-3 text-xs font-bold text-[#2f431e]"
+                onClick={onOpenAddAction}
+              >
+                Add next step
+              </button>
+            ) : null}
+          </div>
         )}
       </article>
 
@@ -2602,10 +2614,10 @@ function ProjectDetailView({
           {!isDone ? (
             <button
               type="button"
-              className="w-full rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white"
+              className="w-full rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-xs font-bold text-[#14241f]"
               onClick={onOpenAddAction}
             >
-              + Add action
+              Add another action
             </button>
           ) : null}
           <button
@@ -2644,19 +2656,12 @@ function ProjectDetailView({
             <span className="text-[#6c7771]">Status · </span>
             {statusLabel}
           </p>
-          <label className="block space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-              Deadline
-            </span>
-            <input
-              type="date"
-              className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-              value={deadlineDraft}
-              disabled={busy || isDone}
-              onChange={(e) => setDeadlineDraft(e.target.value)}
-            />
-            <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
-          </label>
+          <DatePickerField
+            disabled={busy || isDone}
+            label="Deadline"
+            onChange={setDeadlineDraft}
+            value={deadlineDraft}
+          />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

@@ -13,6 +13,7 @@ import {
   calendarEventProjectId,
 } from "../lib/calendar-events";
 import { CalendarSyncPanel } from "./calendar-sync-panel";
+import { DatePickerField } from "./date-picker-field";
 import {
   DelayedEditorialLoading,
   EditorialState,
@@ -417,17 +418,14 @@ export function CalendarPanel({
             </p>
 
             {selectedActionId && onRescheduleTask ? (
-              <label className="mt-4 block space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
-                  Reschedule
-                </span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+              <div className="mt-4">
+                <DatePickerField
+                  label="Reschedule"
+                  onChange={setRescheduleDate}
+                  required
                   value={rescheduleDate}
-                  onChange={(event) => setRescheduleDate(event.target.value)}
                 />
-              </label>
+              </div>
             ) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">

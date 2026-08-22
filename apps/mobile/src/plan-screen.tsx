@@ -50,6 +50,8 @@ import { SwipeableRow } from './swipeable-row';
 import { PriorityScreen } from './priority-screen';
 import { NotesEditor } from './notes-editor';
 import { FocusHero } from './ui';
+import { AppButton } from './ui/button';
+import { DatePickerField } from './ui/date-picker-field';
 
 const colors = {
   ink: '#14241F',
@@ -1474,72 +1476,81 @@ function ProjectDetail({
       />
 
       <Card>
-        <MicroLabel>Next action</MicroLabel>
+        <MicroLabel>Next step</MicroLabel>
         {next ? (
-          <SwipeableRow
-            disabled={busy || isDone}
-            onArchive={() => onArchiveAction(next)}
-            onDelete={() => onDeleteAction(next)}
-          >
-            <View style={{ padding: 4, gap: 8 }}>
-              <Text style={styles.cardTitle}>{next.title}</Text>
-              <Text style={styles.listMeta}>
-                {bodyNumber(next, 'hours', 1)}h
-                {bodyString(next, 'day') ? ` · ${bodyString(next, 'day')}` : ''}
-                {' · '}
-                {
-                  PRIORITY_QUADRANT_META[
-                    actionPriorityQuadrant(next.body, project.body)
-                  ].title
-                }
-              </Text>
-              <Text style={styles.listMeta}>Swipe left to archive · tap circle to toggle done</Text>
-              <Pressable
-                disabled={busy}
-                onPress={() => onCompleteAction(next)}
-                style={styles.completeRow}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  next.status === 'DONE'
-                    ? 'Mark next action open'
-                    : 'Mark next action done'
-                }
-              >
-                <View
-                  style={[
-                    styles.completeDot,
-                    next.status === 'DONE' && styles.completeDotDone,
-                  ]}
-                >
-                  <LifeIcon
-                    name="done"
-                    size={16}
-                    weight={next.status === 'DONE' ? 'fill' : 'regular'}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.completeLabel,
-                    next.status === 'DONE' && styles.completeLabelDone,
-                  ]}
-                >
-                  {next.status === 'DONE' ? 'Completed — tap to undo' : 'Mark complete'}
+          <View style={{ gap: 10 }}>
+            <SwipeableRow
+              disabled={busy || isDone}
+              onArchive={() => onArchiveAction(next)}
+              onDelete={() => onDeleteAction(next)}
+            >
+              <View style={{ padding: 4, gap: 8 }}>
+                <Text style={styles.cardTitle}>{next.title}</Text>
+                <Text style={styles.listMeta}>
+                  {bodyNumber(next, 'hours', 1)}h
+                  {bodyString(next, 'day') ? ` · ${bodyString(next, 'day')}` : ''}
+                  {' · '}
+                  {
+                    PRIORITY_QUADRANT_META[
+                      actionPriorityQuadrant(next.body, project.body)
+                    ].title
+                  }
                 </Text>
-              </Pressable>
-            </View>
-          </SwipeableRow>
+                <Text style={styles.listMeta}>Swipe left to archive · tap circle to toggle done</Text>
+                <Pressable
+                  disabled={busy}
+                  onPress={() => onCompleteAction(next)}
+                  style={styles.completeRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    next.status === 'DONE'
+                      ? 'Mark next action open'
+                      : 'Mark next action done'
+                  }
+                >
+                  <View
+                    style={[
+                      styles.completeDot,
+                      next.status === 'DONE' && styles.completeDotDone,
+                    ]}
+                  >
+                    <LifeIcon
+                      name="done"
+                      size={16}
+                      weight={next.status === 'DONE' ? 'fill' : 'regular'}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.completeLabel,
+                      next.status === 'DONE' && styles.completeLabelDone,
+                    ]}
+                  >
+                    {next.status === 'DONE' ? 'Completed — tap to undo' : 'Mark complete'}
+                  </Text>
+                </Pressable>
+              </View>
+            </SwipeableRow>
+            {!isDone && !isArchived ? (
+              <AppButton onPress={() => onQuickAction(project.id)} variant="acid">
+                Add next step
+              </AppButton>
+            ) : null}
+          </View>
         ) : (
-          <>
-            <Text style={styles.cardTitle}>Define next action</Text>
+          <View style={styles.nextStepEmpty}>
+            <Text style={styles.nextStepEmptyTitle}>
+              What is the very next physical action?
+            </Text>
             <Text style={styles.cardBody}>
-              Active projects need a concrete next move.
+              Name one small move you can do without planning further.
             </Text>
             {!isDone && !isArchived ? (
-              <Button onPress={() => onQuickAction(project.id)}>
-                Add next action
-              </Button>
+              <AppButton onPress={() => onQuickAction(project.id)} variant="acid">
+                Add next step
+              </AppButton>
             ) : null}
-          </>
+          </View>
         )}
       </Card>
 
@@ -1620,9 +1631,9 @@ function ProjectDetail({
           </View>
         ) : null}
         {!isDone && !isArchived ? (
-          <Button variant="secondary" onPress={() => onQuickAction(project.id)}>
-            Quick add action
-          </Button>
+          <AppButton onPress={() => onQuickAction(project.id)} variant="secondary">
+            Add another action
+          </AppButton>
         ) : null}
       </Card>
 
@@ -1636,15 +1647,11 @@ function ProjectDetail({
             <View style={{ gap: 10, marginTop: 4 }}>
               <Text style={styles.fieldLabel}>Status</Text>
               <Text style={styles.listMeta}>{statusLabel}</Text>
-              <Text style={styles.fieldLabel}>Deadline (YYYY-MM-DD)</Text>
-              <TextInput
+              <DatePickerField
+                disabled={busy || isDone || isArchived}
+                label="Deadline (optional)"
+                onChange={setDeadlineDraft}
                 value={deadlineDraft}
-                onChangeText={setDeadlineDraft}
-                placeholder="Optional due date"
-                placeholderTextColor={colors.muted}
-                editable={!busy && !isDone && !isArchived}
-                style={styles.input}
-                autoCapitalize="none"
               />
               <View style={styles.chipRow}>
                 <Button
@@ -1846,6 +1853,20 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 8,
     paddingHorizontal: 4,
+  },
+  nextStepEmpty: {
+    backgroundColor: colors.sage,
+    borderColor: colors.acid,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+    padding: 14,
+  },
+  nextStepEmptyTitle: {
+    color: colors.ink,
+    fontFamily: serif,
+    fontSize: 20,
+    lineHeight: 24,
   },
 
   stack: { gap: 12 },
