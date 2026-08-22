@@ -10,9 +10,9 @@ import {
 } from "../lib/api";
 import {
   loadLastBudgetId,
-  pickDefaultBudgetId,
   saveLastBudgetId,
 } from "../lib/budget-selection";
+import { pickDefaultBudgetId } from "@life-os/shared";
 import { DashboardPanel } from "./dashboard-panel";
 import { FocusHero } from "./focus-hero";
 import { LifeIcon } from "./life-icon";
@@ -51,7 +51,7 @@ export function BudgetPanel({
         const list = await listBudgets();
         setBudgets(list);
         const nextId = pickDefaultBudgetId(list, account.user.id, {
-          preferredId,
+          preferredId: preferredId ?? activeId,
           storedId: loadLastBudgetId(account.user.id),
         });
         setActiveId(nextId);
@@ -70,7 +70,7 @@ export function BudgetPanel({
         setLoading(false);
       }
     },
-    [account.user.id, onError],
+    [account.user.id, activeId, onError],
   );
 
   useEffect(() => {

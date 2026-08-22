@@ -3,30 +3,7 @@
  * Run: node apps/mobile/scripts/test-budget-selection.mjs
  */
 import assert from 'node:assert/strict';
-
-function pickDefaultBudgetId(budgets, userId, options = {}) {
-  if (!budgets.length) return null;
-
-  const valid = (id) =>
-    id && budgets.some((budget) => budget.id === id) ? id : null;
-
-  const preferred = valid(options.preferredId);
-  if (preferred) return preferred;
-
-  const stored = valid(options.storedId);
-  if (stored) return stored;
-
-  const ownedPrivate = budgets.filter(
-    (budget) =>
-      budget.visibility === 'PRIVATE' && budget.ownerUserId === userId,
-  );
-  if (ownedPrivate.length) return ownedPrivate[0].id;
-
-  const owned = budgets.filter((budget) => budget.ownerUserId === userId);
-  if (owned.length) return owned[0].id;
-
-  return budgets[0].id;
-}
+import { pickDefaultBudgetId } from '../../life-os-shared/src/index.ts';
 
 const davidId = 'f5d5994a-7883-4894-b77e-8bc226a868cd';
 const partnerId = '4228f615-219c-4c25-a483-f993a3eaf29f';
