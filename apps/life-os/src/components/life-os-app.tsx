@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ideaConversionMetadata,
+  ideaStatusForAction,
+} from "@life-os/plan-domain";
+import {
   createLifeItem,
   forgotPassword,
   getAccount,
@@ -23,21 +27,31 @@ import {
 } from "../lib/api";
 import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
+import { CalendarSyncPanel } from "./calendar-sync-panel";
 import { CapacityRing } from "./capacity-ring";
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from "./editorial-state";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { LifeIcon, type LifeIconName } from "./life-icon";
+import { HouseholdPanel } from "./household-panel";
 import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
 import { PlanPanel } from "./plan-panel";
+import { SettingsPrivacyPanel } from "./settings-privacy-panel";
+import { WeeklyReviewPanel } from "./weekly-review-panel";
 import {
-  PRIORITY_QUADRANT_META,
-  actionBodyWithFlags,
+  QuickAddSheet,
+  type QuickAddKind,
+} from "./quick-add-sheet";
+import { TodayPanel } from "./today-panel";
+import {
   actionBodyWithLevels,
   actionBodyWithScheduledDate,
   actionMeetsScheduleDateRequirement,
   actionPriorityQuadrant,
   actionScheduledDate,
-  flagsFromQuadrant,
   levelsFromQuadrant,
   priorityRank,
   projectBodyWithPriority,
@@ -96,7 +110,9 @@ export function LifeOSApp() {
   >("today");
   const [planSegment, setPlanSegment] = useState<"priority" | "areas" | "projects" | "ideas">("priority");
   const [preferPriorityMatrix, setPreferPriorityMatrix] = useState(false);
-  const [youDest, setYouDest] = useState<"menu" | "capacity" | "review">("menu");
+  const [youDest, setYouDest] = useState<
+    "menu" | "capacity" | "review" | "household" | "integrations" | "settings"
+  >("menu");
   const [authMode, setAuthMode] = useState<
     "login" | "register" | "forgot" | "reset"
   >("login");
@@ -109,6 +125,7 @@ export function LifeOSApp() {
   const [providers, setProviders] = useState<AuthProviders | null>(null);
   const [ideaTitle, setIdeaTitle] = useState("");
   const [ideaNote, setIdeaNote] = useState("");
+  const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
   const [projectTitle, setProjectTitle] = useState("");
   const [projectOutcome, setProjectOutcome] = useState("");
   const [projectPillarId, setProjectPillarId] = useState("");
@@ -131,8 +148,11 @@ export function LifeOSApp() {
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [profileCurrency, setProfileCurrency] = useState("GBP");
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddKind, setQuickAddKind] =
+    useState<QuickAddKind>("action");
+  const [spendCaptureNonce, setSpendCaptureNonce] = useState(0);
   const [currencies, setCurrencies] = useState<string[]>([
     "GBP",
     "USD",
@@ -177,6 +197,23 @@ export function LifeOSApp() {
     })();
   }, [refresh]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "you") {
+      setTab("you");
+      const destination = params.get("dest");
+      if (
+        destination === "capacity" ||
+        destination === "review" ||
+        destination === "household" ||
+        destination === "integrations" ||
+        destination === "settings"
+      ) {
+        setYouDest(destination);
+      }
+    }
+  }, []);
+
   const pillars = useMemo(() => items.filter((i) => i.kind === "PILLAR" && open(i)), [items]);
   const ideas = useMemo(() => items.filter((i) => i.kind === "IDEA" && open(i)), [items]);
   const projects = useMemo(
@@ -201,8 +238,7 @@ export function LifeOSApp() {
         )
       : 11;
   const planned = openActions.reduce((sum, action) => sum + num(action, "hours", 1), 0);
-  const rankedOpenPrimary = useMemo(() => {
-    if (openActions.length === 0) return null;
+  const rankedOpenActions = useMemo(() => {
     const projectById = new Map(projects.map((project) => [project.id, project]));
     return [...openActions].sort((a, b) => {
       const aProject = projectById.get(a.parentId ?? "");
@@ -224,9 +260,17 @@ export function LifeOSApp() {
         aProjectRank - bProjectRank ||
         a.sortOrder - b.sortOrder
       );
-    })[0];
+    });
   }, [openActions, projects]);
+  const rankedOpenPrimary = rankedOpenActions[0] ?? null;
   const primary = useMemo(() => {
+    const profilePrimaryId = account?.user.body?.primaryMoveActionId;
+    if (profilePrimaryId) {
+      const profileAction = actions.find(
+        (item) => item.id === profilePrimaryId && item.kind === "ACTION",
+      );
+      if (profileAction) return profileAction;
+    }
     if (stickyPrimaryId) {
       const sticky = actions.find((item) => item.id === stickyPrimaryId);
       if (sticky && sticky.kind === "ACTION" && sticky.status === "DONE") {
@@ -234,7 +278,19 @@ export function LifeOSApp() {
       }
     }
     return rankedOpenPrimary;
-  }, [stickyPrimaryId, actions, rankedOpenPrimary]);
+  }, [
+    account?.user.body?.primaryMoveActionId,
+    stickyPrimaryId,
+    actions,
+    rankedOpenPrimary,
+  ]);
+  const supporting = useMemo(
+    () =>
+      rankedOpenActions
+        .filter((action) => action.id !== primary?.id)
+        .slice(0, 3),
+    [primary?.id, rankedOpenActions],
+  );
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
 
   useEffect(() => {
@@ -245,14 +301,27 @@ export function LifeOSApp() {
   }, [actions, stickyPrimaryId]);
 
   useEffect(() => {
-    if (account?.user.preferredCurrency) {
-      setProfileCurrency(account.user.preferredCurrency);
-    }
-  }, [account?.user.preferredCurrency]);
-
-  useEffect(() => {
     setCapacityHoursInput(String(available));
   }, [available]);
+
+  useEffect(() => {
+    if (!account || account.user.onboardingCompletedAt) {
+      setOnboardingOpen(false);
+      return;
+    }
+    const key = `life-os-onboarding-dismissed:${account.user.id}`;
+    let dismissed = account.user.onboardingStep === "deferred";
+    try {
+      dismissed = dismissed || window.localStorage.getItem(key) === "1";
+    } catch {
+      // Resume automatically when storage is unavailable.
+    }
+    setOnboardingOpen(!dismissed);
+  }, [
+    account?.user.id,
+    account?.user.onboardingCompletedAt,
+    account?.user.onboardingStep,
+  ]);
 
   async function run(work: () => Promise<void>): Promise<boolean> {
     setBusy(true);
@@ -272,7 +341,12 @@ export function LifeOSApp() {
   if (loading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl items-center justify-center p-8 text-[#14241f]">
-        Loading Life OS…
+        <div className="w-full max-w-lg">
+          <DelayedEditorialLoading
+            title="Opening your day"
+            description="Bringing Today, Plan, Money, and Calendar into focus."
+          />
+        </div>
       </main>
     );
   }
@@ -480,12 +554,34 @@ export function LifeOSApp() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl bg-[#f4f5f0] px-4 py-6 text-[#14241f]">
-      {needsOnboarding ? (
+    <main className="mx-auto min-h-screen max-w-3xl bg-[#f4f5f0] px-4 pb-24 pt-6 text-[#14241f]">
+      {needsOnboarding && onboardingOpen ? (
         <OnboardingPanel
+          account={account}
+          items={items}
           onComplete={(next) => {
+            try {
+              window.localStorage.removeItem(
+                `life-os-onboarding-dismissed:${next.user.id}`,
+              );
+            } catch {
+              // Completion is already persisted on the server.
+            }
             setAccount(next);
+            setOnboardingOpen(false);
             void refresh();
+          }}
+          onDismiss={(next) => {
+            try {
+              window.localStorage.setItem(
+                `life-os-onboarding-dismissed:${next.user.id}`,
+                "1",
+              );
+            } catch {
+              // The server-side step still preserves progress.
+            }
+            setAccount(next);
+            setOnboardingOpen(false);
           }}
           onError={setError}
         />
@@ -504,7 +600,10 @@ export function LifeOSApp() {
           <button
             className="rounded-xl border border-[#dde2dd] bg-white px-3 py-2 text-xs font-bold"
             type="button"
-            onClick={() => setSettingsOpen((value) => !value)}
+            onClick={() => {
+              setTab("you");
+              setYouDest("settings");
+            }}
           >
             Profile
           </button>
@@ -524,38 +623,31 @@ export function LifeOSApp() {
         </div>
       </header>
 
-      {settingsOpen ? (
-        <article className="mb-5 space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
-          <h2 className="font-serif text-2xl">Profile settings</h2>
-          <p className="text-sm text-[#6c7771]">
-            Change the currency used for budgets, savings, and net worth.
-          </p>
-          <select
-            className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-            value={profileCurrency}
-            onChange={(e) => setProfileCurrency(e.target.value)}
-          >
-            {currencies.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
+      {needsOnboarding && !onboardingOpen ? (
+        <article className="mb-5 flex flex-col gap-3 rounded-2xl border border-[#c9d6c4] bg-[#eef3ea] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-[#617a57]">
+              Setup paused
+            </p>
+            <p className="mt-1 text-sm text-[#445448]">
+              Resume your areas, capacity, and first move whenever you are ready.
+            </p>
+          </div>
           <button
+            className="shrink-0 rounded-xl bg-[#14241f] px-4 py-2.5 text-xs font-bold text-white"
+            onClick={() => {
+              try {
+                window.localStorage.removeItem(
+                  `life-os-onboarding-dismissed:${account.user.id}`,
+                );
+              } catch {
+                // The sheet can still resume in this session.
+              }
+              setOnboardingOpen(true);
+            }}
             type="button"
-            disabled={busy}
-            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
-            onClick={() =>
-              void run(async () => {
-                const next = await updateProfile({
-                  preferredCurrency: profileCurrency,
-                });
-                setAccount(next);
-                setSettingsOpen(false);
-              })
-            }
           >
-            Save currency
+            Resume setup
           </button>
         </article>
       ) : null}
@@ -621,82 +713,51 @@ export function LifeOSApp() {
       ) : null}
 
       {error ? (
-        <p className="mb-4 rounded-xl bg-[#f8e4df] px-3 py-2 text-sm text-[#c9634f]">
-          {error}
-        </p>
+        <div className="mb-4">
+          <EditorialState
+            kind="error"
+            compact
+            title="That did not land"
+            description={error}
+          />
+        </div>
       ) : null}
 
       {tab === "today" ? (
-        <section className="space-y-4">
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Primary move</p>
-            {primary ? (
-              <>
-                <h2
-                  className={`mt-2 font-serif text-2xl ${
-                    primary.status === "DONE"
-                      ? "text-[#6c7771] line-through"
-                      : "text-[#14241f]"
-                  }`}
-                >
-                  {primary.title}
-                </h2>
-                <p className="text-sm text-[#6c7771]">
-                  {num(primary, "hours", 1)}h
-                  {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
-                  {(() => {
-                    const parent = projects.find((p) => p.id === primary.parentId);
-                    const meta =
-                      PRIORITY_QUADRANT_META[
-                        actionPriorityQuadrant(primary.body, parent?.body)
-                      ];
-                    return ` · ${meta.title}`;
-                  })()}
-                  {primary.status === "DONE" ? " · Done" : ""}
-                </p>
-                <button
-                  className="mt-4 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0]"
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      const wasDone = primary.status === "DONE";
-                      const id = primary.id;
-                      await updateLifeItem(id, {
-                        status: toggledActionStatus(primary.status),
-                      });
-                      if (wasDone) setStickyPrimaryId(null);
-                      else setStickyPrimaryId(id);
-                    })
-                  }
-                >
-                  {primary.status === "DONE" ? "Undo complete" : "Mark done"}
-                </button>
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-[#6c7771]">
-                No open actions yet. Capture an idea and turn it into a project.
-              </p>
-            )}
-          </article>
-          <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <CapacityRing
-              planned={planned}
-              available={available}
-              size={88}
-              label="Today weekly capacity"
-            />
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Capacity</p>
-              <h2 className="mt-1 font-serif text-2xl">
-                {planned.toFixed(1)}h / {available}h
-              </h2>
-              <p className="text-sm text-[#6c7771]">
-                {planned > available ? "Over capacity — reduce scope in Capacity." : "Within capacity."}
-              </p>
-            </div>
-          </article>
-        </section>
+        <TodayPanel
+          available={available}
+          busy={busy}
+          onOpenCapacity={() => {
+            setTab("you");
+            setYouDest("capacity");
+          }}
+          onOpenPlan={() => {
+            setTab("plan");
+            setPlanSegment("priority");
+          }}
+          onQuickAdd={() => {
+            setQuickAddKind("action");
+            setQuickAddOpen(true);
+          }}
+          onToggleAction={(action) =>
+            void run(async () => {
+              const wasDone = action.status === "DONE";
+              await updateLifeItem(action.id, {
+                status: toggledActionStatus(action.status),
+              });
+              if (action.id === primary?.id) {
+                if (wasDone) setStickyPrimaryId(null);
+                else setStickyPrimaryId(action.id);
+              }
+            })
+          }
+          openActions={openActions}
+          pillars={pillars}
+          planned={planned}
+          primary={primary}
+          projects={projects}
+          supporting={supporting}
+        />
       ) : null}
 
       {tab === "plan" ? (
@@ -750,14 +811,22 @@ export function LifeOSApp() {
             })
           }
           onConvertIdea={(idea) => {
+            setSourceIdeaId(idea.id);
             setProjectTitle(idea.title);
             setProjectOutcome(str(idea, "note"));
             setProjectPillarId(idea.parentId ?? pillars[0]?.id ?? "");
             setActionTitle(`Next: ${idea.title}`);
             setActionImportance("HIGH");
             setActionUrgency("LOW");
-            setPlanSegment("projects");
           }}
+          onCancelIdeaConversion={() => setSourceIdeaId(null)}
+          onIdeaLifecycle={(idea, action) =>
+            void run(async () => {
+              await updateLifeItem(idea.id, {
+                status: ideaStatusForAction(action),
+              });
+            })
+          }
           onEvaluateIdea={(idea, scores) =>
             void run(async () => {
               const overall =
@@ -826,7 +895,12 @@ export function LifeOSApp() {
                 parentId: projectPillarId || null,
                 body: projectBodyWithPriority(
                   projectBodyWithTargetDate(
-                    { outcome: projectOutcome.trim() },
+                    {
+                      outcome: projectOutcome.trim(),
+                      ...(sourceIdeaId
+                        ? ideaConversionMetadata(sourceIdeaId).projectBody
+                        : {}),
+                    },
                     projectTargetDate || null,
                   ),
                   projectPriorityFromImportance(actionImportance),
@@ -852,6 +926,12 @@ export function LifeOSApp() {
                   actionUrgency,
                 ),
               });
+              if (sourceIdeaId) {
+                await updateLifeItem(sourceIdeaId, {
+                  status: ideaConversionMetadata(sourceIdeaId).sourceIdeaStatus,
+                });
+              }
+              setSourceIdeaId(null);
               setProjectTitle("");
               setProjectOutcome("");
               setProjectTargetDate("");
@@ -998,6 +1078,15 @@ export function LifeOSApp() {
               });
             })
           }
+          onSaveNotes={async (item, body) => {
+            const updated = await updateLifeItem(item.id, { body });
+            setItems((current) =>
+              current.map((entry) =>
+                entry.id === updated.id ? updated : entry,
+              ),
+            );
+            return updated;
+          }}
           onRequestPlanSegment={(segment) => {
             setPlanSegment(segment);
             if (segment !== "priority") setPreferPriorityMatrix(false);
@@ -1008,21 +1097,23 @@ export function LifeOSApp() {
       {tab === "you" && youDest === "menu" ? (
         <section className="space-y-3">
           <h2 className="font-serif text-2xl text-[#14241f]">You</h2>
-          <p className="text-sm text-[#6c7771]">Capacity and weekly review live here.</p>
+          <p className="text-sm text-[#6c7771]">
+            Capacity, review, household, integrations, and privacy controls.
+          </p>
           {(
             [
               ["capacity", "Capacity", "Weekly hours and load", "capacity"],
               ["review", "Weekly Review", "CEO-style check-in", "review"],
-              ["settings", "Settings", "Account and currency", "settings"],
+              ["household", "Household", "Partner link and shared space", "household"],
+              ["integrations", "Integrations", "Calendar sync connectors", "integrations"],
+              ["settings", "Settings", "Account, export, and privacy", "settings"],
             ] as const
           ).map(([id, title, description, icon]) => (
             <button
               key={id}
               type="button"
               className="flex w-full items-center gap-3 rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left"
-              onClick={() =>
-                id === "settings" ? setSettingsOpen(true) : setYouDest(id)
-              }
+              onClick={() => setYouDest(id)}
             >
               <LifeIcon name={icon as LifeIconName} size={22} />
               <span className="min-w-0 flex-1">
@@ -1212,41 +1303,193 @@ export function LifeOSApp() {
       ) : null}
 
       {tab === "money" ? (
-        <BudgetPanel account={account} onError={setError} />
+        <BudgetPanel
+          account={account}
+          onError={setError}
+          spendCaptureNonce={spendCaptureNonce}
+        />
       ) : null}
 
       {tab === "calendar" ? (
         <CalendarPanel
           preferredCurrency={account.user.preferredCurrency}
+          busy={busy}
           onError={setError}
+          onCompleteTask={async (actionId) => {
+            const action = items.find((item) => item.id === actionId);
+            if (!action) return;
+            await updateLifeItem(actionId, {
+              status: toggledActionStatus(action.status),
+            });
+            await refresh();
+          }}
+          onRescheduleTask={async (actionId, date) => {
+            const action = items.find((item) => item.id === actionId);
+            if (!action) return;
+            await updateLifeItem(actionId, {
+              body: actionBodyWithScheduledDate(action.body, date),
+            });
+            await refresh();
+          }}
+          onOpenTask={(actionId) => {
+            setTab("plan");
+            setPlanSegment("priority");
+            setPreferPriorityMatrix(true);
+            void actionId;
+          }}
+          onOpenProject={() => {
+            setTab("plan");
+            setPlanSegment("projects");
+          }}
+          onOpenMoney={() => setTab("money")}
+          onSetPrimaryMove={async (actionId) => {
+            const next = await updateProfile({
+              body: { primaryMoveActionId: actionId },
+            });
+            setAccount(next);
+            setStickyPrimaryId(null);
+          }}
         />
       ) : null}
 
       {tab === "you" && youDest === "review" ? (
+        <WeeklyReviewPanel
+          householdId={account.activeHouseholdId!}
+          completedActions={doneActions.length}
+          totalActions={actions.length}
+          plannedHours={planned}
+          availableHours={available}
+          onError={setError}
+        />
+      ) : null}
+
+      {tab === "you" && youDest === "household" ? (
+        <HouseholdPanel
+          account={account}
+          onAccountChange={setAccount}
+          onError={setError}
+        />
+      ) : null}
+
+      {tab === "you" && youDest === "integrations" ? (
         <section className="space-y-4">
-          <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <CapacityRing
-              planned={planned}
-              available={available}
-              label="Weekly review planned capacity"
-            />
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Scorecard</p>
-              <h2 className="mt-2 font-serif text-2xl">
-                {doneActions.length} completed · {openActions.length} open
-              </h2>
-              <p className="text-sm text-[#6c7771]">
-                Completion{" "}
-                {actions.length === 0
-                  ? 0
-                  : Math.round((doneActions.length / actions.length) * 100)}
-                % · planned {planned.toFixed(1)}h / {available}h
-              </p>
-            </div>
-          </article>
+          <div>
+            <h2 className="font-serif text-2xl">Integrations</h2>
+            <p className="text-sm text-[#6c7771]">
+              Each person connects and controls their own calendar account.
+            </p>
+          </div>
+          <CalendarSyncPanel onError={setError} />
         </section>
       ) : null}
-    
+
+      <button
+        aria-haspopup="dialog"
+        aria-label="Open Quick Add"
+        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#14241f] text-[#d6f57a] shadow-[0_14px_35px_rgba(20,36,31,0.3)] transition-transform hover:-translate-y-0.5 sm:bottom-7 sm:right-7"
+        onClick={() => {
+          const contextualKind: QuickAddKind =
+            tab === "money"
+              ? "spend"
+              : tab === "plan" && planSegment === "ideas"
+                ? "idea"
+                : tab === "plan" &&
+                    (planSegment === "projects" || planSegment === "areas")
+                  ? "project"
+                  : "action";
+          setQuickAddKind(contextualKind);
+          setQuickAddOpen(true);
+        }}
+        type="button"
+      >
+        <LifeIcon color="currentColor" name="add" size={26} weight="bold" />
+      </button>
+
+      {quickAddOpen ? (
+        <QuickAddSheet
+          busy={busy}
+          initialKind={quickAddKind}
+          onClose={() => setQuickAddOpen(false)}
+          onCreateAction={async ({
+            title,
+            hours,
+            parentId,
+            importance,
+            urgency,
+          }) => {
+            const ok = await run(async () => {
+              await createLifeItem({
+                kind: "ACTION",
+                title,
+                parentId,
+                body: actionBodyWithLevels(
+                  { hours, day: "This week" },
+                  importance,
+                  urgency,
+                ),
+              });
+            });
+            if (ok) setTab("today");
+            return ok;
+          }}
+          onCreateIdea={async ({ title, note }) => {
+            const ok = await run(async () => {
+              await createLifeItem({
+                kind: "IDEA",
+                title,
+                body: {
+                  note,
+                  impact: 0,
+                  effort: 0,
+                  alignment: 0,
+                  timing: 0,
+                },
+              });
+            });
+            if (ok) {
+              setTab("plan");
+              setPlanSegment("ideas");
+            }
+            return ok;
+          }}
+          onCreateProject={async ({ title, parentId }) => {
+            const ok = await run(async () => {
+              await createLifeItem({
+                kind: "PROJECT",
+                title,
+                parentId,
+                body: projectBodyWithPriority({}, "MEDIUM"),
+              });
+            });
+            if (ok) {
+              setTab("plan");
+              setPlanSegment("projects");
+            }
+            return ok;
+          }}
+          onSpend={() => {
+            setQuickAddOpen(false);
+            setTab("money");
+            setSpendCaptureNonce((current) => current + 1);
+          }}
+          pillars={pillars}
+          projects={projects.filter((project) => open(project))}
+        />
+      ) : null}
+
+      {tab === "you" && youDest === "settings" ? (
+        <SettingsPrivacyPanel
+          account={account}
+          currencies={currencies}
+          onAccountChange={setAccount}
+          onDeleted={() => {
+            setAccount(null);
+            setItems([]);
+          }}
+          onError={setError}
+        />
+      ) : null}
+
       {schedulePrompt ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <div

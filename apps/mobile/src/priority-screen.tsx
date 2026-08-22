@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  DEFAULT_PRIORITY_FILTERS,
+  resetPriorityFilters,
+  type PriorityFilters,
+} from '@life-os/plan-domain';
+import {
   Modal,
   Pressable,
   ScrollView,
@@ -18,6 +23,7 @@ import {
   quadrantRequiresScheduledDate,
   type PriorityQuadrant,
 } from './priority-matrix';
+import { LandscapeHero } from './landscape-hero';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
 
 const colors = {
@@ -61,12 +67,6 @@ function hoursOf(action: LifeItem) {
   return bodyNumber(action, 'hours', 1);
 }
 
-function isThisWeek(action: LifeItem) {
-  const day = bodyString(action, 'day');
-  if (!day) return true;
-  return day !== 'Later' && day !== 'Someday';
-}
-
 type DateEditState = {
   action: LifeItem;
   draft: string;
@@ -77,6 +77,8 @@ type Props = {
   pillars: LifeItem[];
   projects: LifeItem[];
   openActions: LifeItem[];
+  filters: PriorityFilters;
+  onFiltersChange: (filters: PriorityFilters) => void;
   availableHours: number;
   busy: boolean;
   tipDismissed: boolean;
@@ -94,6 +96,8 @@ export function PriorityScreen({
   pillars,
   projects,
   openActions,
+  filters,
+  onFiltersChange,
   availableHours,
   busy,
   tipDismissed,
@@ -106,14 +110,9 @@ export function PriorityScreen({
   onMoveProjectToIdea,
   onParkAction,
 }: Props) {
-  const [areaFilter, setAreaFilter] = useState('');
-  const [windowFilter, setWindowFilter] = useState<'week' | 'all'>('week');
   const [filterOpen, setFilterOpen] = useState(false);
   const [areaPickerOpen, setAreaPickerOpen] = useState(false);
   const [windowPickerOpen, setWindowPickerOpen] = useState(false);
-  const [quadrantFilter, setQuadrantFilter] = useState<PriorityQuadrant | ''>(
-    '',
-  );
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<PriorityQuadrant, boolean>>({
     DO_FIRST: true,
@@ -161,18 +160,7 @@ export function PriorityScreen({
     [projects],
   );
 
-  const filteredActions = useMemo(() => {
-    return openActions.filter((action) => {
-      const project = projectById.get(action.parentId ?? '');
-      if (areaFilter && project?.parentId !== areaFilter) return false;
-      if (windowFilter === 'week' && !isThisWeek(action)) return false;
-      if (quadrantFilter) {
-        const q = actionPriorityQuadrant(action.body, project?.body);
-        if (q !== quadrantFilter) return false;
-      }
-      return true;
-    });
-  }, [openActions, areaFilter, windowFilter, quadrantFilter, projectById]);
+  const filteredActions = openActions;
 
   const plannedHours = filteredActions.reduce(
     (sum, action) => sum + hoursOf(action),
@@ -226,7 +214,11 @@ export function PriorityScreen({
   );
 
   const areaLabel =
-    pillars.find((p) => p.id === areaFilter)?.title ?? 'All areas';
+    pillars.find((p) => p.id === filters.areaId)?.title ?? 'All areas';
+  const activeFilterCount = Object.entries(filters).filter(
+    ([key, value]) =>
+      value !== DEFAULT_PRIORITY_FILTERS[key as keyof PriorityFilters],
+  ).length;
 
   useEffect(() => {
     if (!overCapacity) setRebalanceOpen(false);
@@ -234,6 +226,11 @@ export function PriorityScreen({
 
   return (
     <View style={styles.stack}>
+      <LandscapeHero
+        title="Plan"
+        subtitle="Decide what exists and what matters."
+        detail="Shape Areas, commit Projects, and protect the actions that deserve this week."
+      />
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
           <Text style={styles.title}>Priority</Text>
@@ -245,6 +242,15 @@ export function PriorityScreen({
           <Text style={styles.matrixBtnText}>Matrix</Text>
         </Pressable>
       </View>
+
+      <TextInput
+        value={filters.query}
+        onChangeText={(query) => onFiltersChange({ ...filters, query })}
+        placeholder="Search action titles"
+        placeholderTextColor={colors.muted}
+        style={styles.searchInput}
+        accessibilityLabel="Search action titles"
+      />
 
       <View style={styles.filterRow}>
         <Pressable
@@ -260,25 +266,43 @@ export function PriorityScreen({
           onPress={() => setWindowPickerOpen(true)}
         >
           <Text style={styles.filterChipText}>
-            {windowFilter === 'week' ? 'This week' : 'All time'} ▾
+            {
+              {
+                THIS_WEEK: 'This week',
+                TODAY: 'Today',
+                NEXT_7_DAYS: 'Next 7 days',
+                OVERDUE: 'Overdue',
+                UNSCHEDULED: 'Unscheduled',
+                ALL: 'All time',
+              }[filters.window]
+            }{' '}
+            ▾
           </Text>
         </Pressable>
         <Pressable
           style={[
             styles.filterChip,
-            (quadrantFilter || filterOpen) && styles.filterChipActive,
+            (activeFilterCount > 0 || filterOpen) && styles.filterChipActive,
           ]}
           onPress={() => setFilterOpen(true)}
         >
           <Text
             style={[
               styles.filterChipText,
-              (quadrantFilter || filterOpen) && styles.filterChipTextActive,
+              (activeFilterCount > 0 || filterOpen) && styles.filterChipTextActive,
             ]}
           >
-            Filters
+            Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
           </Text>
         </Pressable>
+        {activeFilterCount ? (
+          <Pressable
+            style={styles.clearChip}
+            onPress={() => onFiltersChange(resetPriorityFilters())}
+          >
+            <Text style={styles.clearChipText}>Clear</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.capacityCard}>
@@ -508,7 +532,7 @@ export function PriorityScreen({
             <Pressable
               style={styles.sheetRow}
               onPress={() => {
-                setAreaFilter('');
+                onFiltersChange({ ...filters, areaId: '', projectId: '' });
                 setAreaPickerOpen(false);
               }}
             >
@@ -519,7 +543,11 @@ export function PriorityScreen({
                 key={pillar.id}
                 style={styles.sheetRow}
                 onPress={() => {
-                  setAreaFilter(pillar.id);
+                  onFiltersChange({
+                    ...filters,
+                    areaId: pillar.id,
+                    projectId: '',
+                  });
                   setAreaPickerOpen(false);
                 }}
               >
@@ -546,15 +574,19 @@ export function PriorityScreen({
             <Text style={styles.sheetTitle}>Window</Text>
             {(
               [
-                ['week', 'This week'],
-                ['all', 'All time'],
+                ['THIS_WEEK', 'This week'],
+                ['TODAY', 'Today'],
+                ['NEXT_7_DAYS', 'Next 7 days'],
+                ['OVERDUE', 'Overdue'],
+                ['UNSCHEDULED', 'Unscheduled'],
+                ['ALL', 'All time'],
               ] as const
             ).map(([id, label]) => (
               <Pressable
                 key={id}
                 style={styles.sheetRow}
                 onPress={() => {
-                  setWindowFilter(id);
+                  onFiltersChange({ ...filters, window: id });
                   setWindowPickerOpen(false);
                 }}
               >
@@ -576,19 +608,123 @@ export function PriorityScreen({
             style={styles.modalDismiss}
             onPress={() => setFilterOpen(false)}
           />
-          <View style={styles.bottomSheet}>
+          <ScrollView
+            style={[styles.bottomSheet, { maxHeight: '88%' }]}
+            contentContainerStyle={{ gap: 10 }}
+          >
             <Text style={styles.sheetTitle}>Filters</Text>
             <Text style={styles.sheetHint}>Narrow actions on Priority.</Text>
+            <Text style={styles.micro}>Project</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipWrap}>
+                <Pressable
+                  style={[styles.chip, !filters.projectId && styles.chipActive]}
+                  onPress={() =>
+                    onFiltersChange({ ...filters, projectId: '' })
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      !filters.projectId && styles.chipTextActive,
+                    ]}
+                  >
+                    All
+                  </Text>
+                </Pressable>
+                {projects
+                  .filter(
+                    (project) =>
+                      !filters.areaId || project.parentId === filters.areaId,
+                  )
+                  .map((project) => (
+                    <Pressable
+                      key={project.id}
+                      style={[
+                        styles.chip,
+                        filters.projectId === project.id && styles.chipActive,
+                      ]}
+                      onPress={() =>
+                        onFiltersChange({
+                          ...filters,
+                          projectId: project.id,
+                        })
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          filters.projectId === project.id &&
+                            styles.chipTextActive,
+                        ]}
+                      >
+                        {project.title}
+                      </Text>
+                    </Pressable>
+                  ))}
+              </View>
+            </ScrollView>
+            <Text style={styles.micro}>Project priority</Text>
+            <View style={styles.chipWrap}>
+              {(['', 'HIGH', 'MEDIUM', 'LOW'] as const).map((priority) => (
+                <Pressable
+                  key={priority || 'any'}
+                  style={[
+                    styles.chip,
+                    filters.projectPriority === priority && styles.chipActive,
+                  ]}
+                  onPress={() =>
+                    onFiltersChange({ ...filters, projectPriority: priority })
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      filters.projectPriority === priority &&
+                        styles.chipTextActive,
+                    ]}
+                  >
+                    {priority || 'Any'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.micro}>Action status</Text>
+            <View style={styles.chipWrap}>
+              {(['OPEN', 'DONE', 'ANY'] as const).map((status) => (
+                <Pressable
+                  key={status}
+                  style={[
+                    styles.chip,
+                    filters.actionStatus === status && styles.chipActive,
+                  ]}
+                  onPress={() =>
+                    onFiltersChange({ ...filters, actionStatus: status })
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      filters.actionStatus === status && styles.chipTextActive,
+                    ]}
+                  >
+                    {status === 'ANY' ? 'Any' : status === 'DONE' ? 'Done' : 'Open'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
             <Text style={styles.micro}>Quadrant</Text>
             <View style={styles.chipWrap}>
               <Pressable
-                style={[styles.chip, !quadrantFilter && styles.chipActive]}
-                onPress={() => setQuadrantFilter('')}
+                style={[styles.chip, !filters.quadrant && styles.chipActive]}
+                onPress={() =>
+                  onFiltersChange({ ...filters, quadrant: '' })
+                }
               >
                 <Text
                   style={[
                     styles.chipText,
-                    !quadrantFilter && styles.chipTextActive,
+                    !filters.quadrant && styles.chipTextActive,
                   ]}
                 >
                   Any
@@ -599,14 +735,16 @@ export function PriorityScreen({
                   key={id}
                   style={[
                     styles.chip,
-                    quadrantFilter === id && styles.chipActive,
+                    filters.quadrant === id && styles.chipActive,
                   ]}
-                  onPress={() => setQuadrantFilter(id)}
+                  onPress={() =>
+                    onFiltersChange({ ...filters, quadrant: id })
+                  }
                 >
                   <Text
                     style={[
                       styles.chipText,
-                      quadrantFilter === id && styles.chipTextActive,
+                      filters.quadrant === id && styles.chipTextActive,
                     ]}
                   >
                     {PRIORITY_QUADRANT_META[id].label}
@@ -614,13 +752,23 @@ export function PriorityScreen({
                 </Pressable>
               ))}
             </View>
-            <Pressable
-              style={styles.primaryBtn}
-              onPress={() => setFilterOpen(false)}
-            >
-              <Text style={styles.primaryBtnText}>Apply</Text>
-            </Pressable>
-          </View>
+            <View style={styles.dateModalActions}>
+              <Pressable
+                style={[styles.dateModalBtn, styles.dateModalBtnSecondary]}
+                onPress={() => onFiltersChange(resetPriorityFilters())}
+              >
+                <Text style={styles.dateModalBtnSecondaryText}>Reset</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.dateModalBtn, styles.dateModalBtnPrimary]}
+                onPress={() => setFilterOpen(false)}
+              >
+                <Text style={styles.dateModalBtnPrimaryText}>
+                  Apply · {filteredActions.length}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -810,6 +958,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   matrixBtnText: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: colors.ink,
+    fontSize: 14,
+  },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   filterChip: {
     borderWidth: 1,
@@ -823,6 +981,8 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: colors.sageDeep, borderColor: colors.sageDeep },
   filterChipText: { fontSize: 12, fontWeight: '700', color: colors.ink },
   filterChipTextActive: { color: '#fff' },
+  clearChip: { paddingHorizontal: 10, paddingVertical: 8 },
+  clearChipText: { color: colors.muted, fontWeight: '700', fontSize: 12 },
   capacityCard: {
     backgroundColor: colors.paper,
     borderRadius: 18,

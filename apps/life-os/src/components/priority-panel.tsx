@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  DEFAULT_PRIORITY_FILTERS,
+  filterPriorityActions,
+  resetPriorityFilters,
+  type PriorityFilters,
+} from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
@@ -48,12 +54,6 @@ function str(item: LifeItem, key: string, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
-function isThisWeek(action: LifeItem) {
-  const day = str(action, "day");
-  if (!day) return true;
-  return day !== "Later" && day !== "Someday";
-}
-
 type DateEditState = {
   action: LifeItem;
   draft: string;
@@ -63,7 +63,7 @@ type DateEditState = {
 type Props = {
   pillars: LifeItem[];
   projects: LifeItem[];
-  openActions: LifeItem[];
+  actions: LifeItem[];
   availableHours: number;
   busy: boolean;
   onMoveAction: (action: LifeItem, quadrant: PriorityQuadrant) => void;
@@ -133,7 +133,7 @@ function Sheet({
 export function PriorityPanel({
   pillars,
   projects,
-  openActions,
+  actions,
   availableHours,
   busy,
   onMoveAction,
@@ -147,12 +147,10 @@ export function PriorityPanel({
   const [view, setView] = useState<"list" | "matrix">(
     preferMatrix ? "matrix" : "list",
   );
-  const [areaFilter, setAreaFilter] = useState("");
-  const [windowFilter, setWindowFilter] = useState<"week" | "all">("week");
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [quadrantFilter, setQuadrantFilter] = useState<PriorityQuadrant | "">(
-    "",
+  const [filters, setFilters] = useState<PriorityFilters>(() =>
+    resetPriorityFilters(),
   );
+  const [filterOpen, setFilterOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<PriorityQuadrant, boolean>>({
     DO_FIRST: true,
     SCHEDULE: true,
@@ -162,7 +160,6 @@ export function PriorityPanel({
   const [tipDismissed, setTipDismissed] = useState(false);
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
   const [dateEdit, setDateEdit] = useState<DateEditState | null>(null);
-  const [retainedDone, setRetainedDone] = useState<LifeItem[]>([]);
 
   function openScheduleDateEditor(
     action: LifeItem,
@@ -185,13 +182,6 @@ export function PriorityPanel({
       openScheduleDateEditor(action, { completeAfter: true });
       return;
     }
-    setRetainedDone((prev) =>
-      action.status !== "DONE"
-        ? prev.some((row) => row.id === action.id)
-          ? prev
-          : [...prev, action]
-        : prev.filter((row) => row.id !== action.id),
-    );
     onCompleteAction(action);
   }
 
@@ -202,9 +192,6 @@ export function PriorityPanel({
     onSetScheduledDate(action, draft);
     setDateEdit(null);
     if (completeAfter) {
-      setRetainedDone((prev) =>
-        prev.some((row) => row.id === action.id) ? prev : [...prev, action],
-      );
       onCompleteAction(action);
     }
   }
@@ -221,46 +208,23 @@ export function PriorityPanel({
     if (preferMatrix) setView("matrix");
   }, [preferMatrix]);
 
-  useEffect(() => {
-    const openIds = new Set(openActions.map((action) => action.id));
-    setRetainedDone((prev) =>
-      prev.filter((action) => !openIds.has(action.id)),
-    );
-  }, [openActions]);
-
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
 
   const filteredActions = useMemo(() => {
-    const matches = (action: LifeItem) => {
-      const project = projectById.get(action.parentId ?? "");
-      if (areaFilter && project?.parentId !== areaFilter) return false;
-      if (windowFilter === "week" && !isThisWeek(action)) return false;
-      if (quadrantFilter) {
-        const q = actionPriorityQuadrant(action.body, project?.body);
-        if (q !== quadrantFilter) return false;
-      }
-      return true;
-    };
-    const openFiltered = openActions.filter(matches);
-    const doneFiltered = retainedDone.filter(
-      (action) =>
-        matches(action) && !openFiltered.some((open) => open.id === action.id),
-    );
-    return [...openFiltered, ...doneFiltered.map((action) => ({
-      ...action,
-      status: "DONE" as const,
-    }))];
-  }, [
-    openActions,
-    retainedDone,
-    areaFilter,
-    windowFilter,
-    quadrantFilter,
-    projectById,
-  ]);
+    return filterPriorityActions(actions, projects, filters);
+  }, [actions, projects, filters]);
+
+  const activeFilterCount = useMemo(
+    () =>
+      Object.entries(filters).filter(
+        ([key, value]) =>
+          value !== DEFAULT_PRIORITY_FILTERS[key as keyof PriorityFilters],
+      ).length,
+    [filters],
+  );
 
   const plannedHours = filteredActions
     .filter((action) => action.status !== "DONE")
@@ -323,33 +287,6 @@ export function PriorityPanel({
     setExpanded((current) => ({ ...current, [q]: !current[q] }));
   }
 
-  if (view === "matrix") {
-    return (
-      <section className="space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <button
-            type="button"
-            className="text-sm font-bold text-[#617a57]"
-            onClick={() => setView("list")}
-          >
-            <span className="inline-flex items-center gap-1">
-              <LifeIcon name="chevron-left" size={14} />
-              Priority
-            </span>
-          </button>
-        </div>
-        <PriorityMatrixPanel
-          actions={openActions}
-          projects={projects}
-          areas={pillars}
-          busy={busy}
-          onMove={onMoveAction}
-          onViewList={() => setView("list")}
-        />
-      </section>
-    );
-  }
-
   return (
     <section className="space-y-4">
       <header className="flex items-start justify-between gap-3">
@@ -362,17 +299,32 @@ export function PriorityPanel({
         <button
           type="button"
           className="shrink-0 rounded-full border border-[#dde2dd] bg-white px-3.5 py-2 text-xs font-bold text-[#14241f]"
-          onClick={() => setView("matrix")}
+          onClick={() => setView((current) => (current === "list" ? "matrix" : "list"))}
         >
-          Matrix
+          {view === "list" ? "Matrix" : "List"}
         </button>
       </header>
 
       <div className="flex flex-wrap gap-2">
+        <input
+          className="min-w-[12rem] flex-1 rounded-full border border-[#dde2dd] bg-white px-4 py-2 text-sm"
+          placeholder="Search action titles"
+          value={filters.query}
+          onChange={(event) =>
+            setFilters((current) => ({ ...current, query: event.target.value }))
+          }
+          aria-label="Search action titles"
+        />
         <select
           className="max-w-[42%] truncate rounded-full border border-[#dde2dd] bg-white px-3 py-1.5 text-xs font-bold"
-          value={areaFilter}
-          onChange={(event) => setAreaFilter(event.target.value)}
+          value={filters.areaId}
+          onChange={(event) =>
+            setFilters((current) => ({
+              ...current,
+              areaId: event.target.value,
+              projectId: "",
+            }))
+          }
           aria-label="Filter by area"
         >
           <option value="">All areas</option>
@@ -384,29 +336,55 @@ export function PriorityPanel({
         </select>
         <select
           className="rounded-full border border-[#dde2dd] bg-white px-3 py-1.5 text-xs font-bold"
-          value={windowFilter}
+          value={filters.window}
           onChange={(event) =>
-            setWindowFilter(event.target.value === "all" ? "all" : "week")
+            setFilters((current) => ({
+              ...current,
+              window: event.target.value as PriorityFilters["window"],
+            }))
           }
           aria-label="Time window"
         >
-          <option value="week">This week</option>
-          <option value="all">All time</option>
+          <option value="THIS_WEEK">This week</option>
+          <option value="TODAY">Today</option>
+          <option value="NEXT_7_DAYS">Next 7 days</option>
+          <option value="OVERDUE">Overdue</option>
+          <option value="UNSCHEDULED">Unscheduled</option>
+          <option value="ALL">All time</option>
         </select>
         <button
           type="button"
           className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-            quadrantFilter || filterOpen
+            activeFilterCount || filterOpen
               ? "bg-[#617a57] text-white"
               : "border border-[#dde2dd] bg-white text-[#14241f]"
           }`}
           onClick={() => setFilterOpen(true)}
         >
-          Filters
+          Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
         </button>
+        {activeFilterCount ? (
+          <button
+            type="button"
+            className="rounded-full px-3 py-1.5 text-xs font-bold text-[#6c7771]"
+            onClick={() => setFilters(resetPriorityFilters())}
+          >
+            Clear
+          </button>
+        ) : null}
       </div>
 
-      <article className="overflow-hidden rounded-2xl border border-[#dde2dd] bg-white p-4">
+      {view === "matrix" ? (
+        <PriorityMatrixPanel
+          actions={filteredActions}
+          projects={projects}
+          busy={busy}
+          onMove={onMoveAction}
+          onViewList={() => setView("list")}
+        />
+      ) : null}
+
+      {view === "list" ? <article className="overflow-hidden rounded-2xl border border-[#dde2dd] bg-white p-4">
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="min-w-0">
             <p className="truncate font-serif text-2xl text-[#14241f]">
@@ -450,9 +428,9 @@ export function PriorityPanel({
             />
           </button>
         ) : null}
-      </article>
+      </article> : null}
 
-      <div className="space-y-3">
+      {view === "list" ? <div className="space-y-3">
         {PRIORITY_MATRIX_ORDER.map((quadrant) => {
           const copy = ACCORDION_COPY[quadrant];
           const actions = byQuadrant[quadrant];
@@ -612,9 +590,9 @@ export function PriorityPanel({
             </article>
           );
         })}
-      </div>
+      </div> : null}
 
-      {!tipDismissed ? (
+      {view === "list" && !tipDismissed ? (
         <article className="relative overflow-hidden rounded-2xl border border-[#c9d6c4] bg-[#eef3ea] p-4 pr-10">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
             Tip
@@ -640,6 +618,81 @@ export function PriorityPanel({
           subtitle="Narrow actions on Priority."
           onClose={() => setFilterOpen(false)}
         >
+          <label className="mb-4 block space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+              Project
+            </span>
+            <select
+              className="w-full rounded-xl border border-[#dde2dd] bg-white px-3 py-3"
+              value={filters.projectId}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  projectId: event.target.value,
+                }))
+              }
+            >
+              <option value="">All projects</option>
+              {projects
+                .filter(
+                  (project) =>
+                    !filters.areaId || project.parentId === filters.areaId,
+                )
+                .map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.title}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+            Project priority
+          </p>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(["", "HIGH", "MEDIUM", "LOW"] as const).map((priority) => (
+              <button
+                key={priority || "any"}
+                type="button"
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                  filters.projectPriority === priority
+                    ? "bg-[#14241f] text-[#f4f5f0]"
+                    : "border border-[#dde2dd] bg-white"
+                }`}
+                onClick={() =>
+                  setFilters((current) => ({
+                    ...current,
+                    projectPriority: priority,
+                  }))
+                }
+              >
+                {priority || "Any"}
+              </button>
+            ))}
+          </div>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+            Action status
+          </p>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(["OPEN", "DONE", "ANY"] as const).map((status) => (
+              <button
+                key={status}
+                type="button"
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                  filters.actionStatus === status
+                    ? "bg-[#14241f] text-[#f4f5f0]"
+                    : "border border-[#dde2dd] bg-white"
+                }`}
+                onClick={() =>
+                  setFilters((current) => ({
+                    ...current,
+                    actionStatus: status,
+                  }))
+                }
+              >
+                {status === "ANY" ? "Any" : status === "DONE" ? "Done" : "Open"}
+              </button>
+            ))}
+          </div>
           <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
             Quadrant
           </p>
@@ -647,11 +700,13 @@ export function PriorityPanel({
             <button
               type="button"
               className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                !quadrantFilter
+                !filters.quadrant
                   ? "bg-[#14241f] text-[#f4f5f0]"
                   : "border border-[#dde2dd] bg-white"
               }`}
-              onClick={() => setQuadrantFilter("")}
+              onClick={() =>
+                setFilters((current) => ({ ...current, quadrant: "" }))
+              }
             >
               Any
             </button>
@@ -660,23 +715,34 @@ export function PriorityPanel({
                 key={id}
                 type="button"
                 className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                  quadrantFilter === id
+                  filters.quadrant === id
                     ? "bg-[#14241f] text-[#f4f5f0]"
                     : "border border-[#dde2dd] bg-white"
                 }`}
-                onClick={() => setQuadrantFilter(id)}
+                onClick={() =>
+                  setFilters((current) => ({ ...current, quadrant: id }))
+                }
               >
                 {PRIORITY_QUADRANT_META[id].label}
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="w-full rounded-xl bg-[#14241f] px-4 py-2.5 text-xs font-bold text-[#f4f5f0]"
-            onClick={() => setFilterOpen(false)}
-          >
-            Apply
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-[#dde2dd] bg-white px-4 py-2.5 text-xs font-bold"
+              onClick={() => setFilters(resetPriorityFilters())}
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              className="flex-1 rounded-xl bg-[#14241f] px-4 py-2.5 text-xs font-bold text-[#f4f5f0]"
+              onClick={() => setFilterOpen(false)}
+            >
+              Apply · {filteredActions.length}
+            </button>
+          </div>
         </Sheet>
       ) : null}
 

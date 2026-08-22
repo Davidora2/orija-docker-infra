@@ -29,6 +29,17 @@ export const SUGGESTED_LIFE_AREAS = [
   { title: 'Adventure', icon: 'airplane-outline' },
 ] as const;
 
+const onboardingStepSchema = z.enum([
+  'welcome',
+  'areas',
+  'capacity',
+  'ideas',
+  'project',
+  'action',
+  'payoff',
+  'deferred',
+]);
+
 const DEFAULT_BUDGET_CATEGORIES = [
   'Housing',
   'Food',
@@ -176,6 +187,22 @@ export function registerOnboardingAndBudgetRoutes(
     return { suggestions: SUGGESTED_LIFE_AREAS };
   });
 
+  app.patch(
+    '/v1/onboarding/progress',
+    { preHandler: auth.authenticate },
+    async (request) => {
+      const userId = (request as { authUser: AuthUser }).authUser.id;
+      const body = z.object({ step: onboardingStepSchema }).parse(request.body);
+      await sql`
+        UPDATE users
+        SET onboarding_step = ${body.step}, updated_at = now()
+        WHERE id = ${userId}
+          AND onboarding_completed_at IS NULL
+      `;
+      return helpers.getAccountPayload(sql, userId);
+    },
+  );
+
   app.post(
     '/v1/onboarding/complete',
     { preHandler: auth.authenticate },
@@ -198,6 +225,8 @@ export function registerOnboardingAndBudgetRoutes(
             .toUpperCase()
             .regex(/^[A-Z]{3}$/)
             .optional(),
+          complete: z.boolean().optional().default(true),
+          nextStep: onboardingStepSchema.optional(),
         })
         .parse(request.body);
 
@@ -254,7 +283,14 @@ export function registerOnboardingAndBudgetRoutes(
         await tx`
           UPDATE users
           SET
-            onboarding_completed_at = now(),
+            onboarding_completed_at = CASE
+              WHEN ${body.complete} THEN now()
+              ELSE onboarding_completed_at
+            END,
+            onboarding_step = CASE
+              WHEN ${body.complete} THEN NULL
+              ELSE ${body.nextStep ?? 'capacity'}
+            END,
             preferred_currency = COALESCE(${body.preferredCurrency ?? null}, preferred_currency),
             updated_at = now()
           WHERE id = ${userId}

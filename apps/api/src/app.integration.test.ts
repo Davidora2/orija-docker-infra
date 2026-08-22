@@ -285,6 +285,84 @@ suite('account and couple household API', () => {
     expect(replay.json<{ error: string }>().error).toBe('invalid_refresh_token');
   });
 
+  it('persists resumable onboarding progress without completing early', async () => {
+    const user = await register('onboarding-progress@example.com', 'Progress User');
+    const initial = user.account as {
+      user: {
+        onboardingCompletedAt: string | null;
+        onboardingStep: string | null;
+      };
+    };
+    expect(initial.user.onboardingCompletedAt).toBeNull();
+    expect(initial.user.onboardingStep).toBe('welcome');
+
+    const progress = await app.inject({
+      method: 'PATCH',
+      url: '/v1/onboarding/progress',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { step: 'areas' },
+    });
+    expect(progress.statusCode).toBe(200);
+    expect(
+      progress.json<{ user: { onboardingStep: string } }>().user.onboardingStep,
+    ).toBe('areas');
+
+    const areas = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Health', icon: 'fitness-outline' }],
+        preferredCurrency: 'GBP',
+        complete: false,
+        nextStep: 'capacity',
+      },
+    });
+    expect(areas.statusCode).toBe(200);
+    expect(
+      areas.json<{
+        user: {
+          onboardingCompletedAt: string | null;
+          onboardingStep: string | null;
+        };
+      }>().user,
+    ).toMatchObject({
+      onboardingCompletedAt: null,
+      onboardingStep: 'capacity',
+    });
+
+    const complete = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/complete',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        areas: [{ title: 'Health', icon: 'fitness-outline' }],
+        complete: true,
+      },
+    });
+    expect(complete.statusCode).toBe(200);
+    const completedUser = complete.json<{
+      user: {
+        onboardingCompletedAt: string | null;
+        onboardingStep: string | null;
+      };
+    }>().user;
+    expect(completedUser.onboardingCompletedAt).toBeTruthy();
+    expect(completedUser.onboardingStep).toBeNull();
+
+    const ignored = await app.inject({
+      method: 'PATCH',
+      url: '/v1/onboarding/progress',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { step: 'ideas' },
+    });
+    expect(ignored.statusCode).toBe(200);
+    expect(
+      ignored.json<{ user: { onboardingStep: string | null } }>().user
+        .onboardingStep,
+    ).toBeNull();
+  });
+
   it('completes onboarding areas and supports personal + shared budgets', async () => {
     const owner = await register('budget-owner@example.com', 'Budget Owner');
     const partner = await register('budget-partner@example.com', 'Budget Partner');
@@ -1296,6 +1374,78 @@ suite('account and couple household API', () => {
     );
   });
 
+  it('projects saving-goal target dates as calendar milestones with deep links', async () => {
+    const user = await register('saving-milestone@example.com', 'Saving Milestone');
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/saving-goals',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Studio deposit',
+        category: 'house_deposit',
+        targetCents: 450_000,
+        currentCents: 125_000,
+        targetDate: '2027-02-14',
+        visibility: 'PRIVATE',
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const goal = created.json<{ id: string }>();
+
+    const calendar = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=2&types=milestone',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(calendar.statusCode).toBe(200);
+    const payload = calendar.json<{
+      events: {
+        id: string;
+        type: string;
+        date: string;
+        title: string;
+        amountCents: number | null;
+        source: string;
+        meta: {
+          savingGoalId?: string;
+          targetDate?: string;
+          deepLink?: { mobile: string; web: string };
+        };
+      }[];
+      counts: { milestones: number };
+    }>();
+    const milestone = payload.events.find(
+      (event) => event.id === `milestone:saving-goal:${goal.id}`,
+    );
+    expect(milestone).toMatchObject({
+      type: 'milestone',
+      date: '2027-02-14',
+      title: 'Saving target · Studio deposit',
+      amountCents: 450_000,
+      source: 'saving_goal',
+      meta: {
+        savingGoalId: goal.id,
+        targetDate: '2027-02-14',
+      },
+    });
+    expect(milestone?.meta.deepLink).toEqual({
+      mobile: `lifeos://money/wealth/savings/${goal.id}`,
+      web: `/?tab=money&money=wealth&savingGoalId=${goal.id}`,
+    });
+    expect(payload.counts.milestones).toBeGreaterThanOrEqual(1);
+
+    const tasksOnly = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=2&types=task',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(
+      tasksOnly
+        .json<{ events: { source: string }[] }>()
+        .events.some((event) => event.source === 'saving_goal'),
+    ).toBe(false);
+  });
+
   it('shows dated Schedule actions on Calendar', async () => {
     const user = await register('schedule-calendar@example.com', 'Schedule Calendar');
     const created = await app.inject({
@@ -1332,5 +1482,52 @@ suite('account and couple household API', () => {
       date: '2027-01-14',
       title: 'Prepare quarterly plan',
     });
+  });
+
+  it('persists primary move on profile while calendar tasks stay scheduled', async () => {
+    const user = await register('primary-move@example.com', 'Primary Move');
+    const action = await app.inject({
+      method: 'POST',
+      url: '/v1/items',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        kind: 'ACTION',
+        title: 'Ship integration branch',
+        body: {
+          day: 'Today',
+          importance: 'HIGH',
+          urgency: 'HIGH',
+          scheduledDate: '2027-03-01',
+        },
+      },
+    });
+    expect(action.statusCode).toBe(201);
+    const actionId = action.json<{ id: string }>().id;
+
+    const profile = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: { body: { primaryMoveActionId: actionId } },
+    });
+    expect(profile.statusCode).toBe(200);
+    expect(
+      profile.json<{ user: { body: { primaryMoveActionId: string } } }>().user
+        .body.primaryMoveActionId,
+    ).toBe(actionId);
+
+    const calendar = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=3&types=task',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(calendar.statusCode).toBe(200);
+    expect(
+      calendar
+        .json<{ events: { id: string; date: string }[] }>()
+        .events.some(
+          (event) => event.id === `task:${actionId}` && event.date === '2027-03-01',
+        ),
+    ).toBe(true);
   });
 });

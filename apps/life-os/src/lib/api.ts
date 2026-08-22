@@ -3,6 +3,16 @@ export const apiBaseUrl =
 
 const sessionKey = "life-os-web-session";
 
+export type OnboardingStep =
+  | "welcome"
+  | "areas"
+  | "capacity"
+  | "ideas"
+  | "project"
+  | "action"
+  | "payoff"
+  | "deferred";
+
 export type AccountUser = {
   id: string;
   email: string;
@@ -12,6 +22,10 @@ export type AccountUser = {
   preferredCurrency: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: string | null;
+  onboardingStep: OnboardingStep | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 };
 
 export type Account = {
@@ -55,6 +69,38 @@ export type LifeItem = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WeeklyReview = {
+  id: string;
+  schemaVersion: 1;
+  userId: string;
+  householdId: string;
+  weekStart: string;
+  results: {
+    completedActions: number;
+    totalActions: number;
+    completionRate: number;
+    highlights: string;
+  };
+  capacity: { plannedHours: number; availableHours: number };
+  bottlenecks: string;
+  startDoing: string;
+  stopDoing: string;
+  continueDoing: string;
+  nextWeekPriorities: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WeeklyReviewInput = Omit<
+  WeeklyReview,
+  "id" | "userId" | "createdAt" | "updatedAt"
+>;
+
+export type NotificationPreferences = {
+  emailRemindersEnabled: boolean;
+  deliveryChannels: ["email"];
 };
 
 export class ApiError extends Error {
@@ -388,6 +434,78 @@ export async function getAccount(): Promise<Account | null> {
   return request<Account>("/v1/me");
 }
 
+export async function createPartnerInvite(invitedEmail?: string): Promise<{
+  token: string;
+  deepLink: string;
+  webUrl: string;
+  expiresAt: string;
+}> {
+  return request("/v1/households/invites", {
+    method: "POST",
+    body: JSON.stringify({ invitedEmail: invitedEmail || undefined }),
+  });
+}
+
+export async function setActiveHousehold(householdId: string): Promise<Account> {
+  return request("/v1/households/active", {
+    method: "PATCH",
+    body: JSON.stringify({ householdId }),
+  });
+}
+
+export async function listWeeklyReviews(): Promise<WeeklyReview[]> {
+  return request("/v1/weekly-reviews");
+}
+
+export async function getWeeklyReview(id: string): Promise<WeeklyReview> {
+  return request(`/v1/weekly-reviews/${id}`);
+}
+
+export async function saveWeeklyReview(
+  input: WeeklyReviewInput,
+): Promise<WeeklyReview> {
+  return request("/v1/weekly-reviews", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  return request("/v1/me/preferences");
+}
+
+export async function updateNotificationPreferences(
+  emailRemindersEnabled: boolean,
+): Promise<NotificationPreferences> {
+  return request("/v1/me/preferences", {
+    method: "PATCH",
+    body: JSON.stringify({ emailRemindersEnabled }),
+  });
+}
+
+export async function getDataExport(): Promise<Record<string, unknown>> {
+  return request("/v1/me/export");
+}
+
+export async function requestDeletionCode(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  return request("/v1/me/deletion-code", { method: "POST" });
+}
+
+export async function deleteAccount(input: {
+  confirmation: string;
+  currentPassword?: string;
+  verificationCode?: string;
+}): Promise<void> {
+  await request("/v1/me", {
+    method: "DELETE",
+    body: JSON.stringify(input),
+  });
+  saveSession(null);
+}
+
 export async function listLifeItems(): Promise<LifeItem[]> {
   const rows = await request<Record<string, unknown>[]>("/v1/items");
   return rows.map(mapItem);
@@ -479,10 +597,23 @@ export async function listAreaSuggestions(): Promise<AreaSuggestion[]> {
 export async function completeOnboarding(
   areas: { title: string; icon?: string }[],
   preferredCurrency?: string,
+  options?: {
+    complete?: boolean;
+    nextStep?: OnboardingStep;
+  },
 ): Promise<Account> {
   return request<Account>("/v1/onboarding/complete", {
     method: "POST",
-    body: JSON.stringify({ areas, preferredCurrency }),
+    body: JSON.stringify({ areas, preferredCurrency, ...options }),
+  });
+}
+
+export async function updateOnboardingStep(
+  step: OnboardingStep,
+): Promise<Account> {
+  return request<Account>("/v1/onboarding/progress", {
+    method: "PATCH",
+    body: JSON.stringify({ step }),
   });
 }
 
@@ -491,6 +622,9 @@ export async function updateProfile(input: {
   timezone?: string;
   preferredCurrency?: string;
   avatarUrl?: string | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 }): Promise<Account> {
   return request<Account>("/v1/me", {
     method: "PATCH",

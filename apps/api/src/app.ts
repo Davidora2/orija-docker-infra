@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
+import { registerAccountPrivacyRoutes } from './account-privacy.js';
 import { createAuth } from './auth.js';
 import { issueEmailVerificationCode, registerAuthExtras } from './auth-extras.js';
 import { registerCalendarRoutes } from './calendar.js';
@@ -14,16 +15,19 @@ import {
 import type { AppConfig } from './config.js';
 import { createDatabase, type Database } from './db.js';
 import { ApiError } from './errors.js';
+import { lifeItemBodySchema } from './life-notes.js';
 import { createMailer } from './mailer.js';
 import { runMigrations } from './migrations.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
 import { registerWealthRoutes } from './wealth.js';
+import { registerWeeklyReviewRoutes } from './weekly-reviews.js';
 import {
   createOpaqueToken,
   hashPassword,
   hashToken,
   verifyPassword,
 } from './security.js';
+import { profileBodySchema, publicProfileBody } from './user-profile.js';
 import { normalizeProjectDeadlineBody } from './priority-matrix.js';
 import {
   actionBodyAfterMoveToIdea,
@@ -59,6 +63,7 @@ const profileSchema = z
       .toUpperCase()
       .regex(/^[A-Z]{3}$/)
       .optional(),
+    body: profileBodySchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
 
@@ -108,13 +113,18 @@ const itemKind = z.enum([
   'DECISION',
 ]);
 
+const itemBodySchema = z.intersection(
+  z.record(z.string(), jsonValueSchema),
+  lifeItemBodySchema,
+);
+
 const createItemSchema = z.object({
   kind: itemKind,
   title: z.string().trim().min(1).max(240),
   status: z.string().trim().min(1).max(50).default('ACTIVE'),
   visibility: z.enum(['PRIVATE', 'SHARED']).default('PRIVATE'),
   parentId: z.string().uuid().nullable().optional(),
-  body: z.record(z.string(), jsonValueSchema).default({}),
+  body: itemBodySchema.default({}),
   sortOrder: z.number().int().default(0),
 });
 
@@ -124,7 +134,7 @@ const updateItemSchema = z
     status: z.string().trim().min(1).max(50).optional(),
     visibility: z.enum(['PRIVATE', 'SHARED']).optional(),
     parentId: z.string().uuid().nullable().optional(),
-    body: z.record(z.string(), jsonValueSchema).optional(),
+    body: itemBodySchema.optional(),
     sortOrder: z.number().int().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
@@ -139,6 +149,8 @@ type UserRow = {
   preferredCurrency?: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
+  onboardingStep?: string | null;
+  profileBody: Record<string, unknown>;
   googleSub?: string | null;
   createdAt: Date;
 };
@@ -166,6 +178,8 @@ function publicUser(user: {
   preferredCurrency?: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: Date | null;
+  onboardingStep?: string | null;
+  profileBody?: Record<string, unknown>;
   createdAt: Date;
 }) {
   return {
@@ -177,6 +191,10 @@ function publicUser(user: {
     preferredCurrency: user.preferredCurrency ?? 'GBP',
     activeHouseholdId: user.activeHouseholdId,
     onboardingCompletedAt: user.onboardingCompletedAt,
+    onboardingStep:
+      user.onboardingStep ??
+      (user.onboardingCompletedAt ? null : 'welcome'),
+    body: publicProfileBody(user.profileBody),
     createdAt: user.createdAt,
   };
 }
@@ -185,7 +203,8 @@ async function getUser(sql: Database, userId: string): Promise<UserRow> {
   const [user] = await sql<UserRow[]>`
     SELECT
       id, email, password_hash, display_name, avatar_url, timezone,
-      preferred_currency, active_household_id, onboarding_completed_at, created_at
+      preferred_currency, active_household_id, onboarding_completed_at,
+      onboarding_step, profile_body, created_at
     FROM users
     WHERE id = ${userId}
   `;
@@ -503,6 +522,28 @@ export async function buildApp(
   app.patch('/v1/me', { preHandler: auth.authenticate }, async (request) => {
     const body = profileSchema.parse(request.body);
     const avatarProvided = body.avatarUrl !== undefined;
+    let profileBodyValue: Record<string, unknown> | null = null;
+    if (body.body) {
+      const user = await getUser(sql, request.authUser.id);
+      const merged = { ...user.profileBody, ...body.body };
+      const parsed = profileBodySchema.parse(merged);
+      if (parsed.primaryMoveActionId) {
+        const [action] = await sql<{ id: string }[]>`
+          SELECT id FROM life_items
+          WHERE id = ${parsed.primaryMoveActionId}
+            AND owner_user_id = ${request.authUser.id}
+            AND kind = 'ACTION'
+        `;
+        if (!action) {
+          throw new ApiError(
+            400,
+            'invalid_primary_move',
+            'Primary move must reference one of your actions.',
+          );
+        }
+      }
+      profileBodyValue = parsed;
+    }
     await sql`
       UPDATE users SET
         display_name = COALESCE(${body.displayName ?? null}, display_name),
@@ -512,6 +553,7 @@ export async function buildApp(
           WHEN ${avatarProvided} THEN ${body.avatarUrl ?? null}
           ELSE avatar_url
         END,
+        profile_body = COALESCE(${profileBodyValue ? sql.json(profileBodyValue as JsonValue) : null}, profile_body),
         updated_at = now()
       WHERE id = ${request.authUser.id}
     `;
@@ -1029,6 +1071,8 @@ export async function buildApp(
   });
   registerCalendarRoutes(app, sql, auth);
   registerCalendarSyncRoutes(app, sql, config, auth);
+  registerWeeklyReviewRoutes(app, sql, auth);
+  registerAccountPrivacyRoutes(app, sql, config, auth, mailer);
 
   app.post(
     '/v1/payments/reminders/run',
@@ -1041,14 +1085,23 @@ export async function buildApp(
           email: string;
           displayName: string;
           timezone: string;
+          emailRemindersEnabled: boolean;
         }[]
       >`
-        SELECT id, email, display_name, timezone
+        SELECT id, email, display_name, timezone, email_reminders_enabled
         FROM users
         WHERE id = ${userId}
       `;
       if (!user) {
         throw new ApiError(404, 'user_not_found', 'User not found.');
+      }
+      if (!user.emailRemindersEnabled) {
+        return {
+          sent: false,
+          itemCount: 0,
+          dueDate: new Date().toISOString().slice(0, 10),
+          optedOut: true,
+        };
       }
       return sendBillRemindersForUser(sql, mailer, user);
     },

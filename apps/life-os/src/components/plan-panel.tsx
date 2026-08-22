@@ -1,9 +1,19 @@
 "use client";
 
+import { areaHealth } from "@life-os/shared";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  ideaOverallScore,
+  ideaScoreNarrative,
+  type IdeaLifecycleAction,
+} from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
 import { CapacityRing } from "./capacity-ring";
+import { EditorialState } from "./editorial-state";
+import { EvaluationRadar } from "./evaluation-radar";
+import { LandscapeHero } from "./landscape-hero";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
+import { NotesEditor } from "./notes-editor";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import { PriorityPanel } from "./priority-panel";
 import {
@@ -79,6 +89,11 @@ type Props = {
   onIdeaNoteChange: (value: string) => void;
   onSaveIdea: () => void;
   onConvertIdea: (idea: LifeItem) => void;
+  onCancelIdeaConversion: () => void;
+  onIdeaLifecycle: (
+    idea: LifeItem,
+    action: Exclude<IdeaLifecycleAction, "CONVERT">,
+  ) => void;
   onEvaluateIdea: (
     idea: LifeItem,
     scores: {
@@ -136,6 +151,10 @@ type Props = {
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
   onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onSaveNotes: (
+    item: LifeItem,
+    body: Record<string, unknown>,
+  ) => Promise<LifeItem | void>;
   onRequestPlanSegment?: (segment: PlanSegment) => void;
   preferPriorityMatrix?: boolean;
 };
@@ -183,46 +202,6 @@ function LevelChips({
             {PRIORITY_LEVEL_META[level].title}
           </button>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function HillsHero() {
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-[#dde2dd] bg-gradient-to-br from-[#eef3ea] via-[#f7f5ef] to-[#e8eef6] px-5 py-6">
-      <svg
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full opacity-70"
-        viewBox="0 0 600 120"
-        preserveAspectRatio="none"
-      >
-        <path
-          d="M0 80 C120 40 180 100 300 70 C420 40 480 90 600 55 L600 120 L0 120 Z"
-          fill="#c9d6c4"
-        />
-        <path
-          d="M0 95 C140 70 220 110 340 85 C460 60 520 100 600 78 L600 120 L0 120 Z"
-          fill="#a8bfa0"
-        />
-        <path
-          d="M0 40 C80 20 110 55 160 35"
-          fill="none"
-          stroke="#617a57"
-          strokeWidth="3"
-          strokeLinecap="round"
-          opacity="0.55"
-        />
-      </svg>
-      <div className="relative max-w-xl space-y-2">
-        <h1 className="font-serif text-4xl text-[#14241f]">Plan</h1>
-        <p className="text-lg font-medium text-[#24362f]">
-          Decide what exists and what matters.
-        </p>
-        <p className="text-sm leading-relaxed text-[#6c7771]">
-          Shape Areas, commit Projects, and park Ideas until they earn a place
-          in the week — then let Today execute.
-        </p>
       </div>
     </div>
   );
@@ -334,7 +313,9 @@ export function PlanPanel(props: Props) {
   } = props;
 
   const [projectsView, setProjectsView] = useState<"list" | "matrix">("list");
-  const [ideasTab, setIdeasTab] = useState<"inbox" | "evaluated">("inbox");
+  const [ideasTab, setIdeasTab] = useState<"inbox" | "evaluated" | "parked">(
+    "inbox",
+  );
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
@@ -348,6 +329,7 @@ export function PlanPanel(props: Props) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [evaluateOpen, setEvaluateOpen] = useState(false);
   const [convertStep, setConvertStep] = useState<0 | 1 | 2 | 3>(0);
+  const [discardIdeaId, setDiscardIdeaId] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [filterAreaId, setFilterAreaId] = useState("");
@@ -395,11 +377,13 @@ export function PlanPanel(props: Props) {
   const inboxIdeas = allIdeas.filter(
     (idea) =>
       idea.status !== "EVALUATED" &&
+      idea.status !== "PARKED" &&
       idea.status !== "CONVERTED" &&
       idea.status !== "ARCHIVED" &&
       idea.status !== "DONE",
   );
   const evaluatedIdeas = allIdeas.filter((idea) => idea.status === "EVALUATED");
+  const parkedIdeas = allIdeas.filter((idea) => idea.status === "PARKED");
 
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
@@ -518,7 +502,12 @@ export function PlanPanel(props: Props) {
       <PriorityPanel
         pillars={pillars}
         projects={projects}
-        openActions={openActions}
+        actions={items.filter(
+          (item) =>
+            item.kind === "ACTION" &&
+            item.status !== "ARCHIVED" &&
+            item.status !== "CONVERTED",
+        )}
         availableHours={availableHours}
         busy={busy}
         onMoveAction={props.onMoveAction}
@@ -543,7 +532,10 @@ export function PlanPanel(props: Props) {
           <button
             type="button"
             className="text-sm font-bold text-[#617a57]"
-            onClick={() => setConvertStep(0)}
+            onClick={() => {
+              setConvertStep(0);
+              props.onCancelIdeaConversion();
+            }}
           >
             <span className="inline-flex items-center gap-1">
               <LifeIcon name="chevron-left" size={15} />
@@ -771,12 +763,7 @@ export function PlanPanel(props: Props) {
 
     if (selectedIdea) {
       const area = pillars.find((p) => p.id === selectedIdea.parentId);
-      const overall =
-        (num(selectedIdea, "impact", 0) +
-          num(selectedIdea, "alignment", 0) +
-          num(selectedIdea, "timing", 0) +
-          (10 - num(selectedIdea, "effort", 0))) /
-        4;
+      const overall = ideaOverallScore(selectedIdea.body);
       return (
         <section className="space-y-4">
           <button
@@ -801,15 +788,11 @@ export function PlanPanel(props: Props) {
               </p>
             </div>
           </div>
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-              Why this idea?
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-[#14241f]">
-              {str(selectedIdea, "note") ||
-                "Capture the spark. Clarify why it matters when you evaluate."}
-            </p>
-          </article>
+          <NotesEditor
+            item={selectedIdea}
+            label="Idea notes"
+            onSave={props.onSaveNotes}
+          />
           <div className="grid gap-2 sm:grid-cols-2">
             <button
               type="button"
@@ -836,13 +819,44 @@ export function PlanPanel(props: Props) {
             >
               Turn into project
             </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-sm font-bold"
+              disabled={busy || selectedIdea.status === "ACTIVE"}
+              onClick={() => props.onIdeaLifecycle(selectedIdea, "KEEP")}
+            >
+              Keep in inbox
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-sm font-bold"
+              disabled={busy || selectedIdea.status === "PARKED"}
+              onClick={() => props.onIdeaLifecycle(selectedIdea, "PARK")}
+            >
+              Park for later
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[#e7b7ad] bg-[#fdf4f1] px-4 py-3 text-sm font-bold text-[#c9634f]"
+              disabled={busy}
+              onClick={() => setDiscardIdeaId(selectedIdea.id)}
+            >
+              Discard…
+            </button>
           </div>
           <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm">
             {(
               [
                 ["Area", area?.title ?? "—"],
                 ["Related project", "—"],
-                ["Status", selectedIdea.status === "EVALUATED" ? "Evaluated" : "Inbox"],
+                [
+                  "Status",
+                  selectedIdea.status === "EVALUATED"
+                    ? "Evaluated"
+                    : selectedIdea.status === "PARKED"
+                      ? "Parked"
+                      : "Inbox",
+                ],
                 ["Captured", relativeTime(selectedIdea.createdAt)],
                 ["Notes", str(selectedIdea, "note") || "—"],
               ] as const
@@ -859,21 +873,28 @@ export function PlanPanel(props: Props) {
             ))}
           </article>
           {selectedIdea.status === "EVALUATED" ? (
-            <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-                Overall /10
-              </p>
-              <p className="mt-1 font-serif text-3xl">
-                {overall.toFixed(1)}
-              </p>
-              <p className="text-sm text-[#6c7771]">
-                {overall >= 7
-                  ? "Strong candidate — consider turning into a project."
-                  : overall >= 5
-                    ? "Promising — refine or park for later."
-                    : "Light signal — keep in inbox or discard."}
-              </p>
-            </article>
+            <>
+              <EvaluationRadar
+                label={`${selectedIdea.title} evaluation scores`}
+                scores={{
+                  impact: num(selectedIdea, "impact", 0),
+                  effort: num(selectedIdea, "effort", 0),
+                  alignment: num(selectedIdea, "alignment", 0),
+                  timing: num(selectedIdea, "timing", 0),
+                }}
+              />
+              <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                  Overall /10
+                </p>
+                <p className="mt-1 font-serif text-3xl">
+                  {overall.toFixed(1)}
+                </p>
+                <p className="text-sm text-[#6c7771]">
+                  {ideaScoreNarrative(overall)}
+                </p>
+              </article>
+            </>
           ) : null}
           <article className="rounded-2xl border border-[#dde2dd] bg-[#eef3ea] p-4 text-sm text-[#24362f]">
             Next step suggestions: define the outcome, pick an area, then write
@@ -909,20 +930,15 @@ export function PlanPanel(props: Props) {
                   />
                 </label>
               ))}
-              <div className="mb-4 rounded-2xl border border-[#dde2dd] bg-white p-4">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-                  Overall
-                </p>
-                <p className="font-serif text-3xl">
-                  {(
-                    (evalImpact + evalAlignment + evalTiming + (10 - evalEffort)) /
-                    4
-                  ).toFixed(1)}
-                  <span className="text-base text-[#6c7771]"> /10</span>
-                </p>
-                <p className="mt-1 text-sm text-[#6c7771]">
-                  Impact + Alignment + Timing − Effort, scaled to /10.
-                </p>
+              <div className="mb-4">
+                <EvaluationRadar
+                  scores={{
+                    impact: evalImpact,
+                    effort: evalEffort,
+                    alignment: evalAlignment,
+                    timing: evalTiming,
+                  }}
+                />
               </div>
               <textarea
                 className="mb-4 w-full rounded-xl border border-[#dde2dd] px-3 py-3"
@@ -969,14 +985,51 @@ export function PlanPanel(props: Props) {
               </div>
             </Sheet>
           ) : null}
+          {discardIdeaId === selectedIdea.id ? (
+            <Sheet
+              title="Discard idea?"
+              subtitle="Discard archives this idea. It is hidden from Plan but remains recoverable; nothing is permanently deleted."
+              onClose={() => setDiscardIdeaId(null)}
+            >
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-xl border border-[#dde2dd] bg-white px-4 py-3 text-xs font-bold"
+                  onClick={() => setDiscardIdeaId(null)}
+                >
+                  Keep idea
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-xl bg-[#c9634f] px-4 py-3 text-xs font-bold text-white"
+                  onClick={() => {
+                    props.onIdeaLifecycle(selectedIdea, "DISCARD");
+                    setDiscardIdeaId(null);
+                    setSelectedIdeaId(null);
+                  }}
+                >
+                  Archive idea
+                </button>
+              </div>
+            </Sheet>
+          ) : null}
         </section>
       );
     }
 
-    const list = ideasTab === "inbox" ? inboxIdeas : evaluatedIdeas;
+    const list =
+      ideasTab === "inbox"
+        ? inboxIdeas
+        : ideasTab === "evaluated"
+          ? evaluatedIdeas
+          : parkedIdeas;
     return (
       <section className="space-y-4">
-        <HillsHero />
+        <LandscapeHero
+          title="Ideas"
+          subtitle="Capture now. Clarify later."
+          detail="Give promising sparks room to breathe, then compare their Impact, Effort, Alignment, and Timing before committing."
+        />
         <div>
           <h2 className="font-serif text-3xl text-[#14241f]">Ideas</h2>
           <p className="text-sm text-[#6c7771]">Capture now. Clarify later.</p>
@@ -986,6 +1039,7 @@ export function PlanPanel(props: Props) {
             [
               ["inbox", `Inbox (${inboxIdeas.length})`],
               ["evaluated", `Evaluated (${evaluatedIdeas.length})`],
+              ["parked", `Parked (${parkedIdeas.length})`],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -1032,14 +1086,24 @@ export function PlanPanel(props: Props) {
         </div>
 
         {list.length === 0 ? (
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="font-serif text-xl text-[#14241f]">
-              {ideasTab === "inbox" ? "Inbox is clear" : "Nothing evaluated yet"}
-            </p>
-            <p className="mt-1 text-sm text-[#6c7771]">
-              Rough captures land here until you evaluate or convert them.
-            </p>
-          </article>
+          <EditorialState
+            kind="empty"
+            compact
+            title={
+              ideasTab === "inbox"
+                ? "Inbox is clear"
+                : ideasTab === "evaluated"
+                  ? "Nothing evaluated yet"
+                  : "Nothing parked"
+            }
+            description={
+              ideasTab === "inbox"
+                ? "Capture something rough. Evaluate winners when the signal is clear."
+                : ideasTab === "evaluated"
+                  ? "Score an idea from Inbox to compare its four dimensions here."
+                  : "Parked ideas stay out of the inbox until you keep or convert them."
+            }
+          />
         ) : (
           list.map((idea, index) => {
             const area = pillars.find((p) => p.id === idea.parentId);
@@ -1093,6 +1157,25 @@ export function PlanPanel(props: Props) {
                 >
                   To project
                 </button>
+                {ideasTab === "parked" ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-xl border border-[#dde2dd] px-3 py-2 text-[11px] font-bold"
+                    disabled={busy}
+                    onClick={() => props.onIdeaLifecycle(idea, "KEEP")}
+                  >
+                    Keep
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-xl border border-[#dde2dd] px-3 py-2 text-[11px] font-bold"
+                    disabled={busy}
+                    onClick={() => props.onIdeaLifecycle(idea, "PARK")}
+                  >
+                    Park
+                  </button>
+                )}
                 <button
                   type="button"
                   className="shrink-0 text-[#6c7771]"
@@ -1130,6 +1213,7 @@ export function PlanPanel(props: Props) {
           onCompleteAction={props.onCompleteAction}
           onSetProjectStatus={props.onSetProjectStatus}
           onSetProjectDeadline={props.onSetProjectDeadline}
+          onSaveNotes={props.onSaveNotes}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -1320,9 +1404,21 @@ export function PlanPanel(props: Props) {
 
     return (
       <section className="space-y-4">
-        <HillsHero />
-        <div className="space-y-3">
-          {pillars.map((pillar, index) => {
+        <LandscapeHero
+          title="Areas"
+          subtitle="Keep every life domain in view."
+          detail="Health cues use active projects and protected weekly time, so you can see what is steady, overloaded, or being neglected."
+        />
+        {pillars.length === 0 ? (
+          <EditorialState
+            kind="empty"
+            compact
+            title="No areas yet"
+            description="Add a life area to give projects a home and make neglected domains visible."
+          />
+        ) : (
+          <div className="space-y-3">
+            {pillars.map((pillar, index) => {
             const pillarProjects = projects.filter(
               (project) => project.parentId === pillar.id && open(project),
             );
@@ -1334,6 +1430,11 @@ export function PlanPanel(props: Props) {
               availableHours > 0
                 ? Math.round((hours / availableHours) * 100)
                 : 0;
+            const health = areaHealth(
+              pillarProjects.length,
+              hours,
+              availableHours,
+            );
             return (
               <div
                 key={pillar.id}
@@ -1360,17 +1461,30 @@ export function PlanPanel(props: Props) {
                     <h3 className="font-serif text-xl text-[#14241f]">
                       {pillar.title}
                     </h3>
-                    <button
-                      type="button"
-                      className="text-xs font-bold text-[#c9634f]"
-                      disabled={busy}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        props.onRemoveArea(pillar);
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                          health.tone === "danger"
+                            ? "bg-[#f8e4df] text-[#c9634f]"
+                            : health.tone === "amber"
+                              ? "bg-[#fff3e8] text-[#8a5a16]"
+                              : "bg-[#dbe8d7] text-[#617a57]"
+                        }`}
+                      >
+                        {health.label}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-[#c9634f]"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onRemoveArea(pillar);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-1 text-sm text-[#14241f]">
                     {pillarProjects.length} active project
@@ -1379,6 +1493,9 @@ export function PlanPanel(props: Props) {
                   <p className="text-sm text-[#6c7771]">
                     {hours.toFixed(1)}h this week · {pct}% capacity
                   </p>
+                  <p className="mt-1 text-xs font-medium text-[#617a57]">
+                    Health signal · {health.provenance}
+                  </p>
                   <div className="mt-2">
                     <ProgressBar value={pct} tone={pct > 100 ? "warn" : "sage"} />
                   </div>
@@ -1386,8 +1503,9 @@ export function PlanPanel(props: Props) {
                 <LifeIcon name="chevron-right" size={17} color="#6c7771" />
               </div>
             );
-          })}
-        </div>
+            })}
+          </div>
+        )}
         <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
             Add area
@@ -1429,6 +1547,7 @@ export function PlanPanel(props: Props) {
           onCompleteAction={props.onCompleteAction}
           onSetProjectStatus={props.onSetProjectStatus}
           onSetProjectDeadline={props.onSetProjectDeadline}
+          onSaveNotes={props.onSaveNotes}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -1469,7 +1588,13 @@ export function PlanPanel(props: Props) {
 
   return (
     <section className="space-y-4">
-      {projectsView === "list" ? <HillsHero /> : null}
+      {projectsView === "list" ? (
+        <LandscapeHero
+          title="Projects"
+          subtitle="Commit to outcomes, not noise."
+          detail="Protect the next action, keep deadlines visible, and match project load to the week you actually have."
+        />
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -1502,7 +1627,10 @@ export function PlanPanel(props: Props) {
           <button
             type="button"
             className="rounded-xl bg-[#14241f] px-3 py-1.5 text-xs font-bold text-[#f4f5f0]"
-            onClick={() => setComposerOpen((openState) => !openState)}
+              onClick={() => {
+                props.onCancelIdeaConversion();
+                setComposerOpen((openState) => !openState);
+              }}
           >
             + Add project
           </button>
@@ -1513,7 +1641,6 @@ export function PlanPanel(props: Props) {
         <PriorityMatrixPanel
           actions={openActions}
           projects={projects}
-          areas={pillars}
           busy={busy}
           onMove={props.onMoveAction}
           onViewList={() => setProjectsView("list")}
@@ -1722,13 +1849,12 @@ export function PlanPanel(props: Props) {
           </p>
 
           {filteredProjects.length === 0 ? (
-            <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-              <p className="font-serif text-xl">No projects yet</p>
-              <p className="mt-1 text-sm text-[#6c7771]">
-                Create a project with a first next action, or turn an idea into
-                a project.
-              </p>
-            </article>
+            <EditorialState
+              kind="empty"
+              compact
+              title="No projects here"
+              description="Create a project with a first next action, turn an idea into a project, or clear the active filters."
+            />
           ) : (
             filteredProjects.map((project, index) => {
               const next = nextAction(items, project.id);
@@ -2149,6 +2275,7 @@ function ProjectDetailView({
   onCompleteAction,
   onSetProjectStatus,
   onSetProjectDeadline,
+  onSaveNotes,
   onShowMatrix,
   onOpenAddAction,
 }: {
@@ -2169,6 +2296,10 @@ function ProjectDetailView({
     project: LifeItem,
     targetDate: string | null,
   ) => void;
+  onSaveNotes: (
+    item: LifeItem,
+    body: Record<string, unknown>,
+  ) => Promise<LifeItem | void>;
   onShowMatrix: () => void;
   onOpenAddAction: () => void;
 }) {
@@ -2488,9 +2619,11 @@ function ProjectDetailView({
       ) : null}
 
       {projectTab === "notes" ? (
-        <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm text-[#6c7771]">
-          Notes stub — rich notes land in a later pass.
-        </article>
+        <NotesEditor
+          item={project}
+          label="Project notes"
+          onSave={onSaveNotes}
+        />
       ) : null}
       {projectTab === "files" ? (
         <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm text-[#6c7771]">

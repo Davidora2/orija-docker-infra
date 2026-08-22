@@ -7,7 +7,16 @@ import {
   type CalendarEvent,
   type CalendarPayload,
 } from "../lib/api";
+import {
+  calendarEventActionId,
+  calendarEventLabel,
+  calendarEventProjectId,
+} from "../lib/calendar-events";
 import { CalendarSyncPanel } from "./calendar-sync-panel";
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from "./editorial-state";
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -29,9 +38,23 @@ function eventTone(type: CalendarEvent["type"]) {
 export function CalendarPanel({
   preferredCurrency,
   onError,
+  onCompleteTask,
+  onRescheduleTask,
+  onOpenTask,
+  onOpenProject,
+  onOpenMoney,
+  onSetPrimaryMove,
+  busy = false,
 }: {
   preferredCurrency?: string;
   onError: (message: string | null) => void;
+  onCompleteTask?: (actionId: string) => Promise<void>;
+  onRescheduleTask?: (actionId: string, date: string) => Promise<void>;
+  onOpenTask?: (actionId: string) => void;
+  onOpenProject?: (projectId: string) => void;
+  onOpenMoney?: () => void;
+  onSetPrimaryMove?: (actionId: string) => Promise<void>;
+  busy?: boolean;
 }) {
   const now = useMemo(() => new Date(), []);
   const [view, setView] = useState<"week" | "month">("month");
@@ -47,9 +70,13 @@ export function CalendarPanel({
   ]);
   const [data, setData] = useState<CalendarPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     onError(null);
     try {
       const next = await getCalendar({
@@ -62,7 +89,9 @@ export function CalendarPanel({
       });
       setData(next);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not load calendar");
+      const message = err instanceof Error ? err.message : "Could not load calendar";
+      setLoadError(message);
+      onError(message);
     } finally {
       setLoading(false);
     }
@@ -99,6 +128,28 @@ export function CalendarPanel({
     { month: "long", year: "numeric", timeZone: "UTC" },
   );
 
+  const selectedActionId = selectedEvent
+    ? calendarEventActionId(selectedEvent)
+    : null;
+  const selectedProjectId = selectedEvent
+    ? calendarEventProjectId(selectedEvent)
+    : null;
+
+  function openEvent(event: CalendarEvent) {
+    setSelectedEvent(event);
+    setRescheduleDate(event.date);
+  }
+
+  async function runAction(work: () => Promise<void>) {
+    try {
+      await work();
+      setSelectedEvent(null);
+      await load();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not update calendar");
+    }
+  }
+
   return (
     <section className="space-y-4">
       <CalendarSyncPanel onError={onError} />
@@ -108,7 +159,7 @@ export function CalendarPanel({
           <div>
             <h2 className="font-serif text-2xl">Calendar</h2>
             <p className="text-sm text-[#6c7771]">
-              Tasks, project deadlines, payments, and paydays in one place.
+              Tasks, project deadlines, saving targets, payments, and paydays in one place.
             </p>
           </div>
           <div className="flex gap-2">
@@ -186,7 +237,7 @@ export function CalendarPanel({
               {type === "task"
                 ? "Tasks"
                 : type === "milestone"
-                  ? "Deadlines"
+                  ? "Milestones"
                   : type === "payment"
                     ? "Payments"
                     : "Paydays"}
@@ -226,17 +277,45 @@ export function CalendarPanel({
 
         {data ? (
           <p className="text-xs text-[#6c7771]">
-            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} deadlines ·{" "}
+            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} milestones ·{" "}
             {data.counts.payments} payments · {data.counts.paydays} paydays
           </p>
         ) : null}
       </article>
 
       {loading ? (
-        <p className="text-sm text-[#6c7771]">Loading calendar…</p>
+        <DelayedEditorialLoading
+          title="Laying out your calendar"
+          description="Gathering tasks, milestones, payments, and paydays."
+        />
       ) : null}
 
-      {!loading && data ? (
+      {!loading && loadError ? (
+        <EditorialState
+          kind="error"
+          title="Calendar could not open"
+          description={loadError}
+          action={
+            <button
+              type="button"
+              className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white"
+              onClick={() => void load()}
+            >
+              Try again
+            </button>
+          }
+        />
+      ) : null}
+
+      {!loading && !loadError && data?.events.length === 0 ? (
+        <EditorialState
+          kind="empty"
+          title="A quiet stretch"
+          description="No tasks, deadlines, saving targets, payments, or paydays match these filters."
+        />
+      ) : null}
+
+      {!loading && !loadError && data && data.events.length > 0 ? (
         <div className="space-y-2">
           {view === "month" ? (
             <div className="hidden grid-cols-7 gap-2 md:grid">
@@ -280,9 +359,11 @@ export function CalendarPanel({
                       <p className="text-[11px] text-[#9ba49e]">—</p>
                     ) : (
                       day.events.map((event) => (
-                        <div
+                        <button
                           key={event.id}
-                          className={`rounded-lg px-2 py-1 text-[11px] leading-snug ${eventTone(event.type)}`}
+                          type="button"
+                          className={`w-full rounded-lg px-2 py-1 text-left text-[11px] leading-snug ${eventTone(event.type)}`}
+                          onClick={() => openEvent(event)}
                         >
                           <p className="font-semibold">{event.title}</p>
                           {event.amountCents != null ? (
@@ -296,13 +377,144 @@ export function CalendarPanel({
                           {event.areaTitle ? (
                             <p className="opacity-80">{event.areaTitle}</p>
                           ) : null}
-                        </div>
+                        </button>
                       ))
                     )}
                   </div>
                 </article>
               );
             })}
+          </div>
+        </div>
+      ) : null}
+
+      {selectedEvent ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-event-title"
+            className="w-full max-w-md rounded-2xl border border-[#dde2dd] bg-white p-5 shadow-lg"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              {calendarEventLabel(selectedEvent.type)}
+            </p>
+            <h3
+              id="calendar-event-title"
+              className="mt-1 font-serif text-2xl text-[#14241f]"
+            >
+              {selectedEvent.title}
+            </h3>
+            <p className="mt-1 text-sm text-[#6c7771]">
+              {selectedEvent.date}
+              {selectedEvent.areaTitle ? ` · ${selectedEvent.areaTitle}` : ""}
+              {selectedEvent.amountCents != null
+                ? ` · ${formatMoney(
+                    selectedEvent.amountCents,
+                    preferredCurrency || "GBP",
+                  )}`
+                : ""}
+            </p>
+
+            {selectedActionId && onRescheduleTask ? (
+              <label className="mt-4 block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Reschedule
+                </span>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  value={rescheduleDate}
+                  onChange={(event) => setRescheduleDate(event.target.value)}
+                />
+              </label>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {selectedActionId && onRescheduleTask ? (
+                <button
+                  type="button"
+                  disabled={busy || !rescheduleDate}
+                  className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-40"
+                  onClick={() =>
+                    void runAction(() =>
+                      onRescheduleTask(selectedActionId, rescheduleDate),
+                    )
+                  }
+                >
+                  Save date
+                </button>
+              ) : null}
+              {selectedActionId && onCompleteTask ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-xl border border-[#dde2dd] bg-white px-4 py-2 text-xs font-bold disabled:opacity-40"
+                  onClick={() =>
+                    void runAction(() => onCompleteTask(selectedActionId))
+                  }
+                >
+                  Mark complete
+                </button>
+              ) : null}
+              {selectedActionId && onOpenTask ? (
+                <button
+                  type="button"
+                  className="rounded-xl border border-[#dde2dd] bg-white px-4 py-2 text-xs font-bold"
+                  onClick={() => {
+                    onOpenTask(selectedActionId);
+                    setSelectedEvent(null);
+                  }}
+                >
+                  Open in Plan
+                </button>
+              ) : null}
+              {selectedProjectId && onOpenProject ? (
+                <button
+                  type="button"
+                  className="rounded-xl border border-[#dde2dd] bg-white px-4 py-2 text-xs font-bold"
+                  onClick={() => {
+                    onOpenProject(selectedProjectId);
+                    setSelectedEvent(null);
+                  }}
+                >
+                  Open project
+                </button>
+              ) : null}
+              {(selectedEvent.type === "payment" ||
+                selectedEvent.type === "payday") &&
+              onOpenMoney ? (
+                <button
+                  type="button"
+                  className="rounded-xl border border-[#dde2dd] bg-white px-4 py-2 text-xs font-bold"
+                  onClick={() => {
+                    onOpenMoney();
+                    setSelectedEvent(null);
+                  }}
+                >
+                  Open Money
+                </button>
+              ) : null}
+              {selectedActionId && onSetPrimaryMove ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="rounded-xl border border-[#b9d4b0] bg-[#eef3ea] px-4 py-2 text-xs font-bold text-[#2f431e] disabled:opacity-40"
+                  onClick={() =>
+                    void runAction(() => onSetPrimaryMove(selectedActionId))
+                  }
+                >
+                  Set as primary move
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="rounded-xl px-4 py-2 text-xs font-bold text-[#6c7771]"
+                onClick={() => setSelectedEvent(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

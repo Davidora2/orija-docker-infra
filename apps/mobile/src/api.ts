@@ -35,6 +35,9 @@ export type AccountUser = {
   preferredCurrency: string;
   activeHouseholdId: string | null;
   onboardingCompletedAt: string | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 };
 
 export type Household = {
@@ -90,6 +93,45 @@ export type LifeItem = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type WeeklyReview = {
+  id: string;
+  schemaVersion: 1;
+  userId: string;
+  householdId: string;
+  weekStart: string;
+  results: {
+    completedActions: number;
+    totalActions: number;
+    completionRate: number;
+    highlights: string;
+  };
+  capacity: { plannedHours: number; availableHours: number };
+  bottlenecks: string;
+  startDoing: string;
+  stopDoing: string;
+  continueDoing: string;
+  nextWeekPriorities: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WeeklyReviewInput = Omit<
+  WeeklyReview,
+  'id' | 'userId' | 'createdAt' | 'updatedAt'
+>;
+
+export type CalendarConnection = {
+  id: string;
+  provider: 'google' | 'microsoft';
+  accountEmail: string | null;
+  calendarId: string;
+  reminderMinutes: number;
+  lastSyncedAt: string | null;
+};
+
+export const webAppUrl =
+  process.env.EXPO_PUBLIC_WEB_URL ?? 'https://lifeos.orija.store';
 
 type AuthResponse = Session & {
   account: Account;
@@ -464,11 +506,98 @@ export async function getAccount(): Promise<Account | null> {
   }
 }
 
+export async function listWeeklyReviews(): Promise<WeeklyReview[]> {
+  return request('/v1/weekly-reviews');
+}
+
+export async function saveWeeklyReview(
+  input: WeeklyReviewInput,
+): Promise<WeeklyReview> {
+  return request('/v1/weekly-reviews', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getNotificationPreferences(): Promise<{
+  emailRemindersEnabled: boolean;
+  deliveryChannels: ['email'];
+}> {
+  return request('/v1/me/preferences');
+}
+
+export async function updateNotificationPreferences(
+  emailRemindersEnabled: boolean,
+): Promise<void> {
+  await request('/v1/me/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify({ emailRemindersEnabled }),
+  });
+}
+
+export async function getDataExport(): Promise<Record<string, unknown>> {
+  return request('/v1/me/export');
+}
+
+export async function requestDeletionCode(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  return request('/v1/me/deletion-code', { method: 'POST' });
+}
+
+export async function deleteAccount(input: {
+  confirmation: string;
+  currentPassword?: string;
+  verificationCode?: string;
+}): Promise<void> {
+  await request('/v1/me', {
+    method: 'DELETE',
+    body: JSON.stringify(input),
+  });
+  await saveSession(null);
+  await cacheAccount(null);
+}
+
+export async function listCalendarConnections(): Promise<{
+  providers: { google: boolean; microsoft: boolean };
+  connections: CalendarConnection[];
+}> {
+  return request('/v1/calendar/connections');
+}
+
+export async function startCalendarConnect(
+  provider: 'google' | 'microsoft',
+): Promise<{ url: string }> {
+  return request(`/v1/calendar/connect/${provider}`, {
+    method: 'POST',
+    body: JSON.stringify({ redirectPath: '/?tab=you&dest=integrations' }),
+  });
+}
+
+export async function syncCalendarConnection(
+  connectionId: string,
+): Promise<{ pushed: number }> {
+  return request('/v1/calendar/sync', {
+    method: 'POST',
+    body: JSON.stringify({ connectionId, months: 1 }),
+  });
+}
+
+export async function disconnectCalendarConnection(
+  connectionId: string,
+): Promise<void> {
+  await request(`/v1/calendar/connections/${connectionId}`, { method: 'DELETE' });
+}
+
 export async function updateProfile(input: {
   displayName?: string;
   timezone?: string;
   preferredCurrency?: string;
   avatarUrl?: string | null;
+  body?: {
+    primaryMoveActionId?: string | null;
+  };
 }): Promise<Account> {
   const account = await request<Account>('/v1/me', {
     method: 'PATCH',
