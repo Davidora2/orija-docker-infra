@@ -1,7 +1,17 @@
--- Remove empty duplicate Personal/Shared budgets created during 2026-08-22
--- agent debugging for david@orijadesign.co.uk. Keeps the populated GBP budget
--- (208eb2bc-78be-494d-9e4f-64b688a32b6e) and any budget with entries, recurring,
--- or pay schedule data (including partner shared budgets).
+-- Fix david@orijadesign.co.uk budget currency and remove empty duplicates from
+-- 2026-08-22 agent debugging. Keeps populated budget 208eb2bc (8 recurring,
+-- biweekly pay) and corrects its currency to CAD to match profile + amounts.
+
+UPDATE users
+SET preferred_currency = 'CAD'
+WHERE id = 'f5d5994a-7883-4894-b77e-8bc226a868cd'
+  AND preferred_currency IS DISTINCT FROM 'CAD';
+
+UPDATE budgets
+SET currency = 'CAD', updated_at = now()
+WHERE id = '208eb2bc-78be-494d-9e4f-64b688a32b6e'
+  AND currency IS DISTINCT FROM 'CAD';
+
 DELETE FROM budgets b
 WHERE b.owner_user_id = 'f5d5994a-7883-4894-b77e-8bc226a868cd'
   AND b.id <> '208eb2bc-78be-494d-9e4f-64b688a32b6e'

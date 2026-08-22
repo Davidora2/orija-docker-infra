@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import {
   dedupeBudgetsById,
+  dedupeBudgetsForDisplay,
   pickDefaultBudgetId,
   resolveBudgetSelection,
 } from '../../life-os-shared/src/index.ts';
@@ -115,5 +116,47 @@ assert.equal(
   'personal-full-old',
   'resolve should keep current populated budget on refresh',
 );
+
+const currencyPair = [
+  {
+    id: 'personal-gbp',
+    ownerUserId: davidId,
+    visibility: 'PRIVATE',
+    currency: 'GBP',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+    recurringCount: 8,
+  },
+  {
+    id: 'personal-cad',
+    ownerUserId: davidId,
+    visibility: 'PRIVATE',
+    currency: 'CAD',
+    payFrequency: 'biweekly',
+    typicalPayCents: 197229,
+    recurringCount: 8,
+  },
+];
+
+assert.equal(
+  pickDefaultBudgetId(currencyPair, davidId, { profileCurrency: 'CAD' }),
+  'personal-cad',
+  'profile currency should win when multiple populated budgets exist',
+);
+
+const displayDupes = dedupeBudgetsForDisplay(duplicateRows, 'CAD');
+assert.equal(displayDupes.length, 1);
+assert.equal(
+  displayDupes[0].id,
+  'personal-full-old',
+  'display dedupe should hide thin duplicate personal rows',
+);
+
+const resolvedDisplay = resolveBudgetSelection(duplicateRows, davidId, {
+  profileCurrency: 'CAD',
+  currentId: 'personal-full-old',
+});
+assert.equal(resolvedDisplay.displayBudgets.length, 1);
+assert.equal(resolvedDisplay.selectedId, 'personal-full-old');
 
 console.log('budget-selection tests passed');

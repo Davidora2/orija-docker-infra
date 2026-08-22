@@ -31,6 +31,7 @@ export function BudgetPanel({
   spendCaptureNonce = 0,
 }: Props) {
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [displayBudgets, setDisplayBudgets] = useState<Budget[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,16 +53,15 @@ export function BudgetPanel({
       setLoadError("");
       try {
         const list = await listBudgets();
-        const { budgets: unique, selectedId: nextId } = resolveBudgetSelection(
-          list,
-          account.user.id,
-          {
+        const { budgets: unique, displayBudgets: visible, selectedId: nextId } =
+          resolveBudgetSelection(list, account.user.id, {
             preferredId,
             storedId: loadLastBudgetId(account.user.id),
             currentId: activeIdRef.current,
-          },
-        );
+            profileCurrency: currency,
+          });
         setBudgets(unique);
+        setDisplayBudgets(visible);
         if (nextId !== activeIdRef.current) {
           setActiveId(nextId);
           activeIdRef.current = nextId;
@@ -86,7 +86,7 @@ export function BudgetPanel({
         }
       }
     },
-    [account.user.id, detail, onError],
+    [account.user.id, currency, detail, onError],
   );
 
   useEffect(() => {
@@ -165,7 +165,7 @@ export function BudgetPanel({
         })}
       </nav>
 
-      {budgets.length > 0 ? (
+      {displayBudgets.length > 0 ? (
         <article className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#dde2dd] bg-white px-4 py-3">
           <label className="flex min-w-[14rem] flex-1 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#eef3eb]">
@@ -186,7 +186,7 @@ export function BudgetPanel({
                 aria-label="Money space"
                 onChange={(event) => void selectBudget(event.target.value)}
               >
-                {budgets.map((budget) => (
+                {displayBudgets.map((budget) => (
                   <option key={budget.id} value={budget.id}>
                     {budget.name} ·{" "}
                     {budget.visibility === "SHARED" ? "Shared" : "Personal"}

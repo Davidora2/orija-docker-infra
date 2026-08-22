@@ -70,6 +70,8 @@ export type BudgetListItem = {
   id: string;
   ownerUserId: string;
   visibility: "PRIVATE" | "SHARED";
+  name?: string;
+  currency?: string | null;
   createdAt?: string;
   payFrequency?: string | null;
   typicalPayCents?: number | null;
@@ -104,7 +106,15 @@ function isThinBudget(budget: BudgetListItem): boolean {
   );
 }
 
-function personalBudgetRichness(budget: BudgetListItem): number {
+function normalizeCurrency(currency?: string | null): string | null {
+  const normalized = currency?.trim().toUpperCase();
+  return normalized ? normalized : null;
+}
+
+function personalBudgetRichness(
+  budget: BudgetListItem,
+  profileCurrency?: string | null,
+): number {
   let score = 0;
   if (budget.typicalPayCents != null && budget.typicalPayCents > 0) score += 1000;
   if (budget.payFrequency) score += 100;
@@ -114,6 +124,9 @@ function personalBudgetRichness(budget: BudgetListItem): number {
   if (recurringCount > 0) score += 50 + recurringCount;
   const entryCount = budget.entryCount ?? 0;
   if (entryCount > 0) score += 40 + entryCount;
+  const profile = normalizeCurrency(profileCurrency);
+  const budgetCurrency = normalizeCurrency(budget.currency);
+  if (profile && budgetCurrency === profile) score += 250;
   if (budget.createdAt) {
     const created = Date.parse(budget.createdAt);
     if (Number.isFinite(created)) score += -created / 1e15;
@@ -121,9 +134,15 @@ function personalBudgetRichness(budget: BudgetListItem): number {
   return score;
 }
 
+function budgetGroupKey(budget: BudgetListItem): string {
+  const name = budget.name?.trim().toLowerCase() ?? "";
+  return `${budget.ownerUserId}:${budget.visibility}:${name}`;
+}
+
 function pickBestOwnedPrivate(
   budgets: BudgetListItem[],
   userId: string,
+  profileCurrency?: string | null,
 ): BudgetListItem | null {
   const ownedPrivate = budgets.filter(
     (budget) =>
@@ -131,7 +150,9 @@ function pickBestOwnedPrivate(
   );
   if (!ownedPrivate.length) return null;
   return [...ownedPrivate].sort(
-    (a, b) => personalBudgetRichness(b) - personalBudgetRichness(a),
+    (a, b) =>
+      personalBudgetRichness(b, profileCurrency) -
+      personalBudgetRichness(a, profileCurrency),
   )[0]!;
 }
 
@@ -143,10 +164,15 @@ export function pickDefaultBudgetId(
     preferredId?: string | null;
     storedId?: string | null;
     currentId?: string | null;
+    profileCurrency?: string | null;
   },
 ): string | null {
   const unique = dedupeBudgetsById(budgets);
   if (!unique.length) return null;
+
+  const profileCurrency = options?.profileCurrency;
+  const richness = (budget: BudgetListItem) =>
+    personalBudgetRichness(budget, profileCurrency);
 
   const valid = (id?: string | null) =>
     id && unique.some((budget) => budget.id === id) ? id : null;
@@ -157,7 +183,7 @@ export function pickDefaultBudgetId(
   const current = valid(options?.currentId);
   if (current) return current;
 
-  const bestOwnedPrivate = pickBestOwnedPrivate(unique, userId);
+  const bestOwnedPrivate = pickBestOwnedPrivate(unique, userId, profileCurrency);
 
   const stored = valid(options?.storedId);
   if (stored) {
@@ -168,7 +194,7 @@ export function pickDefaultBudgetId(
       }
       const bestPopulated = [...unique]
         .filter((budget) => !isThinBudget(budget))
-        .sort((a, b) => personalBudgetRichness(b) - personalBudgetRichness(a))[0];
+        .sort((a, b) => richness(b) - richness(a))[0];
       if (bestPopulated) return bestPopulated.id;
     }
     return stored;
@@ -182,6 +208,38 @@ export function pickDefaultBudgetId(
   return unique[0]!.id;
 }
 
+/** Hide empty duplicate Personal/Shared rows when a richer sibling exists. */
+export function dedupeBudgetsForDisplay<T extends BudgetListItem>(
+  budgets: T[],
+  profileCurrency?: string | null,
+): T[] {
+  const unique = dedupeBudgetsById(budgets);
+  const byGroup = new Map<string, T[]>();
+  for (const budget of unique) {
+    const key = budgetGroupKey(budget);
+    const group = byGroup.get(key) ?? [];
+    group.push(budget);
+    byGroup.set(key, group);
+  }
+
+  const dropIds = new Set<string>();
+  for (const group of byGroup.values()) {
+    if (group.length <= 1) continue;
+    const richest = [...group].sort(
+      (a, b) =>
+        personalBudgetRichness(b, profileCurrency) -
+        personalBudgetRichness(a, profileCurrency),
+    )[0]!;
+    for (const budget of group) {
+      if (budget.id !== richest.id && isThinBudget(budget)) {
+        dropIds.add(budget.id);
+      }
+    }
+  }
+
+  return unique.filter((budget) => !dropIds.has(budget.id));
+}
+
 /** Dedupe list rows and resolve the budget id that should stay selected. */
 export function resolveBudgetSelection(
   budgets: BudgetListItem[],
@@ -190,12 +248,22 @@ export function resolveBudgetSelection(
     preferredId?: string | null;
     storedId?: string | null;
     currentId?: string | null;
+    profileCurrency?: string | null;
   },
-): { budgets: BudgetListItem[]; selectedId: string | null } {
+): {
+  budgets: BudgetListItem[];
+  displayBudgets: BudgetListItem[];
+  selectedId: string | null;
+} {
   const unique = dedupeBudgetsById(budgets);
+  const profileCurrency = options?.profileCurrency;
   return {
     budgets: unique,
-    selectedId: pickDefaultBudgetId(unique, userId, options),
+    displayBudgets: dedupeBudgetsForDisplay(unique, profileCurrency),
+    selectedId: pickDefaultBudgetId(unique, userId, {
+      ...options,
+      profileCurrency,
+    }),
   };
 }
 

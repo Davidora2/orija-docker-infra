@@ -46,6 +46,7 @@ type Props = {
 
 export function BudgetScreen({ account, notify }: Props) {
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [displayBudgets, setDisplayBudgets] = useState<Budget[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,16 +59,15 @@ export function BudgetScreen({ account, notify }: Props) {
     async (preferredId?: string) => {
       const list = await listBudgets();
       const storedId = await loadLastBudgetId(account.user.id);
-      const { budgets: unique, selectedId: nextId } = resolveBudgetSelection(
-        list,
-        account.user.id,
-        {
+      const { budgets: unique, displayBudgets: visible, selectedId: nextId } =
+        resolveBudgetSelection(list, account.user.id, {
           preferredId,
           storedId,
           currentId: activeIdRef.current,
-        },
-      );
+          profileCurrency: currency,
+        });
       setBudgets(unique);
+      setDisplayBudgets(visible);
       if (nextId !== activeIdRef.current) {
         setActiveId(nextId);
         activeIdRef.current = nextId;
@@ -82,7 +82,7 @@ export function BudgetScreen({ account, notify }: Props) {
         void getBudget(nextId).then(setDetail);
       }
     },
-    [account.user.id],
+    [account.user.id, currency],
   );
 
   useEffect(() => {
@@ -148,7 +148,7 @@ export function BudgetScreen({ account, notify }: Props) {
         </Text>
       ) : null}
 
-      {budgets.length === 0 ? (
+      {displayBudgets.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>No budgets yet</Text>
           <Text style={styles.meta}>
@@ -158,7 +158,7 @@ export function BudgetScreen({ account, notify }: Props) {
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.tabs}>
-            {budgets.map((budget) => (
+            {displayBudgets.map((budget) => (
               <Pressable
                 key={budget.id}
                 style={[styles.tab, activeId === budget.id && styles.tabActive]}
