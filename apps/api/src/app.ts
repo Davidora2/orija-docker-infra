@@ -4,7 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
 import { createAuth } from './auth.js';
-import { registerAuthExtras } from './auth-extras.js';
+import { issueEmailVerificationCode, registerAuthExtras } from './auth-extras.js';
 import { registerCalendarRoutes } from './calendar.js';
 import { registerCalendarSyncRoutes } from './calendar-sync.js';
 import {
@@ -299,6 +299,7 @@ export async function buildApp(
     bodyLimit: 1_000_000,
   });
   const auth = createAuth(config, sql);
+  const mailer = createMailer(config);
 
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, {
@@ -396,11 +397,23 @@ export async function buildApp(
         return { ...createdUser, activeHouseholdId: household.id };
       });
 
-      const session = await auth.issueSession(
-        { id: user.id, email: user.email },
-        body.deviceName,
+      const { code, delivery } = await issueEmailVerificationCode(
+        sql,
+        mailer,
+        config,
+        user.id,
+        user.email,
       );
-      return reply.code(201).send({ ...session, account: await getAccountPayload(sql, user.id) });
+
+      return reply.code(201).send({
+        ok: true,
+        requiresEmailVerification: true,
+        email: user.email,
+        message:
+          'Account created. Verify your email with the code we sent before signing in.',
+        delivery: delivery.mode,
+        ...(config.authDebugCodes ? { debugCode: code } : {}),
+      });
     },
   );
 
@@ -409,10 +422,10 @@ export async function buildApp(
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (request) => {
       const body = credentialsSchema.parse(request.body);
-      const [user] = await sql<UserRow[]>`
+      const [user] = await sql<(UserRow & { emailVerifiedAt: Date | null })[]>`
         SELECT
           id, email, password_hash, display_name, avatar_url, timezone,
-          active_household_id, onboarding_completed_at, created_at
+          active_household_id, onboarding_completed_at, email_verified_at, created_at
         FROM users
         WHERE email = ${body.email}
       `;
@@ -423,6 +436,14 @@ export async function buildApp(
         !(await verifyPassword(body.password, user.passwordHash))
       ) {
         throw new ApiError(401, 'invalid_credentials', 'Email or password is incorrect.');
+      }
+
+      if (!user.emailVerifiedAt) {
+        throw new ApiError(
+          403,
+          'email_not_verified',
+          'Verify your email before signing in. Check your inbox or request a new code.',
+        );
       }
 
       const session = await auth.issueSession(
@@ -1008,8 +1029,6 @@ export async function buildApp(
   });
   registerCalendarRoutes(app, sql, auth);
   registerCalendarSyncRoutes(app, sql, config, auth);
-
-  const mailer = createMailer(config);
 
   app.post(
     '/v1/payments/reminders/run',
