@@ -992,14 +992,37 @@ function ProjectDetail({
                   ].title
                 }
               </Text>
-              <Text style={styles.listMeta}>Swipe left to archive</Text>
-              <Button
-                variant="secondary"
-                disabled={busy || isDone}
+              <Text style={styles.listMeta}>Swipe left to archive · tap circle to toggle done</Text>
+              <Pressable
+                disabled={busy}
                 onPress={() => onCompleteAction(next)}
+                style={styles.completeRow}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  next.status === 'DONE'
+                    ? 'Mark next action open'
+                    : 'Mark next action done'
+                }
               >
-                Complete
-              </Button>
+                <View
+                  style={[
+                    styles.completeDot,
+                    next.status === 'DONE' && styles.completeDotDone,
+                  ]}
+                >
+                  <Text style={styles.completeDotText}>
+                    {next.status === 'DONE' ? '●' : '○'}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.completeLabel,
+                    next.status === 'DONE' && styles.completeLabelDone,
+                  ]}
+                >
+                  {next.status === 'DONE' ? 'Completed — tap to undo' : 'Mark complete'}
+                </Text>
+              </Pressable>
             </View>
           </SwipeableRow>
         ) : (
@@ -1054,6 +1077,13 @@ function ProjectDetail({
               onDelete={() => onDeleteAction(action)}
             >
               <View style={styles.actionPreview}>
+                <Pressable
+                  disabled={busy}
+                  onPress={() => onCompleteAction(action)}
+                  hitSlop={8}
+                >
+                  <Text style={styles.completeDotText}>○</Text>
+                </Pressable>
                 <Text style={styles.listTitle}>{action.title}</Text>
                 <Text style={styles.listMeta}>
                   {action.status === 'ARCHIVED' ? 'Archived · ' : ''}
@@ -1068,6 +1098,24 @@ function ProjectDetail({
             </SwipeableRow>
           ))
         )}
+        {doneProjectActions.length > 0 ? (
+          <View style={{ gap: 8, marginTop: 8 }}>
+            <Text style={styles.micro}>Done</Text>
+            {doneProjectActions.slice(0, 12).map((action) => (
+              <Pressable
+                key={action.id}
+                disabled={busy}
+                onPress={() => onCompleteAction(action)}
+                style={styles.doneActionRow}
+              >
+                <Text style={styles.completeDotText}>●</Text>
+                <Text style={[styles.listTitle, styles.completeLabelDone]} numberOfLines={2}>
+                  {action.title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {!isDone && !isArchived ? (
           <Button variant="secondary" onPress={() => onQuickAction(project.id)}>
             Quick add action
@@ -1262,6 +1310,46 @@ function ActionMatrixView({
 }
 
 const styles = StyleSheet.create({
+  completeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  completeDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.sageDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completeDotDone: {
+    backgroundColor: colors.sage,
+  },
+  completeDotText: {
+    color: colors.sageDeep,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  completeLabel: {
+    color: colors.ink,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  completeLabelDone: {
+    color: colors.muted,
+    textDecorationLine: 'line-through',
+  },
+  doneActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+
   stack: { gap: 12 },
   sectionHeader: {
     flexDirection: 'row',
@@ -1402,10 +1490,10 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: '700', color: colors.ink },
   chipTextActive: { color: colors.paper },
   actionPreview: {
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-    gap: 2,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
   },
   matrixGrid: {
     flexDirection: 'row',
