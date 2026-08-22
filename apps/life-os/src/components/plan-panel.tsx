@@ -1,5 +1,6 @@
 "use client";
 
+import { areaHealth } from "@life-os/shared";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ideaOverallScore,
@@ -8,6 +9,9 @@ import {
 } from "@life-os/plan-domain";
 import type { LifeItem } from "../lib/api";
 import { CapacityRing } from "./capacity-ring";
+import { EditorialState } from "./editorial-state";
+import { EvaluationRadar } from "./evaluation-radar";
+import { LandscapeHero } from "./landscape-hero";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { NotesEditor } from "./notes-editor";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
@@ -198,46 +202,6 @@ function LevelChips({
             {PRIORITY_LEVEL_META[level].title}
           </button>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function HillsHero() {
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-[#dde2dd] bg-gradient-to-br from-[#eef3ea] via-[#f7f5ef] to-[#e8eef6] px-5 py-6">
-      <svg
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full opacity-70"
-        viewBox="0 0 600 120"
-        preserveAspectRatio="none"
-      >
-        <path
-          d="M0 80 C120 40 180 100 300 70 C420 40 480 90 600 55 L600 120 L0 120 Z"
-          fill="#c9d6c4"
-        />
-        <path
-          d="M0 95 C140 70 220 110 340 85 C460 60 520 100 600 78 L600 120 L0 120 Z"
-          fill="#a8bfa0"
-        />
-        <path
-          d="M0 40 C80 20 110 55 160 35"
-          fill="none"
-          stroke="#617a57"
-          strokeWidth="3"
-          strokeLinecap="round"
-          opacity="0.55"
-        />
-      </svg>
-      <div className="relative max-w-xl space-y-2">
-        <h1 className="font-serif text-4xl text-[#14241f]">Plan</h1>
-        <p className="text-lg font-medium text-[#24362f]">
-          Decide what exists and what matters.
-        </p>
-        <p className="text-sm leading-relaxed text-[#6c7771]">
-          Shape Areas, commit Projects, and park Ideas until they earn a place
-          in the week — then let Today execute.
-        </p>
       </div>
     </div>
   );
@@ -909,17 +873,28 @@ export function PlanPanel(props: Props) {
             ))}
           </article>
           {selectedIdea.status === "EVALUATED" ? (
-            <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-                Overall /10
-              </p>
-              <p className="mt-1 font-serif text-3xl">
-                {overall.toFixed(1)}
-              </p>
-              <p className="text-sm text-[#6c7771]">
-                {ideaScoreNarrative(overall)}
-              </p>
-            </article>
+            <>
+              <EvaluationRadar
+                label={`${selectedIdea.title} evaluation scores`}
+                scores={{
+                  impact: num(selectedIdea, "impact", 0),
+                  effort: num(selectedIdea, "effort", 0),
+                  alignment: num(selectedIdea, "alignment", 0),
+                  timing: num(selectedIdea, "timing", 0),
+                }}
+              />
+              <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                  Overall /10
+                </p>
+                <p className="mt-1 font-serif text-3xl">
+                  {overall.toFixed(1)}
+                </p>
+                <p className="text-sm text-[#6c7771]">
+                  {ideaScoreNarrative(overall)}
+                </p>
+              </article>
+            </>
           ) : null}
           <article className="rounded-2xl border border-[#dde2dd] bg-[#eef3ea] p-4 text-sm text-[#24362f]">
             Next step suggestions: define the outcome, pick an area, then write
@@ -955,20 +930,15 @@ export function PlanPanel(props: Props) {
                   />
                 </label>
               ))}
-              <div className="mb-4 rounded-2xl border border-[#dde2dd] bg-white p-4">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-                  Overall
-                </p>
-                <p className="font-serif text-3xl">
-                  {(
-                    (evalImpact + evalAlignment + evalTiming + (10 - evalEffort)) /
-                    4
-                  ).toFixed(1)}
-                  <span className="text-base text-[#6c7771]"> /10</span>
-                </p>
-                <p className="mt-1 text-sm text-[#6c7771]">
-                  Impact + Alignment + Timing − Effort, scaled to /10.
-                </p>
+              <div className="mb-4">
+                <EvaluationRadar
+                  scores={{
+                    impact: evalImpact,
+                    effort: evalEffort,
+                    alignment: evalAlignment,
+                    timing: evalTiming,
+                  }}
+                />
               </div>
               <textarea
                 className="mb-4 w-full rounded-xl border border-[#dde2dd] px-3 py-3"
@@ -1055,7 +1025,11 @@ export function PlanPanel(props: Props) {
           : parkedIdeas;
     return (
       <section className="space-y-4">
-        <HillsHero />
+        <LandscapeHero
+          title="Ideas"
+          subtitle="Capture now. Clarify later."
+          detail="Give promising sparks room to breathe, then compare their Impact, Effort, Alignment, and Timing before committing."
+        />
         <div>
           <h2 className="font-serif text-3xl text-[#14241f]">Ideas</h2>
           <p className="text-sm text-[#6c7771]">Capture now. Clarify later.</p>
@@ -1112,18 +1086,24 @@ export function PlanPanel(props: Props) {
         </div>
 
         {list.length === 0 ? (
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="font-serif text-xl text-[#14241f]">
-              {ideasTab === "inbox"
+          <EditorialState
+            kind="empty"
+            compact
+            title={
+              ideasTab === "inbox"
                 ? "Inbox is clear"
                 : ideasTab === "evaluated"
                   ? "Nothing evaluated yet"
-                  : "Nothing parked"}
-            </p>
-            <p className="mt-1 text-sm text-[#6c7771]">
-              Rough captures land here until you evaluate or convert them.
-            </p>
-          </article>
+                  : "Nothing parked"
+            }
+            description={
+              ideasTab === "inbox"
+                ? "Capture something rough. Evaluate winners when the signal is clear."
+                : ideasTab === "evaluated"
+                  ? "Score an idea from Inbox to compare its four dimensions here."
+                  : "Parked ideas stay out of the inbox until you keep or convert them."
+            }
+          />
         ) : (
           list.map((idea, index) => {
             const area = pillars.find((p) => p.id === idea.parentId);
@@ -1424,9 +1404,21 @@ export function PlanPanel(props: Props) {
 
     return (
       <section className="space-y-4">
-        <HillsHero />
-        <div className="space-y-3">
-          {pillars.map((pillar, index) => {
+        <LandscapeHero
+          title="Areas"
+          subtitle="Keep every life domain in view."
+          detail="Health cues use active projects and protected weekly time, so you can see what is steady, overloaded, or being neglected."
+        />
+        {pillars.length === 0 ? (
+          <EditorialState
+            kind="empty"
+            compact
+            title="No areas yet"
+            description="Add a life area to give projects a home and make neglected domains visible."
+          />
+        ) : (
+          <div className="space-y-3">
+            {pillars.map((pillar, index) => {
             const pillarProjects = projects.filter(
               (project) => project.parentId === pillar.id && open(project),
             );
@@ -1438,6 +1430,11 @@ export function PlanPanel(props: Props) {
               availableHours > 0
                 ? Math.round((hours / availableHours) * 100)
                 : 0;
+            const health = areaHealth(
+              pillarProjects.length,
+              hours,
+              availableHours,
+            );
             return (
               <div
                 key={pillar.id}
@@ -1464,17 +1461,30 @@ export function PlanPanel(props: Props) {
                     <h3 className="font-serif text-xl text-[#14241f]">
                       {pillar.title}
                     </h3>
-                    <button
-                      type="button"
-                      className="text-xs font-bold text-[#c9634f]"
-                      disabled={busy}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        props.onRemoveArea(pillar);
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                          health.tone === "danger"
+                            ? "bg-[#f8e4df] text-[#c9634f]"
+                            : health.tone === "amber"
+                              ? "bg-[#fff3e8] text-[#8a5a16]"
+                              : "bg-[#dbe8d7] text-[#617a57]"
+                        }`}
+                      >
+                        {health.label}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-[#c9634f]"
+                        disabled={busy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onRemoveArea(pillar);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-1 text-sm text-[#14241f]">
                     {pillarProjects.length} active project
@@ -1483,6 +1493,9 @@ export function PlanPanel(props: Props) {
                   <p className="text-sm text-[#6c7771]">
                     {hours.toFixed(1)}h this week · {pct}% capacity
                   </p>
+                  <p className="mt-1 text-xs font-medium text-[#617a57]">
+                    Health signal · {health.provenance}
+                  </p>
                   <div className="mt-2">
                     <ProgressBar value={pct} tone={pct > 100 ? "warn" : "sage"} />
                   </div>
@@ -1490,8 +1503,9 @@ export function PlanPanel(props: Props) {
                 <LifeIcon name="chevron-right" size={17} color="#6c7771" />
               </div>
             );
-          })}
-        </div>
+            })}
+          </div>
+        )}
         <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
             Add area
@@ -1574,7 +1588,13 @@ export function PlanPanel(props: Props) {
 
   return (
     <section className="space-y-4">
-      {projectsView === "list" ? <HillsHero /> : null}
+      {projectsView === "list" ? (
+        <LandscapeHero
+          title="Projects"
+          subtitle="Commit to outcomes, not noise."
+          detail="Protect the next action, keep deadlines visible, and match project load to the week you actually have."
+        />
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -1829,13 +1849,12 @@ export function PlanPanel(props: Props) {
           </p>
 
           {filteredProjects.length === 0 ? (
-            <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-              <p className="font-serif text-xl">No projects yet</p>
-              <p className="mt-1 text-sm text-[#6c7771]">
-                Create a project with a first next action, or turn an idea into
-                a project.
-              </p>
-            </article>
+            <EditorialState
+              kind="empty"
+              compact
+              title="No projects here"
+              description="Create a project with a first next action, turn an idea into a project, or clear the active filters."
+            />
           ) : (
             filteredProjects.map((project, index) => {
               const next = nextAction(items, project.id);

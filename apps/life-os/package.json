@@ -11,6 +11,7 @@
   "dependencies": {
     "@life-os/notes": "workspace:*",
     "@life-os/plan-domain": "workspace:*",
+    "@life-os/shared": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "next": "16.2.12",
     "react": "19.2.4",

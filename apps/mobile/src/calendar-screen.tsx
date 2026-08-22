@@ -18,6 +18,10 @@ import {
   calendarEventLabel,
   calendarEventProjectId,
 } from './calendar-events';
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from './editorial-state';
 
 const colors = {
   ink: '#14241F',
@@ -85,9 +89,11 @@ export function CalendarScreen({
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const next = await getCalendar({
         view,
@@ -99,7 +105,9 @@ export function CalendarScreen({
       });
       setData(next);
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not load calendar');
+      const message = err instanceof Error ? err.message : 'Could not load calendar';
+      setLoadError(message);
+      notify(message);
     } finally {
       setLoading(false);
     }
@@ -162,7 +170,9 @@ export function CalendarScreen({
     <View style={styles.wrap}>
       <View style={styles.card}>
         <Text style={styles.title}>Calendar</Text>
-        <Text style={styles.sub}>Tasks, payments, and paydays together.</Text>
+        <Text style={styles.sub}>
+          Tasks, project deadlines, saving targets, payments, and paydays together.
+        </Text>
 
         <View style={styles.row}>
           {(['week', 'month'] as const).map((id) => (
@@ -226,7 +236,7 @@ export function CalendarScreen({
                 {type === 'task'
                   ? 'Tasks'
                   : type === 'milestone'
-                    ? 'Deadlines'
+                    ? 'Milestones'
                     : type === 'payment'
                       ? 'Payments'
                       : 'Paydays'}
@@ -271,15 +281,41 @@ export function CalendarScreen({
 
         {data ? (
           <Text style={styles.counts}>
-            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} deadlines ·{' '}
+            {data.counts.tasks} tasks · {data.counts.milestones ?? 0} milestones ·{' '}
             {data.counts.payments} payments · {data.counts.paydays} paydays
           </Text>
         ) : null}
       </View>
 
-      {loading ? <Text style={styles.sub}>Loading calendar…</Text> : null}
+      {loading ? (
+        <DelayedEditorialLoading
+          title="Laying out your calendar"
+          description="Gathering tasks, milestones, payments, and paydays."
+        />
+      ) : null}
 
-      {!loading && data
+      {!loading && loadError ? (
+        <EditorialState
+          kind="error"
+          title="Calendar could not open"
+          description={loadError}
+          action={
+            <Pressable style={styles.retryButton} onPress={() => void load()}>
+              <Text style={styles.retryButtonText}>Try again</Text>
+            </Pressable>
+          }
+        />
+      ) : null}
+
+      {!loading && !loadError && data?.events.length === 0 ? (
+        <EditorialState
+          kind="empty"
+          title="A quiet stretch"
+          description="No tasks, deadlines, saving targets, payments, or paydays match these filters."
+        />
+      ) : null}
+
+      {!loading && !loadError && data && data.events.length > 0
         ? data.days.map((day) => (
             <View key={day.date} style={styles.dayCard}>
               <Text style={styles.dayLabel}>
@@ -482,49 +518,14 @@ const styles = StyleSheet.create({
   eventMilestone: { backgroundColor: colors.amberSoft },
   eventTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   eventMeta: { fontSize: 11, color: colors.muted, marginTop: 2 },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.paper,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    gap: 12,
-  },
-  sheetEyebrow: {
-    color: colors.sageDeep,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  sheetTitle: { color: colors.ink, fontSize: 22, fontWeight: '700' },
-  sheetMeta: { color: colors.muted, fontSize: 13 },
-  dateInput: {
-    borderColor: colors.line,
-    borderRadius: 12,
-    borderWidth: 1,
-    color: colors.ink,
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  sheetActions: { gap: 8 },
-  sheetBtn: {
-    alignItems: 'center',
-    borderColor: colors.line,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 12,
-  },
-  sheetBtnPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
-  sheetBtnPrimaryText: { color: colors.acid, fontWeight: '700' },
-  sheetBtnSage: { backgroundColor: colors.sage, borderColor: colors.sage },
-  sheetBtnSageText: { color: colors.sageDeep, fontWeight: '700' },
-  sheetBtnText: { color: colors.ink, fontWeight: '700' },
   sheetBtnMuted: { color: colors.muted, fontWeight: '700' },
   disabled: { opacity: 0.4 },
+  retryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  retryButtonText: { color: colors.paper, fontSize: 13, fontWeight: '700' },
 });

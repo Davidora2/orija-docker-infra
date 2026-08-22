@@ -28,6 +28,10 @@ import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
 import { CalendarSyncPanel } from "./calendar-sync-panel";
 import { CapacityRing } from "./capacity-ring";
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from "./editorial-state";
 import { GoogleSignInButton } from "./google-sign-in-button";
 import { LifeIcon, type LifeIconName } from "./life-icon";
 import { HouseholdPanel } from "./household-panel";
@@ -336,7 +340,12 @@ export function LifeOSApp() {
   if (loading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl items-center justify-center p-8 text-[#14241f]">
-        Loading Life OS…
+        <div className="w-full max-w-lg">
+          <DelayedEditorialLoading
+            title="Opening your day"
+            description="Bringing Today, Plan, Money, and Calendar into focus."
+          />
+        </div>
       </main>
     );
   }
@@ -703,9 +712,14 @@ export function LifeOSApp() {
       ) : null}
 
       {error ? (
-        <p className="mb-4 rounded-xl bg-[#f8e4df] px-3 py-2 text-sm text-[#c9634f]">
-          {error}
-        </p>
+        <div className="mb-4">
+          <EditorialState
+            kind="error"
+            compact
+            title="That did not land"
+            description={error}
+          />
+        </div>
       ) : null}
 
       {tab === "today" ? (

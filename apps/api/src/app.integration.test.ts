@@ -1374,6 +1374,78 @@ suite('account and couple household API', () => {
     );
   });
 
+  it('projects saving-goal target dates as calendar milestones with deep links', async () => {
+    const user = await register('saving-milestone@example.com', 'Saving Milestone');
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/saving-goals',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+      payload: {
+        name: 'Studio deposit',
+        category: 'house_deposit',
+        targetCents: 450_000,
+        currentCents: 125_000,
+        targetDate: '2027-02-14',
+        visibility: 'PRIVATE',
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const goal = created.json<{ id: string }>();
+
+    const calendar = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=2&types=milestone',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(calendar.statusCode).toBe(200);
+    const payload = calendar.json<{
+      events: {
+        id: string;
+        type: string;
+        date: string;
+        title: string;
+        amountCents: number | null;
+        source: string;
+        meta: {
+          savingGoalId?: string;
+          targetDate?: string;
+          deepLink?: { mobile: string; web: string };
+        };
+      }[];
+      counts: { milestones: number };
+    }>();
+    const milestone = payload.events.find(
+      (event) => event.id === `milestone:saving-goal:${goal.id}`,
+    );
+    expect(milestone).toMatchObject({
+      type: 'milestone',
+      date: '2027-02-14',
+      title: 'Saving target · Studio deposit',
+      amountCents: 450_000,
+      source: 'saving_goal',
+      meta: {
+        savingGoalId: goal.id,
+        targetDate: '2027-02-14',
+      },
+    });
+    expect(milestone?.meta.deepLink).toEqual({
+      mobile: `lifeos://money/wealth/savings/${goal.id}`,
+      web: `/?tab=money&money=wealth&savingGoalId=${goal.id}`,
+    });
+    expect(payload.counts.milestones).toBeGreaterThanOrEqual(1);
+
+    const tasksOnly = await app.inject({
+      method: 'GET',
+      url: '/v1/calendar?view=month&year=2027&month=2&types=task',
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(
+      tasksOnly
+        .json<{ events: { source: string }[] }>()
+        .events.some((event) => event.source === 'saving_goal'),
+    ).toBe(false);
+  });
+
   it('shows dated Schedule actions on Calendar', async () => {
     const user = await register('schedule-calendar@example.com', 'Schedule Calendar');
     const created = await app.inject({

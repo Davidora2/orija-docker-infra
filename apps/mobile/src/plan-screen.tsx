@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  areaHealth,
+  type EvaluationScores,
+} from '@life-os/shared';
+import {
   Modal,
   Platform,
   Pressable,
@@ -18,11 +22,13 @@ import {
 } from '@life-os/plan-domain';
 import type { LifeItem } from './api';
 import { CapacityRing } from './capacity-ring';
+import { EditorialState } from './editorial-state';
+import { EvaluationRadar } from './evaluation-radar';
+import { LandscapeHero } from './landscape-hero';
 import {
   bodyNumber,
   bodyString,
   childrenOf,
-  ideaScore,
   isOpen,
 } from './life-data';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
@@ -259,16 +265,13 @@ function areaHours(items: LifeItem[], projects: LifeItem[], areaId: string): num
     .reduce((sum, project) => sum + projectHours(items, project.id), 0);
 }
 
-function areaHealth(
-  activeCount: number,
-  hours: number,
-  available: number,
-): { label: string; tone: 'sage' | 'amber' | 'danger' } {
-  if (activeCount === 0) return { label: 'Quiet', tone: 'amber' };
-  const share = available > 0 ? hours / available : 0;
-  if (share >= 0.45) return { label: 'Needs attention', tone: 'amber' };
-  if (activeCount >= 1 && hours === 0) return { label: 'Needs attention', tone: 'amber' };
-  return { label: 'On track', tone: 'sage' };
+function ideaEvaluationScores(idea: LifeItem): EvaluationScores {
+  return {
+    impact: bodyNumber(idea, 'impact', 0),
+    effort: bodyNumber(idea, 'effort', 0),
+    alignment: bodyNumber(idea, 'alignment', 0),
+    timing: bodyNumber(idea, 'timing', 0),
+  };
 }
 
 export function PlanScreen({
@@ -626,6 +629,11 @@ export function PlanScreen({
           : parkedIdeas;
     return (
       <View style={styles.stack}>
+        <LandscapeHero
+          title="Ideas"
+          subtitle="Capture now. Clarify later."
+          detail="Compare Impact, Effort, Alignment, and Timing before a spark earns a place in the week."
+        />
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Ideas</Text>
           <Button onPress={onCaptureIdea}>Capture</Button>
@@ -676,20 +684,24 @@ export function PlanScreen({
           ))}
         </View>
         {list.length === 0 ? (
-          <Card>
-            <Text style={styles.cardTitle}>
-              {ideasTab === 'inbox'
+          <EditorialState
+            kind="empty"
+            compact
+            title={
+              ideasTab === 'inbox'
                 ? 'Inbox is clear'
                 : ideasTab === 'evaluated'
                   ? 'Nothing evaluated yet'
-                  : 'Nothing parked'}
-            </Text>
-            <Text style={styles.cardBody}>
-              {ideasTab === 'inbox'
-                ? 'Capture something rough. Evaluate winners, then turn them into projects.'
-                : 'Score an idea from Inbox to move it here.'}
-            </Text>
-          </Card>
+                  : 'Nothing parked'
+            }
+            description={
+              ideasTab === 'inbox'
+                ? 'Capture something rough. Evaluate winners when the signal is clear.'
+                : ideasTab === 'evaluated'
+                  ? 'Score an idea from Inbox to compare its four dimensions here.'
+                  : 'Parked ideas stay out of the inbox until you keep or convert them.'
+            }
+          />
         ) : (
           list.map((idea) => {
             const score = ideaScore(idea);
@@ -699,11 +711,21 @@ export function PlanScreen({
                   <View style={styles.rowBetween}>
                     <Text style={[styles.cardTitle, { flex: 1 }]}>{idea.title}</Text>
                     <Pill tone={score > 0 ? 'sage' : 'amber'}>
-                      {score > 0 ? `Score ${score}` : ideasTab === 'parked' ? 'Parked' : 'Inbox'}
+                      {score > 0
+                        ? `Score ${score}`
+                        : ideasTab === 'parked'
+                          ? 'Parked'
+                          : 'Inbox'}
                     </Pill>
                   </View>
                   {bodyString(idea, 'note') ? (
                     <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
+                  ) : null}
+                  {ideasTab === 'evaluated' ? (
+                    <EvaluationRadar
+                      label={`${idea.title} evaluation scores`}
+                      scores={ideaEvaluationScores(idea)}
+                    />
                   ) : null}
                   <View style={styles.row}>
                     {ideasTab === 'parked' ? (
@@ -887,6 +909,11 @@ export function PlanScreen({
 
     return (
       <View style={styles.stack}>
+        <LandscapeHero
+          title="Areas"
+          subtitle="Keep every life domain in view."
+          detail="Shared health cues show what is steady, overloaded, or being neglected."
+        />
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Areas</Text>
         </View>
@@ -894,12 +921,12 @@ export function PlanScreen({
           Life domains with active load. Tap an area to see its projects.
         </Text>
         {pillars.length === 0 ? (
-          <Card>
-            <Text style={styles.cardTitle}>No areas yet</Text>
-            <Text style={styles.cardBody}>
-              Add a life area, then attach projects under it.
-            </Text>
-          </Card>
+          <EditorialState
+            kind="empty"
+            compact
+            title="No areas yet"
+            description="Add a life area to give projects a home and make neglected domains visible."
+          />
         ) : (
           pillars.map((pillar, index) => {
             const pillarProjects = projects.filter(
@@ -942,6 +969,9 @@ export function PlanScreen({
                       </Text>
                       <Text style={styles.statLine}>
                         {hours.toFixed(1)}h this week · {pct}% of capacity
+                      </Text>
+                      <Text style={styles.healthProvenance}>
+                        Health signal · {health.provenance}
                       </Text>
                     </View>
                   </View>
@@ -1015,6 +1045,13 @@ export function PlanScreen({
 
   return (
     <View style={styles.stack}>
+      {projectsView === 'list' ? (
+        <LandscapeHero
+          title="Projects"
+          subtitle="Commit to outcomes, not noise."
+          detail="Protect the next action, keep deadlines visible, and match project load to the week you have."
+        />
+      ) : null}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Projects</Text>
         <Button onPress={onNewProject}>New</Button>
@@ -1118,14 +1155,13 @@ export function PlanScreen({
           }}
         />
       ) : filteredProjects.length === 0 ? (
-        <Card>
-          <Text style={styles.cardTitle}>No projects yet</Text>
-          <Text style={styles.cardBody}>
-            Create a project with a first next action, or turn an idea into a
-            project.
-          </Text>
-          <Button onPress={onNewProject}>New project</Button>
-        </Card>
+        <EditorialState
+          kind="empty"
+          compact
+          title="No projects yet"
+          description="Create a project with a first next action, or turn an idea into a project."
+          action={<Button onPress={onNewProject}>New project</Button>}
+        />
       ) : (
         filteredProjects.map((project) => {
           const next = childrenOf(items, project.id).find(
@@ -1939,6 +1975,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   statLine: { color: colors.inkSoft, fontSize: 14 },
+  healthProvenance: {
+    color: colors.sageDeep,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   outcomeText: {
     fontFamily: serif,
     fontSize: 20,

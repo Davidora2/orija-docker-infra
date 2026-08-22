@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@life-os/shared": "workspace:*",
     "@expo/metro-runtime": "~57.0.8",
     "@life-os/notes": "workspace:*",
     "@life-os/plan-domain": "workspace:*",

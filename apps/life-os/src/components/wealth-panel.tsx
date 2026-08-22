@@ -36,6 +36,10 @@ import {
   type WealthGapIdea,
   type WealthGapSummary,
 } from "../lib/api";
+import {
+  DelayedEditorialLoading,
+  EditorialState,
+} from "./editorial-state";
 
 type Props = {
   account: Account;
@@ -69,6 +73,7 @@ export function WealthPanel({
     debtTypes: { id: string; label: string }[];
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [goalName, setGoalName] = useState("");
   const [goalCategory, setGoalCategory] =
@@ -159,9 +164,11 @@ export function WealthPanel({
   }, [budgetId]);
 
   useEffect(() => {
-    void reload().catch((err) =>
-      onError(err instanceof Error ? err.message : "Could not load wealth"),
-    );
+    void reload().catch((err) => {
+      const message = err instanceof Error ? err.message : "Could not load wealth";
+      setLoadError(message);
+      onError(message);
+    });
   }, [reload, onError]);
 
   async function run(work: () => Promise<void>) {
@@ -199,6 +206,42 @@ export function WealthPanel({
     setEditInvCustom(item.customLabel ?? "");
     setEditInvGoal((item.goalCents / 100).toFixed(2));
     setEditInvCurrent((item.currentCents / 100).toFixed(2));
+  }
+
+  if (!meta && loadError) {
+    return (
+      <EditorialState
+        kind="error"
+        title="Money could not open"
+        description={loadError}
+        action={
+          <button
+            type="button"
+            className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-white"
+            onClick={() => {
+              setLoadError(null);
+              void reload().catch((err) => {
+                const message =
+                  err instanceof Error ? err.message : "Could not load wealth";
+                setLoadError(message);
+                onError(message);
+              });
+            }}
+          >
+            Try again
+          </button>
+        }
+      />
+    );
+  }
+
+  if (!meta) {
+    return (
+      <DelayedEditorialLoading
+        title="Balancing your money view"
+        description="Gathering savings, investments, debts, and net worth."
+      />
+    );
   }
 
   return (
