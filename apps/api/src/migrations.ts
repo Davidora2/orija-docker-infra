@@ -72,9 +72,9 @@ const migrations = [
     ),
   },
   {
-    version: '014_weekly_reviews_privacy',
+    version: '016_weekly_reviews_privacy',
     path: fileURLToPath(
-      new URL('../migrations/014_weekly_reviews_privacy.sql', import.meta.url),
+      new URL('../migrations/016_weekly_reviews_privacy.sql', import.meta.url),
     ),
   },
 ];
