@@ -73,17 +73,32 @@ export type BudgetListItem = {
   createdAt?: string;
   payFrequency?: string | null;
   typicalPayCents?: number | null;
+  entryCount?: number | null;
   recurringCount?: number | null;
   recurringTotalCents?: number | null;
 };
 
-/** Budget with no pay schedule and no active recurring outgoings. */
+/** Drop duplicate rows when the API or cache returns the same budget id twice. */
+export function dedupeBudgetsById<T extends { id: string }>(budgets: T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const budget of budgets) {
+    if (seen.has(budget.id)) continue;
+    seen.add(budget.id);
+    unique.push(budget);
+  }
+  return unique;
+}
+
+/** Budget with no pay schedule, entries, or active recurring outgoings. */
 function isThinBudget(budget: BudgetListItem): boolean {
+  const entryCount = budget.entryCount ?? 0;
   const recurringCount = budget.recurringCount ?? 0;
   const recurringTotal = budget.recurringTotalCents ?? 0;
   return (
     !budget.payFrequency &&
     (budget.typicalPayCents == null || budget.typicalPayCents <= 0) &&
+    entryCount <= 0 &&
     recurringCount <= 0 &&
     recurringTotal <= 0
   );
@@ -97,6 +112,8 @@ function personalBudgetRichness(budget: BudgetListItem): number {
   if (recurringTotal > 0) score += 500 + recurringTotal / 1000;
   const recurringCount = budget.recurringCount ?? 0;
   if (recurringCount > 0) score += 50 + recurringCount;
+  const entryCount = budget.entryCount ?? 0;
+  if (entryCount > 0) score += 40 + entryCount;
   if (budget.createdAt) {
     const created = Date.parse(budget.createdAt);
     if (Number.isFinite(created)) score += -created / 1e15;
@@ -122,40 +139,64 @@ function pickBestOwnedPrivate(
 export function pickDefaultBudgetId(
   budgets: BudgetListItem[],
   userId: string,
-  options?: { preferredId?: string | null; storedId?: string | null },
+  options?: {
+    preferredId?: string | null;
+    storedId?: string | null;
+    currentId?: string | null;
+  },
 ): string | null {
-  if (!budgets.length) return null;
+  const unique = dedupeBudgetsById(budgets);
+  if (!unique.length) return null;
 
   const valid = (id?: string | null) =>
-    id && budgets.some((budget) => budget.id === id) ? id : null;
+    id && unique.some((budget) => budget.id === id) ? id : null;
 
   const preferred = valid(options?.preferredId);
   if (preferred) return preferred;
 
-  const bestOwnedPrivate = pickBestOwnedPrivate(budgets, userId);
+  const current = valid(options?.currentId);
+  if (current) return current;
+
+  const bestOwnedPrivate = pickBestOwnedPrivate(unique, userId);
 
   const stored = valid(options?.storedId);
   if (stored) {
-    if (bestOwnedPrivate) {
-      const storedBudget = budgets.find((budget) => budget.id === stored);
-      if (
-        storedBudget &&
-        stored !== bestOwnedPrivate.id &&
-        isThinBudget(storedBudget) &&
-        !isThinBudget(bestOwnedPrivate)
-      ) {
+    const storedBudget = unique.find((budget) => budget.id === stored);
+    if (storedBudget && isThinBudget(storedBudget)) {
+      if (bestOwnedPrivate && !isThinBudget(bestOwnedPrivate)) {
         return bestOwnedPrivate.id;
       }
+      const bestPopulated = [...unique]
+        .filter((budget) => !isThinBudget(budget))
+        .sort((a, b) => personalBudgetRichness(b) - personalBudgetRichness(a))[0];
+      if (bestPopulated) return bestPopulated.id;
     }
     return stored;
   }
 
   if (bestOwnedPrivate) return bestOwnedPrivate.id;
 
-  const owned = budgets.filter((budget) => budget.ownerUserId === userId);
+  const owned = unique.filter((budget) => budget.ownerUserId === userId);
   if (owned.length) return owned[0]!.id;
 
-  return budgets[0]!.id;
+  return unique[0]!.id;
+}
+
+/** Dedupe list rows and resolve the budget id that should stay selected. */
+export function resolveBudgetSelection(
+  budgets: BudgetListItem[],
+  userId: string,
+  options?: {
+    preferredId?: string | null;
+    storedId?: string | null;
+    currentId?: string | null;
+  },
+): { budgets: BudgetListItem[]; selectedId: string | null } {
+  const unique = dedupeBudgetsById(budgets);
+  return {
+    budgets: unique,
+    selectedId: pickDefaultBudgetId(unique, userId, options),
+  };
 }
 
 export function evaluationRadarPoints(

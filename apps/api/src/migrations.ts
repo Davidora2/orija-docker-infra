@@ -89,6 +89,12 @@ const migrations = [
       new URL('../migrations/016_weekly_reviews_privacy.sql', import.meta.url),
     ),
   },
+  {
+    version: '017_cleanup_duplicate_empty_budgets',
+    path: fileURLToPath(
+      new URL('../migrations/017_cleanup_duplicate_empty_budgets.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

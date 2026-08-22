@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createBudget,
   getBudget,
@@ -12,7 +12,7 @@ import {
   loadLastBudgetId,
   saveLastBudgetId,
 } from "../lib/budget-selection";
-import { pickDefaultBudgetId } from "@life-os/shared";
+import { resolveBudgetSelection } from "@life-os/shared";
 import { DashboardPanel } from "./dashboard-panel";
 import { FocusHero } from "./focus-hero";
 import { LifeIcon } from "./life-icon";
@@ -39,27 +39,41 @@ export function BudgetPanel({
   const [section, setSection] = useState<"overview" | "spending" | "wealth">(
     "overview",
   );
+  const activeIdRef = useRef<string | null>(null);
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || "GBP";
 
   const reload = useCallback(
     async (preferredId?: string) => {
-      await Promise.resolve();
-      setLoading(true);
+      const isInitialLoad = activeIdRef.current === null && !detail;
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setLoadError("");
       try {
         const list = await listBudgets();
-        setBudgets(list);
-        const nextId = pickDefaultBudgetId(list, account.user.id, {
-          preferredId,
-          storedId: loadLastBudgetId(account.user.id),
-        });
-        setActiveId(nextId);
-        if (nextId) {
+        const { budgets: unique, selectedId: nextId } = resolveBudgetSelection(
+          list,
+          account.user.id,
+          {
+            preferredId,
+            storedId: loadLastBudgetId(account.user.id),
+            currentId: activeIdRef.current,
+          },
+        );
+        setBudgets(unique);
+        if (nextId !== activeIdRef.current) {
+          setActiveId(nextId);
+          activeIdRef.current = nextId;
+          if (nextId) {
+            saveLastBudgetId(account.user.id, nextId);
+            setDetail(await getBudget(nextId));
+          } else {
+            setDetail(null);
+          }
+        } else if (nextId) {
           saveLastBudgetId(account.user.id, nextId);
-          setDetail(await getBudget(nextId));
-        } else {
-          setDetail(null);
+          void getBudget(nextId).then(setDetail);
         }
       } catch (error) {
         const message =
@@ -67,10 +81,12 @@ export function BudgetPanel({
         setLoadError(message);
         onError(message);
       } finally {
-        setLoading(false);
+        if (isInitialLoad) {
+          setLoading(false);
+        }
       }
     },
-    [account.user.id, onError],
+    [account.user.id, detail, onError],
   );
 
   useEffect(() => {
@@ -101,8 +117,8 @@ export function BudgetPanel({
 
   async function selectBudget(id: string) {
     setActiveId(id);
+    activeIdRef.current = id;
     saveLastBudgetId(account.user.id, id);
-    setLoading(true);
     setLoadError("");
     try {
       setDetail(await getBudget(id));
@@ -111,8 +127,6 @@ export function BudgetPanel({
         error instanceof Error ? error.message : "Could not open this money space.";
       setLoadError(message);
       onError(message);
-    } finally {
-      setLoading(false);
     }
   }
 

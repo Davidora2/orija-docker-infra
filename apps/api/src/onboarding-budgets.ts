@@ -306,9 +306,15 @@ export function registerOnboardingAndBudgetRoutes(
     return sql`
       SELECT
         b.*,
+        COALESCE(entry_stats.entry_count, 0) AS entry_count,
         COALESCE(recurring_stats.recurring_count, 0) AS recurring_count,
         COALESCE(recurring_stats.recurring_total_cents, 0) AS recurring_total_cents
       FROM budgets b
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS entry_count
+        FROM budget_entries be
+        WHERE be.budget_id = b.id
+      ) entry_stats ON TRUE
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*)::int AS recurring_count,

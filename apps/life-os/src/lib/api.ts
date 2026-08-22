@@ -673,6 +673,7 @@ export type Budget = {
   typicalPayCents?: number | null;
   recurringCount?: number | null;
   recurringTotalCents?: number | null;
+  entryCount?: number | null;
   categories?: BudgetCategory[];
   entries?: BudgetEntry[];
   recurring?: RecurringOutgoing[];
@@ -776,6 +777,10 @@ function mapBudget(raw: Record<string, unknown>): Budget {
     recurringCount:
       raw.recurringCount != null || raw.recurring_count != null
         ? Number(raw.recurringCount ?? raw.recurring_count)
+        : null,
+    entryCount:
+      raw.entryCount != null || raw.entry_count != null
+        ? Number(raw.entryCount ?? raw.entry_count)
         : null,
     recurringTotalCents:
       raw.recurringTotalCents != null || raw.recurring_total_cents != null

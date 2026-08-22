@@ -5,7 +5,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createBudget,
   formatMoney,
@@ -16,9 +16,9 @@ import {
 } from './api';
 import {
   loadLastBudgetId,
-  pickDefaultBudgetId,
   saveLastBudgetId,
 } from './budget-selection';
+import { resolveBudgetSelection } from '@life-os/shared';
 import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
@@ -50,23 +50,36 @@ export function BudgetScreen({ account, notify }: Props) {
   const [detail, setDetail] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<'overview' | 'outgoings' | 'wealth'>('overview');
+  const activeIdRef = useRef<string | null>(null);
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || 'GBP';
 
   const reload = useCallback(
     async (preferredId?: string) => {
       const list = await listBudgets();
-      setBudgets(list);
-      const nextId = pickDefaultBudgetId(list, account.user.id, {
-        preferredId,
-        storedId: await loadLastBudgetId(account.user.id),
-      });
-      setActiveId(nextId);
-      if (nextId) {
+      const storedId = await loadLastBudgetId(account.user.id);
+      const { budgets: unique, selectedId: nextId } = resolveBudgetSelection(
+        list,
+        account.user.id,
+        {
+          preferredId,
+          storedId,
+          currentId: activeIdRef.current,
+        },
+      );
+      setBudgets(unique);
+      if (nextId !== activeIdRef.current) {
+        setActiveId(nextId);
+        activeIdRef.current = nextId;
+        if (nextId) {
+          await saveLastBudgetId(account.user.id, nextId);
+          setDetail(await getBudget(nextId));
+        } else {
+          setDetail(null);
+        }
+      } else if (nextId) {
         await saveLastBudgetId(account.user.id, nextId);
-        setDetail(await getBudget(nextId));
-      } else {
-        setDetail(null);
+        void getBudget(nextId).then(setDetail);
       }
     },
     [account.user.id],
@@ -151,6 +164,7 @@ export function BudgetScreen({ account, notify }: Props) {
                 style={[styles.tab, activeId === budget.id && styles.tabActive]}
                 onPress={() => {
                   setActiveId(budget.id);
+                  activeIdRef.current = budget.id;
                   void saveLastBudgetId(account.user.id, budget.id);
                   void getBudget(budget.id).then(setDetail);
                 }}
