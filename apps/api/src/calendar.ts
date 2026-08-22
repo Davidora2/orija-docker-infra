@@ -27,10 +27,9 @@ export type CalendarEvent = {
   meta: Record<string, unknown>;
 };
 
-function startOfWeekMonday(date: Date): Date {
-  const day = date.getUTCDay(); // 0 Sun
-  const offset = day === 0 ? -6 : 1 - day;
-  return addDays(date, offset);
+function startOfWeekSunday(date: Date): Date {
+  const day = date.getUTCDay(); // 0 Sun … 6 Sat — US default week start
+  return addDays(date, -day);
 }
 
 function parseIso(value: string): Date {
@@ -111,12 +110,19 @@ export async function loadCalendarEvents(
   let rangeEnd: string;
   if (view === 'week') {
     const anchor = options.start ? parseIso(options.start) : now;
-    const monday = startOfWeekMonday(anchor);
-    rangeStart = toDateString(monday);
-    rangeEnd = toDateString(addDays(monday, 6));
+    const sunday = startOfWeekSunday(anchor);
+    rangeStart = toDateString(sunday);
+    rangeEnd = toDateString(addDays(sunday, 6));
   } else {
-    rangeStart = `${year}-${String(month).padStart(2, '0')}-01`;
-    rangeEnd = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth(year, month)).padStart(2, '0')}`;
+    const first = parseIso(
+      `${year}-${String(month).padStart(2, '0')}-01`,
+    );
+    const last = parseIso(
+      `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth(year, month)).padStart(2, '0')}`,
+    );
+    // Pad to full weeks so the month grid always starts on Sunday (US default).
+    rangeStart = toDateString(startOfWeekSunday(first));
+    rangeEnd = toDateString(addDays(startOfWeekSunday(last), 6));
   }
 
   const events: CalendarEvent[] = [];

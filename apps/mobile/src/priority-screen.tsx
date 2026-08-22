@@ -334,7 +334,13 @@ export function PriorityScreen({
                           </Text>
                         </View>
                         <View style={styles.actionText}>
-                          <Text style={styles.actionTitle} numberOfLines={1}>
+                          <Text
+                            style={[
+                              styles.actionTitle,
+                              action.status === 'DONE' && styles.actionTitleDone,
+                            ]}
+                            numberOfLines={1}
+                          >
                             {action.title}
                           </Text>
                           <Text style={styles.actionMeta} numberOfLines={1}>
@@ -738,6 +744,10 @@ const styles = StyleSheet.create({
   },
   actionText: { flex: 1, minWidth: 0 },
   actionTitle: { color: colors.ink, fontWeight: '600', fontSize: 14 },
+  actionTitleDone: {
+    color: colors.muted,
+    textDecorationLine: 'line-through',
+  },
   actionMeta: { color: colors.muted, fontSize: 11, marginTop: 2 },
   actionAside: { alignItems: 'flex-end', gap: 4 },
   actionHours: { color: colors.ink, fontWeight: '700', fontSize: 12 },

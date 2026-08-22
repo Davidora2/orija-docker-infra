@@ -348,7 +348,9 @@ function AppContent() {
   const [actionImportance, setActionImportance] =
     useState<PriorityLevel>('HIGH');
   const [actionUrgency, setActionUrgency] = useState<PriorityLevel>('LOW');
+  const [actionScheduleDate, setActionScheduleDate] = useState('');
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
+  const [stickyPrimaryId, setStickyPrimaryId] = useState<string | null>(null);
 
   const [evaluateId, setEvaluateId] = useState<string | null>(null);
   const [impact, setImpact] = useState(7);
@@ -536,11 +538,28 @@ function AppContent() {
     [actions],
   );
   const capacity = useMemo(() => weeklyCapacityHours(items), [items]);
-  const primary = useMemo(() => primaryAction(items), [items]);
+  const rankedPrimary = useMemo(() => primaryAction(items), [items]);
+  const primary = useMemo(() => {
+    if (stickyPrimaryId) {
+      const sticky = items.find((item) => item.id === stickyPrimaryId);
+      if (sticky && sticky.kind === 'ACTION' && sticky.status === 'DONE') {
+        return sticky;
+      }
+    }
+    return rankedPrimary;
+  }, [stickyPrimaryId, items, rankedPrimary]);
   const supporting = useMemo(
     () => supportingActions(items, primary?.id),
     [items, primary?.id],
   );
+
+  useEffect(() => {
+    if (!stickyPrimaryId) return;
+    const sticky = items.find((item) => item.id === stickyPrimaryId);
+    if (!sticky || sticky.status !== 'DONE') {
+      setStickyPrimaryId(null);
+    }
+  }, [items, stickyPrimaryId]);
   const risks = useMemo(() => projectRisks(items), [items]);
 
   async function run(label: string, work: () => Promise<void>) {
@@ -666,10 +685,10 @@ function AppContent() {
         day: actionDay,
       };
       if (quadrantRequiresScheduledDate(createQuadrant)) {
-        const date = projectTargetDate.trim();
+        const date = actionScheduleDate.trim() || projectTargetDate.trim();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
           throw new Error(
-            'Schedule actions need a date — set the project deadline.',
+            'Schedule actions need a date — set the schedule date (YYYY-MM-DD).',
           );
         }
         actionBody = actionBodyWithScheduledDate(actionBody, date);
@@ -691,8 +710,9 @@ function AppContent() {
       setSourceIdeaId(null);
       setProjectTitle('');
       setProjectOutcome('');
-        setProjectTargetDate('');
+      setProjectTargetDate('');
       setActionTitle('');
+      setActionScheduleDate('');
       setActionImportance('HIGH');
       setActionUrgency('LOW');
       await reloadItems();
@@ -775,6 +795,9 @@ function AppContent() {
 
   async function completeAction(action: LifeItem) {
     const nextStatus = toggledActionStatus(action.status);
+    if (nextStatus === 'DONE' && primary?.id === action.id) {
+      setStickyPrimaryId(action.id);
+    }
     await run(
       nextStatus === 'DONE' ? 'Complete action' : 'Reopen action',
       async () => {
@@ -1022,12 +1045,20 @@ function AppContent() {
               <Text style={styles.cardEyebrow}>Primary Move</Text>
               {primary ? (
                 <>
-                  <Text style={styles.cardTitle}>{primary.title}</Text>
+                  <Text
+                    style={[
+                      styles.cardTitle,
+                      primary.status === 'DONE' && styles.doneTitle,
+                    ]}
+                  >
+                    {primary.title}
+                  </Text>
                   <Text style={styles.cardBody}>
                     {bodyNumber(primary, 'hours', 1)}h
                     {bodyString(primary, 'day')
                       ? ` · ${bodyString(primary, 'day')}`
                       : ''}
+                    {primary.status === 'DONE' ? ' · Done' : ''}
                   </Text>
                   <SwipeableRow
                     disabled={busy}
@@ -2092,6 +2123,16 @@ function AppContent() {
                 ].label
               }
             </Text>
+            {quadrantRequiresScheduledDate(
+              quadrantFromLevels(actionImportance, actionUrgency),
+            ) ? (
+              <Field
+                label="Schedule date (required, YYYY-MM-DD)"
+                value={actionScheduleDate}
+                onChangeText={setActionScheduleDate}
+                placeholder="YYYY-MM-DD"
+              />
+            ) : null}
             <Text style={styles.fieldLabel}>Day</Text>
             <View style={styles.chipRow}>
               {WEEK_DAYS.map((day) => (
@@ -2243,6 +2284,10 @@ const styles = StyleSheet.create({
     fontFamily: serif,
     fontSize: 22,
     color: colors.ink,
+  },
+  doneTitle: {
+    color: colors.muted,
+    textDecorationLine: 'line-through',
   },
   cardBody: { color: colors.muted, lineHeight: 20, fontSize: 14 },
   sectionHeader: {

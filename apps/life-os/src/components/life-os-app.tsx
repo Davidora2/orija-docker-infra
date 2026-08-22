@@ -116,6 +116,7 @@ export function LifeOSApp() {
   const [actionImportance, setActionImportance] =
     useState<PriorityLevel>("HIGH");
   const [actionUrgency, setActionUrgency] = useState<PriorityLevel>("LOW");
+  const [actionScheduleDate, setActionScheduleDate] = useState("");
   const [schedulePrompt, setSchedulePrompt] = useState<{
     actionId: string;
     title: string;
@@ -124,6 +125,7 @@ export function LifeOSApp() {
     urgency: PriorityLevel;
   } | null>(null);
   const [scheduleDateDraft, setScheduleDateDraft] = useState("");
+  const [stickyPrimaryId, setStickyPrimaryId] = useState<string | null>(null);
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
@@ -197,7 +199,7 @@ export function LifeOSApp() {
         )
       : 11;
   const planned = openActions.reduce((sum, action) => sum + num(action, "hours", 1), 0);
-  const primary = useMemo(() => {
+  const rankedOpenPrimary = useMemo(() => {
     if (openActions.length === 0) return null;
     const projectById = new Map(projects.map((project) => [project.id, project]));
     return [...openActions].sort((a, b) => {
@@ -222,7 +224,24 @@ export function LifeOSApp() {
       );
     })[0];
   }, [openActions, projects]);
+  const primary = useMemo(() => {
+    if (stickyPrimaryId) {
+      const sticky = actions.find((item) => item.id === stickyPrimaryId);
+      if (sticky && sticky.kind === "ACTION" && sticky.status === "DONE") {
+        return sticky;
+      }
+    }
+    return rankedOpenPrimary;
+  }, [stickyPrimaryId, actions, rankedOpenPrimary]);
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
+
+  useEffect(() => {
+    if (!stickyPrimaryId) return;
+    const sticky = actions.find((item) => item.id === stickyPrimaryId);
+    if (!sticky || sticky.status !== "DONE") {
+      setStickyPrimaryId(null);
+    }
+  }, [actions, stickyPrimaryId]);
 
   useEffect(() => {
     if (account?.user.preferredCurrency) {
@@ -234,14 +253,16 @@ export function LifeOSApp() {
     setCapacityHoursInput(String(available));
   }, [available]);
 
-  async function run(work: () => Promise<void>) {
+  async function run(work: () => Promise<void>): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await work();
       await refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -537,20 +558,22 @@ export function LifeOSApp() {
         </article>
       ) : null}
 
-      <nav className="mb-5 flex flex-wrap gap-2">
+      <nav className="mb-5 flex flex-nowrap gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(
           [
             ["today", "Today"],
             ["plan", "Plan"],
-            ["calendar", "Calendar"],
+            ["calendar", "Cal"],
             ["money", "Money"],
             ["you", "You"],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
-            className={`rounded-full px-3 py-1.5 text-xs font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
+            className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
             type="button"
+            title={id === "calendar" ? "Calendar" : label}
+            aria-label={id === "calendar" ? "Calendar" : label}
             onClick={() => {
               setTab(id);
               if (id === "you") setYouDest("menu");
@@ -597,7 +620,15 @@ export function LifeOSApp() {
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Primary move</p>
             {primary ? (
               <>
-                <h2 className="mt-2 font-serif text-2xl">{primary.title}</h2>
+                <h2
+                  className={`mt-2 font-serif text-2xl ${
+                    primary.status === "DONE"
+                      ? "text-[#6c7771] line-through"
+                      : "text-[#14241f]"
+                  }`}
+                >
+                  {primary.title}
+                </h2>
                 <p className="text-sm text-[#6c7771]">
                   {num(primary, "hours", 1)}h
                   {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
@@ -609,6 +640,7 @@ export function LifeOSApp() {
                       ];
                     return ` · ${meta.title}`;
                   })()}
+                  {primary.status === "DONE" ? " · Done" : ""}
                 </p>
                 <button
                   className="mt-4 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0]"
@@ -616,7 +648,12 @@ export function LifeOSApp() {
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      await updateLifeItem(primary.id, { status: toggledActionStatus(primary.status) });
+                      if (primary.status !== "DONE") {
+                        setStickyPrimaryId(primary.id);
+                      }
+                      await updateLifeItem(primary.id, {
+                        status: toggledActionStatus(primary.status),
+                      });
                     })
                   }
                 >
@@ -730,6 +767,7 @@ export function LifeOSApp() {
           actionHours={actionHours}
           actionImportance={actionImportance}
           actionUrgency={actionUrgency}
+          actionScheduleDate={actionScheduleDate}
           onProjectTitleChange={setProjectTitle}
           onProjectOutcomeChange={setProjectOutcome}
           onProjectPillarIdChange={setProjectPillarId}
@@ -738,14 +776,28 @@ export function LifeOSApp() {
           onActionHoursChange={setActionHours}
           onActionImportanceChange={setActionImportance}
           onActionUrgencyChange={setActionUrgency}
-          onSaveProject={() =>
-            void run(async () => {
+          onActionScheduleDateChange={setActionScheduleDate}
+          onSaveProject={async () => {
+            const ok = await run(async () => {
               if (!projectTitle.trim() || !actionTitle.trim()) {
                 throw new Error("Project and next action are required.");
               }
               const hours = Number(actionHours);
               if (!Number.isFinite(hours) || hours <= 0) {
                 throw new Error("Hours must be a positive number.");
+              }
+              const createQuadrant = quadrantFromLevels(
+                actionImportance,
+                actionUrgency,
+              );
+              const scheduleDate = actionScheduleDate.trim();
+              if (
+                quadrantRequiresScheduledDate(createQuadrant) &&
+                !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)
+              ) {
+                throw new Error(
+                  "Schedule actions need a date — pick a schedule date for the first next action.",
+                );
               }
               const project = await createLifeItem({
                 kind: "PROJECT",
@@ -759,26 +811,14 @@ export function LifeOSApp() {
                   projectPriorityFromImportance(actionImportance),
                 ),
               });
-              const createQuadrant = quadrantFromLevels(
-                actionImportance,
-                actionUrgency,
-              );
-              if (
-                quadrantRequiresScheduledDate(createQuadrant) &&
-                !projectTargetDate
-              ) {
-                throw new Error(
-                  "Schedule actions need a date — set the project deadline or pick Schedule after adding.",
-                );
-              }
               let actionBody: Record<string, unknown> = {
                 hours,
                 day: "This week",
               };
-              if (quadrantRequiresScheduledDate(createQuadrant) && projectTargetDate) {
+              if (quadrantRequiresScheduledDate(createQuadrant)) {
                 actionBody = actionBodyWithScheduledDate(
                   actionBody,
-                  projectTargetDate,
+                  scheduleDate,
                 );
               }
               await createLifeItem({
@@ -795,10 +835,13 @@ export function LifeOSApp() {
               setProjectOutcome("");
               setProjectTargetDate("");
               setActionTitle("");
+              setActionHours("2");
               setActionImportance("HIGH");
               setActionUrgency("LOW");
-            })
-          }
+              setActionScheduleDate("");
+            });
+            if (!ok) throw new Error("Could not save project");
+          }}
           onMoveProjectPriority={(project, priority) =>
             void run(async () => {
               await updateLifeItem(project.id, {
@@ -1172,6 +1215,7 @@ export function LifeOSApp() {
                 value={scheduleDateDraft}
                 onChange={(e) => setScheduleDateDraft(e.target.value)}
               />
+              <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
             </label>
             <div className="mt-4 flex gap-2">
               <button
