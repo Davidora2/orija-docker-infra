@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LifeItem } from "../lib/api";
 import { CapacityRing } from "./capacity-ring";
 import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
+import { NotesEditor } from "./notes-editor";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import { PriorityPanel } from "./priority-panel";
 import {
@@ -136,6 +137,10 @@ type Props = {
   onMoveProjectToIdea?: (project: LifeItem) => void;
   onParkAction?: (action: LifeItem) => void;
   onSetScheduledDate?: (action: LifeItem, date: string) => void;
+  onSaveNotes: (
+    item: LifeItem,
+    body: Record<string, unknown>,
+  ) => Promise<LifeItem | void>;
   onRequestPlanSegment?: (segment: PlanSegment) => void;
   preferPriorityMatrix?: boolean;
 };
@@ -801,15 +806,11 @@ export function PlanPanel(props: Props) {
               </p>
             </div>
           </div>
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-              Why this idea?
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-[#14241f]">
-              {str(selectedIdea, "note") ||
-                "Capture the spark. Clarify why it matters when you evaluate."}
-            </p>
-          </article>
+          <NotesEditor
+            item={selectedIdea}
+            label="Idea notes"
+            onSave={props.onSaveNotes}
+          />
           <div className="grid gap-2 sm:grid-cols-2">
             <button
               type="button"
@@ -1130,6 +1131,7 @@ export function PlanPanel(props: Props) {
           onCompleteAction={props.onCompleteAction}
           onSetProjectStatus={props.onSetProjectStatus}
           onSetProjectDeadline={props.onSetProjectDeadline}
+          onSaveNotes={props.onSaveNotes}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -1429,6 +1431,7 @@ export function PlanPanel(props: Props) {
           onCompleteAction={props.onCompleteAction}
           onSetProjectStatus={props.onSetProjectStatus}
           onSetProjectDeadline={props.onSetProjectDeadline}
+          onSaveNotes={props.onSaveNotes}
           onShowMatrix={openMatrix}
           onOpenAddAction={() => setAddActionOpen(true)}
         />
@@ -2149,6 +2152,7 @@ function ProjectDetailView({
   onCompleteAction,
   onSetProjectStatus,
   onSetProjectDeadline,
+  onSaveNotes,
   onShowMatrix,
   onOpenAddAction,
 }: {
@@ -2169,6 +2173,10 @@ function ProjectDetailView({
     project: LifeItem,
     targetDate: string | null,
   ) => void;
+  onSaveNotes: (
+    item: LifeItem,
+    body: Record<string, unknown>,
+  ) => Promise<LifeItem | void>;
   onShowMatrix: () => void;
   onOpenAddAction: () => void;
 }) {
@@ -2488,9 +2496,11 @@ function ProjectDetailView({
       ) : null}
 
       {projectTab === "notes" ? (
-        <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm text-[#6c7771]">
-          Notes stub — rich notes land in a later pass.
-        </article>
+        <NotesEditor
+          item={project}
+          label="Project notes"
+          onSave={onSaveNotes}
+        />
       ) : null}
       {projectTab === "files" ? (
         <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 text-sm text-[#6c7771]">

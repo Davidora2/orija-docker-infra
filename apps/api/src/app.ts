@@ -14,6 +14,7 @@ import {
 import type { AppConfig } from './config.js';
 import { createDatabase, type Database } from './db.js';
 import { ApiError } from './errors.js';
+import { lifeItemBodySchema } from './life-notes.js';
 import { createMailer } from './mailer.js';
 import { runMigrations } from './migrations.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
@@ -108,13 +109,18 @@ const itemKind = z.enum([
   'DECISION',
 ]);
 
+const itemBodySchema = z.intersection(
+  z.record(z.string(), jsonValueSchema),
+  lifeItemBodySchema,
+);
+
 const createItemSchema = z.object({
   kind: itemKind,
   title: z.string().trim().min(1).max(240),
   status: z.string().trim().min(1).max(50).default('ACTIVE'),
   visibility: z.enum(['PRIVATE', 'SHARED']).default('PRIVATE'),
   parentId: z.string().uuid().nullable().optional(),
-  body: z.record(z.string(), jsonValueSchema).default({}),
+  body: itemBodySchema.default({}),
   sortOrder: z.number().int().default(0),
 });
 
@@ -124,7 +130,7 @@ const updateItemSchema = z
     status: z.string().trim().min(1).max(50).optional(),
     visibility: z.enum(['PRIVATE', 'SHARED']).optional(),
     parentId: z.string().uuid().nullable().optional(),
-    body: z.record(z.string(), jsonValueSchema).optional(),
+    body: itemBodySchema.optional(),
     sortOrder: z.number().int().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
