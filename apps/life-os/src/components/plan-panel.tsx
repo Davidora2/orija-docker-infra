@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LifeItem } from "../lib/api";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
+import { PriorityPanel } from "./priority-panel";
 import {
   PRIORITY_LEVELS,
   PRIORITY_LEVEL_META,
@@ -54,7 +55,7 @@ function projectStatusRank(status: string): number {
   return 0;
 }
 
-type PlanSegment = "areas" | "projects" | "ideas";
+type PlanSegment = "priority" | "areas" | "projects" | "ideas";
 
 type Props = {
   planSegment: PlanSegment;
@@ -126,6 +127,9 @@ type Props = {
     importance: PriorityLevel,
     urgency: PriorityLevel,
   ) => void;
+  onMoveProjectToIdea?: (project: LifeItem) => void;
+  onParkAction?: (action: LifeItem) => void;
+  preferPriorityMatrix?: boolean;
 };
 
 const AREA_ICONS = ["🌿", "💪", "💼", "🏠", "🎯", "📚", "💚", "✨"];
@@ -475,6 +479,24 @@ export function PlanPanel(props: Props) {
     setQuickUrgency("LOW");
     setAddActionOpen(false);
     setActionDetailsOpen(false);
+  }
+
+  // ——— Priority (default Plan landing) ———
+  if (planSegment === "priority") {
+    return (
+      <PriorityPanel
+        pillars={pillars}
+        projects={projects}
+        openActions={openActions}
+        availableHours={availableHours}
+        busy={busy}
+        onMoveAction={props.onMoveAction}
+        onCompleteAction={props.onCompleteAction}
+        onMoveProjectToIdea={props.onMoveProjectToIdea}
+        onParkAction={props.onParkAction}
+        preferMatrix={props.preferPriorityMatrix}
+      />
+    );
   }
 
   // ——— Ideas ———
@@ -1558,11 +1580,11 @@ export function PlanPanel(props: Props) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-serif text-xl text-[#14241f]">
+                      <h3 className="min-w-0 flex-1 truncate font-serif text-xl text-[#14241f]">
                         {project.title}
                       </h3>
                       <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
                           level === "HIGH"
                             ? "bg-[#f8e4df] text-[#c9634f]"
                             : level === "MEDIUM"
@@ -1573,11 +1595,11 @@ export function PlanPanel(props: Props) {
                         {PROJECT_PRIORITY_META[level].title}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-[#6c7771]">
+                    <p className="mt-1 truncate text-sm text-[#6c7771]">
                       {projectStatusLabel(project.status)} ·{" "}
                       {area?.title ?? "Unassigned"}
                     </p>
-                    <p className="mt-1 text-sm font-medium text-[#14241f]">
+                    <p className="mt-1 truncate text-sm font-medium text-[#14241f]">
                       ○ Next: {next ? next.title : "Define next action"}
                     </p>
                     <p
