@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import {
+  filterPriorityActions,
+  ideaOverallScore,
+  ideaScoreNarrative,
+  resetPriorityFilters,
+  type PriorityFilters,
+} from '@life-os/plan-domain';
 import type { LifeItem } from './api';
 import { CapacityRing } from './capacity-ring';
 import {
@@ -66,7 +75,7 @@ const QUADRANT_TONE: Record<
 
 type PlanSegment = 'priority' | 'areas' | 'projects' | 'ideas';
 type ProjectsView = 'list' | 'matrix';
-type IdeasTab = 'inbox' | 'evaluated';
+type IdeasTab = 'inbox' | 'evaluated' | 'parked';
 
 type Props = {
   planSegment: PlanSegment;
@@ -79,10 +88,15 @@ type Props = {
   busy: boolean;
   onNewProject: () => void;
   onCaptureIdea: () => void;
+  ideaTitle: string;
+  onIdeaTitleChange: (value: string) => void;
+  onSaveIdea: () => void;
   onQuickAction: (projectId: string) => void;
   onEvaluate: (idea: LifeItem) => void;
   onConvert: (idea: LifeItem) => void;
   onArchiveIdea: (idea: LifeItem) => void;
+  onKeepIdea: (idea: LifeItem) => void;
+  onParkIdea: (idea: LifeItem) => void;
   onMoveProjectPriority: (project: LifeItem, priority: ProjectPriority) => void;
   onMoveActionQuadrant: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onCompleteAction: (action: LifeItem) => void;
@@ -268,10 +282,15 @@ export function PlanScreen({
   busy,
   onNewProject,
   onCaptureIdea,
+  ideaTitle,
+  onIdeaTitleChange,
+  onSaveIdea,
   onQuickAction,
   onEvaluate,
   onConvert,
   onArchiveIdea,
+  onKeepIdea,
+  onParkIdea,
   onMoveProjectPriority,
   onMoveActionQuadrant,
   onCompleteAction,
@@ -303,8 +322,22 @@ export function PlanScreen({
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [movingActionId, setMovingActionId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [priorityFilters, setPriorityFilters] = useState<PriorityFilters>(() =>
+    resetPriorityFilters(),
+  );
+  const [projectSearch, setProjectSearch] = useState('');
+  const [projectFilterOpen, setProjectFilterOpen] = useState(false);
+  const [projectAreaId, setProjectAreaId] = useState('');
+  const [projectPriority, setProjectPriority] = useState<ProjectPriority | ''>('');
+  const [projectStatus, setProjectStatus] = useState<'ACTIVE' | 'DONE' | 'ANY'>(
+    'ACTIVE',
+  );
+  const [projectSort, setProjectSort] = useState<'priority' | 'title' | 'hours'>(
+    'priority',
+  );
 
   const visibleProjects = useMemo(() => {
     if (!showArchived) return projects;
@@ -339,6 +372,7 @@ export function PlanScreen({
       allIdeas.filter(
         (idea) =>
           idea.status !== 'EVALUATED' &&
+          idea.status !== 'PARKED' &&
           idea.status !== 'CONVERTED' &&
           idea.status !== 'ARCHIVED' &&
           idea.status !== 'DONE',
@@ -349,11 +383,79 @@ export function PlanScreen({
     () => allIdeas.filter((idea) => idea.status === 'EVALUATED'),
     [allIdeas],
   );
+  const parkedIdeas = useMemo(
+    () => allIdeas.filter((idea) => idea.status === 'PARKED'),
+    [allIdeas],
+  );
 
   const selectedProject =
     visibleProjects.find((p) => p.id === selectedProjectId) ?? null;
   const selectedIdea = allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
   const selectedArea = pillars.find((p) => p.id === selectedAreaId) ?? null;
+  const selectedIdea = allIdeas.find((idea) => idea.id === selectedIdeaId) ?? null;
+  const priorityActions = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          item.kind === 'ACTION' &&
+          item.status !== 'ARCHIVED' &&
+          item.status !== 'CONVERTED',
+      ),
+    [items],
+  );
+  const filteredPriorityActions = useMemo(
+    () =>
+      filterPriorityActions(
+        priorityActions,
+        visibleProjects,
+        priorityFilters,
+      ),
+    [priorityActions, visibleProjects, priorityFilters],
+  );
+  const filteredProjects = useMemo(() => {
+    let list = [...visibleProjects];
+    if (projectAreaId) {
+      list = list.filter((project) => project.parentId === projectAreaId);
+    }
+    if (projectPriority) {
+      list = list.filter(
+        (project) => projectPriorityLevel(project.body) === projectPriority,
+      );
+    }
+    if (projectStatus === 'ACTIVE') list = list.filter(isOpen);
+    if (projectStatus === 'DONE') {
+      list = list.filter((project) => project.status === 'DONE');
+    }
+    const query = projectSearch.trim().toLocaleLowerCase();
+    if (query) {
+      list = list.filter(
+        (project) =>
+          project.title.toLocaleLowerCase().includes(query) ||
+          bodyString(project, 'outcome').toLocaleLowerCase().includes(query),
+      );
+    }
+    if (projectSort === 'title') {
+      return list.sort((a, b) => a.title.localeCompare(b.title));
+    }
+    if (projectSort === 'hours') {
+      return list.sort(
+        (a, b) => projectHours(items, b.id) - projectHours(items, a.id),
+      );
+    }
+    return sortedProjects(list);
+  }, [
+    visibleProjects,
+    projectAreaId,
+    projectPriority,
+    projectStatus,
+    projectSearch,
+    projectSort,
+    items,
+  ]);
+  const plannedHours = openActions.reduce(
+    (sum, action) => sum + bodyNumber(action, 'hours', 1),
+    0,
+  );
 
   const archivedToggle =
     onShowArchivedChange != null ? (
@@ -384,7 +486,7 @@ export function PlanScreen({
             <Text style={styles.backText}>Priority</Text>
           </Pressable>
           <ActionMatrixView
-            openActions={openActions}
+            openActions={filteredPriorityActions}
             projects={visibleProjects}
             movingActionId={movingActionId}
             onSelectAction={(id) =>
@@ -404,7 +506,9 @@ export function PlanScreen({
       <PriorityScreen
         pillars={pillars}
         projects={projects}
-        openActions={openActions}
+        openActions={filteredPriorityActions}
+        filters={priorityFilters}
+        onFiltersChange={setPriorityFilters}
         availableHours={availableHours}
         busy={busy}
         tipDismissed={tipDismissed}
@@ -426,6 +530,7 @@ export function PlanScreen({
   if (planSegment === 'ideas') {
     if (selectedIdea) {
       const area = pillars.find((pillar) => pillar.id === selectedIdea.parentId);
+      const overall = ideaOverallScore(selectedIdea.body);
       return (
         <View style={styles.stack}>
           <Pressable
@@ -436,15 +541,19 @@ export function PlanScreen({
             <LifeIcon name="chevron-left" size={16} />
             <Text style={styles.backText}>Ideas</Text>
           </Pressable>
-          <View style={styles.areaHeading}>
+          <View style={styles.ideaHeading}>
             <View style={styles.areaIcon}>
               <LifeIcon name="ideas" size={24} />
             </View>
-            <View style={{ flex: 1, gap: 3 }}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.sectionTitle}>{selectedIdea.title}</Text>
               <Text style={styles.listMeta}>
                 {area?.title ?? 'No area'} ·{' '}
-                {selectedIdea.status === 'EVALUATED' ? 'Evaluated' : 'Inbox'}
+                {selectedIdea.status === 'EVALUATED'
+                  ? 'Evaluated'
+                  : selectedIdea.status === 'PARKED'
+                    ? 'Parked'
+                    : 'Inbox'}
               </Text>
             </View>
           </View>
@@ -453,6 +562,13 @@ export function PlanScreen({
             label="Idea notes"
             onSave={onSaveNotes}
           />
+          {selectedIdea.status === 'EVALUATED' ? (
+            <Card>
+              <MicroLabel>Overall /10</MicroLabel>
+              <Text style={styles.scoreValue}>{overall.toFixed(1)}</Text>
+              <Text style={styles.cardBody}>{ideaScoreNarrative(overall)}</Text>
+            </Card>
+          ) : null}
           <View style={styles.row}>
             <Button
               variant="secondary"
@@ -461,31 +577,86 @@ export function PlanScreen({
             >
               Evaluate
             </Button>
-            <Button
-              style={{ flex: 1 }}
-              onPress={() => onConvert(selectedIdea)}
-            >
-              Turn into project
+            <Button style={{ flex: 1 }} onPress={() => onConvert(selectedIdea)}>
+              Convert
             </Button>
           </View>
-          <Button variant="ghost" onPress={() => onArchiveIdea(selectedIdea)}>
-            Archive
-          </Button>
+          <View style={styles.row}>
+            {selectedIdea.status === 'PARKED' ? (
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => onKeepIdea(selectedIdea)}
+              >
+                Keep in inbox
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => onParkIdea(selectedIdea)}
+              >
+                Park for later
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              style={{ flex: 1 }}
+              onPress={() => onArchiveIdea(selectedIdea)}
+            >
+              Discard…
+            </Button>
+          </View>
+          <Card>
+            <MicroLabel>Next step</MicroLabel>
+            <Text style={styles.cardBody}>
+              Define the outcome, pick an area, then write one concrete first
+              action. Discard archives the idea; it never permanently deletes it.
+            </Text>
+          </Card>
         </View>
       );
     }
-    const list = ideasTab === 'inbox' ? inboxIdeas : evaluatedIdeas;
+
+    const list =
+      ideasTab === 'inbox'
+        ? inboxIdeas
+        : ideasTab === 'evaluated'
+          ? evaluatedIdeas
+          : parkedIdeas;
     return (
       <View style={styles.stack}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Ideas</Text>
           <Button onPress={onCaptureIdea}>Capture</Button>
         </View>
+        <View style={styles.captureBar}>
+          <TextInput
+            value={ideaTitle}
+            onChangeText={onIdeaTitleChange}
+            placeholder="Capture an idea…"
+            placeholderTextColor={colors.muted}
+            style={styles.captureInput}
+            returnKeyType="done"
+            onSubmitEditing={onSaveIdea}
+          />
+          <Pressable
+            disabled={busy || !ideaTitle.trim()}
+            onPress={onSaveIdea}
+            style={[
+              styles.captureButton,
+              (busy || !ideaTitle.trim()) && { opacity: 0.45 },
+            ]}
+          >
+            <LifeIcon name="add" size={18} color={colors.paper} />
+          </Pressable>
+        </View>
         <View style={styles.toggleRow}>
           {(
             [
               ['inbox', 'Inbox'],
               ['evaluated', 'Evaluated'],
+              ['parked', 'Parked'],
             ] as const
           ).map(([id, label]) => (
             <Pressable
@@ -507,7 +678,11 @@ export function PlanScreen({
         {list.length === 0 ? (
           <Card>
             <Text style={styles.cardTitle}>
-              {ideasTab === 'inbox' ? 'Inbox is clear' : 'Nothing evaluated yet'}
+              {ideasTab === 'inbox'
+                ? 'Inbox is clear'
+                : ideasTab === 'evaluated'
+                  ? 'Nothing evaluated yet'
+                  : 'Nothing parked'}
             </Text>
             <Text style={styles.cardBody}>
               {ideasTab === 'inbox'
@@ -519,40 +694,41 @@ export function PlanScreen({
           list.map((idea) => {
             const score = ideaScore(idea);
             return (
-              <Card key={idea.id}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.cardTitle}>{idea.title}</Text>
-                  <Pill tone={score > 0 ? 'sage' : 'amber'}>
-                    {score > 0 ? `Score ${score}` : 'Unevaluated'}
-                  </Pill>
-                </View>
-                {bodyString(idea, 'note') ? (
-                  <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
-                ) : null}
-                <Button
-                  variant="secondary"
-                  onPress={() => setSelectedIdeaId(idea.id)}
-                >
-                  Open notes
-                </Button>
-                <View style={styles.row}>
-                  {ideasTab === 'inbox' ? (
-                    <Button
-                      variant="secondary"
-                      style={{ flex: 1 }}
-                      onPress={() => onEvaluate(idea)}
-                    >
-                      Evaluate
-                    </Button>
+              <Pressable key={idea.id} onPress={() => setSelectedIdeaId(idea.id)}>
+                <Card>
+                  <View style={styles.rowBetween}>
+                    <Text style={[styles.cardTitle, { flex: 1 }]}>{idea.title}</Text>
+                    <Pill tone={score > 0 ? 'sage' : 'amber'}>
+                      {score > 0 ? `Score ${score}` : ideasTab === 'parked' ? 'Parked' : 'Inbox'}
+                    </Pill>
+                  </View>
+                  {bodyString(idea, 'note') ? (
+                    <Text style={styles.cardBody}>{bodyString(idea, 'note')}</Text>
                   ) : null}
-                  <Button style={{ flex: 1 }} onPress={() => onConvert(idea)}>
-                    Turn into project
-                  </Button>
-                </View>
-                <Button variant="ghost" onPress={() => onArchiveIdea(idea)}>
-                  Archive
-                </Button>
-              </Card>
+                  <View style={styles.row}>
+                    {ideasTab === 'parked' ? (
+                      <Button
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        onPress={() => onKeepIdea(idea)}
+                      >
+                        Keep
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        onPress={() => onParkIdea(idea)}
+                      >
+                        Park
+                      </Button>
+                    )}
+                    <Button style={{ flex: 1 }} onPress={() => onConvert(idea)}>
+                      Convert
+                    </Button>
+                  </View>
+                </Card>
+              </Pressable>
             );
           })
         )}
@@ -875,6 +1051,57 @@ export function PlanScreen({
         {archivedToggle}
       </View>
 
+      {projectsView === 'list' ? (
+        <>
+          <View style={styles.projectTools}>
+            <TextInput
+              value={projectSearch}
+              onChangeText={setProjectSearch}
+              placeholder="Search projects"
+              placeholderTextColor={colors.muted}
+              style={styles.projectSearch}
+            />
+            <Pressable
+              onPress={() => setProjectFilterOpen(true)}
+              style={styles.toolButton}
+            >
+              <LifeIcon name="priority" size={17} color={colors.sageDeep} />
+              <Text style={styles.toolButtonText}>Filter & sort</Text>
+            </Pressable>
+          </View>
+          <View style={styles.capacityStrip}>
+            <View style={styles.capacityStripCell}>
+              <Text style={styles.capacityStripValue}>{plannedHours.toFixed(1)}h</Text>
+              <Text style={styles.capacityStripLabel}>Planned</Text>
+            </View>
+            <View style={styles.capacityStripCell}>
+              <Text style={styles.capacityStripValue}>{availableHours}h</Text>
+              <Text style={styles.capacityStripLabel}>Capacity</Text>
+            </View>
+            <View style={styles.capacityStripCell}>
+              <Text
+                style={[
+                  styles.capacityStripValue,
+                  {
+                    color:
+                      plannedHours > availableHours
+                        ? colors.danger
+                        : colors.sageDeep,
+                  },
+                ]}
+              >
+                {plannedHours > availableHours
+                  ? `${(plannedHours - availableHours).toFixed(1)}h over`
+                  : 'On track'}
+              </Text>
+              <Text style={styles.capacityStripLabel}>
+                {filteredProjects.length} shown
+              </Text>
+            </View>
+          </View>
+        </>
+      ) : null}
+
       {projectsView === 'matrix' ? (
         <ActionMatrixView
           openActions={openActions}
@@ -890,7 +1117,7 @@ export function PlanScreen({
             setMovingActionId(null);
           }}
         />
-      ) : visibleProjects.length === 0 ? (
+      ) : filteredProjects.length === 0 ? (
         <Card>
           <Text style={styles.cardTitle}>No projects yet</Text>
           <Text style={styles.cardBody}>
@@ -900,7 +1127,7 @@ export function PlanScreen({
           <Button onPress={onNewProject}>New project</Button>
         </Card>
       ) : (
-        sortedProjects(visibleProjects).map((project) => {
+        filteredProjects.map((project) => {
           const next = childrenOf(items, project.id).find(
             (item) => item.kind === 'ACTION' && isOpen(item),
           );
@@ -969,7 +1196,127 @@ export function PlanScreen({
           );
         })
       )}
+
+      <Modal
+        visible={projectFilterOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProjectFilterOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <Pressable
+            style={styles.modalDismiss}
+            onPress={() => setProjectFilterOpen(false)}
+          />
+          <ScrollView
+            style={styles.filterSheet}
+            contentContainerStyle={{ gap: 12, paddingBottom: 28 }}
+          >
+            <Text style={styles.sectionTitle}>Filter & sort</Text>
+            <MicroLabel>Area</MicroLabel>
+            <View style={styles.chipRow}>
+              <FilterChip
+                label="All"
+                active={!projectAreaId}
+                onPress={() => setProjectAreaId('')}
+              />
+              {pillars.map((pillar) => (
+                <FilterChip
+                  key={pillar.id}
+                  label={pillar.title}
+                  active={projectAreaId === pillar.id}
+                  onPress={() => setProjectAreaId(pillar.id)}
+                />
+              ))}
+            </View>
+            <MicroLabel>Priority</MicroLabel>
+            <View style={styles.chipRow}>
+              {(['', ...PROJECT_PRIORITIES] as const).map((priority) => (
+                <FilterChip
+                  key={priority || 'any'}
+                  label={priority ? PROJECT_PRIORITY_META[priority].title : 'Any'}
+                  active={projectPriority === priority}
+                  onPress={() => setProjectPriority(priority)}
+                />
+              ))}
+            </View>
+            <MicroLabel>Status</MicroLabel>
+            <View style={styles.chipRow}>
+              {(['ACTIVE', 'DONE', 'ANY'] as const).map((status) => (
+                <FilterChip
+                  key={status}
+                  label={status === 'ANY' ? 'Any' : status === 'DONE' ? 'Done' : 'Active'}
+                  active={projectStatus === status}
+                  onPress={() => setProjectStatus(status)}
+                />
+              ))}
+            </View>
+            <MicroLabel>Sort by</MicroLabel>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  ['priority', 'Priority'],
+                  ['title', 'Title'],
+                  ['hours', 'Hours this week'],
+                ] as const
+              ).map(([id, label]) => (
+                <FilterChip
+                  key={id}
+                  label={label}
+                  active={projectSort === id}
+                  onPress={() => setProjectSort(id)}
+                />
+              ))}
+            </View>
+            <Text style={styles.cardBody}>
+              Preview · {filteredProjects.length} projects match
+            </Text>
+            <View style={styles.row}>
+              <Button
+                variant="secondary"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setProjectAreaId('');
+                  setProjectPriority('');
+                  setProjectStatus('ACTIVE');
+                  setProjectSort('priority');
+                  setProjectSearch('');
+                }}
+              >
+                Reset
+              </Button>
+              <Button
+                style={{ flex: 1 }}
+                onPress={() => setProjectFilterOpen(false)}
+              >
+                Apply
+              </Button>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.chip, active && styles.chipActive]}
+    >
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -1533,6 +1880,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  ideaHeading: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  scoreValue: {
+    color: colors.ink,
+    fontFamily: serif,
+    fontSize: 34,
+  },
+  captureBar: {
+    alignItems: 'center',
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    padding: 8,
+  },
+  captureInput: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 14,
+    minHeight: 42,
+    paddingHorizontal: 8,
+  },
+  captureButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: 12,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
   areaHeading: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   areaIcon: {
     alignItems: 'center',
@@ -1714,5 +2092,51 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: colors.ink,
     backgroundColor: colors.paper,
+  },
+  projectTools: { flexDirection: 'row', gap: 8 },
+  projectSearch: {
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: 999,
+    borderWidth: 1,
+    color: colors.ink,
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  toolButton: {
+    alignItems: 'center',
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    paddingHorizontal: 12,
+  },
+  toolButtonText: { color: colors.ink, fontSize: 12, fontWeight: '700' },
+  capacityStrip: {
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    padding: 12,
+  },
+  capacityStripCell: { alignItems: 'center', flex: 1, minWidth: 0 },
+  capacityStripValue: {
+    color: colors.ink,
+    fontFamily: serif,
+    fontSize: 18,
+  },
+  capacityStripLabel: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  modalWrap: { flex: 1, justifyContent: 'flex-end' },
+  modalDismiss: { backgroundColor: 'rgba(20,36,31,0.35)', flex: 1 },
+  filterSheet: {
+    backgroundColor: colors.canvas,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '86%',
+    padding: 20,
   },
 });
