@@ -111,7 +111,7 @@ See [reference.md](reference.md) for full payloads and log decoding.
 | Empty containers list | Normal for non-admin token |
 | Public URL down | Tunnel/DNS; check origin port |
 
-## Security
+Agents testing Life OS on production (`lifeos.orija.store`) must **never** register accounts with disposable domains (`@orija.store`, `@example.com`, `@lifeos-audit.local`) or agent-style local parts (`audit-ui-*`, `dark-heroes-*`). Registration and outbound auth mail are blocked for those patterns.
 
 - Token lives only in Cursor secrets / shell env
 - Never write `ptr_…` into git, SKILL.md, or PR text

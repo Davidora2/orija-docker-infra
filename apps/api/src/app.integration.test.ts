@@ -37,6 +37,9 @@ suite('account and couple household API', () => {
     authEmailVerificationDisabled: false,
     skipEmailSend: false,
     allowTestRegistrationEmails: true,
+    authEmailVerificationDisabled: false,
+    skipEmailSend: false,
+    allowTestRegistrationEmails: true,
   };
 
   beforeAll(async () => {
