@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -31,6 +32,7 @@ import { OnboardingSheet } from './src/onboarding-sheet';
 import {
   ApiError,
   createLifeItem,
+  deleteLifeItem,
   getAccount,
   loadSession,
   pingApi,
@@ -49,6 +51,7 @@ import {
   type SyncPhase,
 } from './src/offline';
 import { PlanScreen } from './src/plan-screen';
+import { SwipeableRow } from './src/swipeable-row';
 import {
   WEEK_DAYS,
   bodyNumber,
@@ -343,6 +346,7 @@ function AppContent() {
 
   const [availableHoursInput, setAvailableHoursInput] = useState('11');
   const [areaTitle, setAreaTitle] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const needsOnboarding = Boolean(
     account && !account.user.onboardingCompletedAt,
   );
@@ -762,7 +766,33 @@ function AppContent() {
     await run('Archive', async () => {
       await updateLifeItem(item.id, { status: 'ARCHIVED' });
       await reloadItems();
+      notify(
+        item.kind === 'ACTION'
+          ? 'Action archived (hidden from Today/Plan).'
+          : 'Archived.',
+      );
     });
+  }
+
+  function confirmDeleteItem(item: LifeItem) {
+    Alert.alert(
+      'Delete permanently?',
+      `"${item.title}" will be removed. Prefer Archive to soft-remove and keep it recoverable.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void run('Delete', async () => {
+              await deleteLifeItem(item.id);
+              await reloadItems();
+              notify('Deleted.');
+            });
+          },
+        },
+      ],
+    );
   }
 
   async function addLifeArea() {
@@ -893,25 +923,32 @@ function AppContent() {
                       ? ` · ${bodyString(primary, 'day')}`
                       : ''}
                   </Text>
-                  <View style={styles.row}>
-                    <Button
-                      onPress={() => void completeAction(primary)}
-                      disabled={busy}
-                      style={{ flex: 1 }}
-                    >
-                      Mark done
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onPress={() => {
-                        setTab('you');
-                        setYouDest('capacity');
-                      }}
-                      style={{ flex: 1 }}
-                    >
-                      Capacity
-                    </Button>
-                  </View>
+                  <SwipeableRow
+                    disabled={busy}
+                    onArchive={() => void archiveItem(primary)}
+                    onDelete={() => confirmDeleteItem(primary)}
+                  >
+                    <View style={styles.row}>
+                      <Button
+                        onPress={() => void completeAction(primary)}
+                        disabled={busy}
+                        style={{ flex: 1 }}
+                      >
+                        Mark done
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onPress={() => {
+                          setTab('you');
+                          setYouDest('capacity');
+                        }}
+                        style={{ flex: 1 }}
+                      >
+                        Capacity
+                      </Button>
+                    </View>
+                  </SwipeableRow>
+                  <Text style={styles.listMeta}>Swipe left to archive</Text>
                 </>
               ) : (
                 <EmptyState
@@ -928,26 +965,33 @@ function AppContent() {
 
             <Card>
               <Text style={styles.cardEyebrow}>Supporting actions</Text>
+              <Text style={styles.listMeta}>Swipe left to archive · Delete is optional</Text>
               {supporting.length === 0 ? (
                 <Text style={styles.cardBody}>No other open actions this week.</Text>
               ) : (
                 supporting.map((action) => (
-                  <Pressable
+                  <SwipeableRow
                     key={action.id}
-                    onPress={() => void completeAction(action)}
-                    style={styles.listRow}
+                    disabled={busy}
+                    onArchive={() => void archiveItem(action)}
+                    onDelete={() => confirmDeleteItem(action)}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.listTitle}>{action.title}</Text>
-                      <Text style={styles.listMeta}>
-                        {bodyNumber(action, 'hours', 1)}h
-                        {bodyString(action, 'day')
-                          ? ` · ${bodyString(action, 'day')}`
-                          : ''}
-                      </Text>
-                    </View>
-                    <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
-                  </Pressable>
+                    <Pressable
+                      onPress={() => void completeAction(action)}
+                      style={styles.listRow}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.listTitle}>{action.title}</Text>
+                        <Text style={styles.listMeta}>
+                          {bodyNumber(action, 'hours', 1)}h
+                          {bodyString(action, 'day')
+                            ? ` · ${bodyString(action, 'day')}`
+                            : ''}
+                        </Text>
+                      </View>
+                      <Icon name="checkmark-circle-outline" color={colors.sageDeep} />
+                    </Pressable>
+                  </SwipeableRow>
                 ))
               )}
             </Card>
@@ -1059,6 +1103,9 @@ function AppContent() {
               void moveActionQuadrant(action, quadrant)
             }
             onCompleteAction={(action) => void completeAction(action)}
+            onArchiveAction={(action) => void archiveItem(action)}
+            onDeleteAction={(action) => confirmDeleteItem(action)}
+            onArchiveProject={(project) => void archiveItem(project)}
             onSetProjectStatus={(project, status) =>
               void run('Update project status', async () => {
                 await updateLifeItem(project.id, { status });
@@ -1072,7 +1119,12 @@ function AppContent() {
             }
             onAddArea={() => void addLifeArea()}
             onRemoveArea={(pillar) => void removeLifeArea(pillar)}
-            onOpenProjectsMatrix={() => setPlanSegment('projects')}
+            onOpenProjectsMatrix={() => {
+              setPlanSegment('projects');
+            }}
+            preferMatrix={false}
+            showArchived={showArchived}
+            onShowArchivedChange={setShowArchived}
           />
         ) : null}
 
@@ -1164,47 +1216,54 @@ function AppContent() {
               />
             ) : (
               capacity.openActions.map((action) => (
-                <Card key={action.id}>
-                  <Text style={styles.listTitle}>{action.title}</Text>
-                  <Text style={styles.listMeta}>
-                    {bodyNumber(action, 'hours', 1)}h
-                    {bodyString(action, 'day')
-                      ? ` · ${bodyString(action, 'day')}`
-                      : ' · unscheduled'}
-                  </Text>
-                  <View style={styles.row}>
-                    <Button
-                      variant="secondary"
-                      style={{ flex: 1 }}
-                      onPress={() =>
-                        void updateActionHours(
-                          action,
-                          bodyNumber(action, 'hours', 1) - 1,
-                        )
-                      }
-                    >
-                      −1h
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      style={{ flex: 1 }}
-                      onPress={() =>
-                        void updateActionHours(
-                          action,
-                          bodyNumber(action, 'hours', 1) + 1,
-                        )
-                      }
-                    >
-                      +1h
-                    </Button>
-                    <Button
-                      style={{ flex: 1 }}
-                      onPress={() => void completeAction(action)}
-                    >
-                      Done
-                    </Button>
-                  </View>
-                </Card>
+                <SwipeableRow
+                  key={action.id}
+                  disabled={busy}
+                  onArchive={() => void archiveItem(action)}
+                  onDelete={() => confirmDeleteItem(action)}
+                >
+                  <Card>
+                    <Text style={styles.listTitle}>{action.title}</Text>
+                    <Text style={styles.listMeta}>
+                      {bodyNumber(action, 'hours', 1)}h
+                      {bodyString(action, 'day')
+                        ? ` · ${bodyString(action, 'day')}`
+                        : ' · unscheduled'}
+                    </Text>
+                    <View style={styles.row}>
+                      <Button
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        onPress={() =>
+                          void updateActionHours(
+                            action,
+                            bodyNumber(action, 'hours', 1) - 1,
+                          )
+                        }
+                      >
+                        −1h
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        onPress={() =>
+                          void updateActionHours(
+                            action,
+                            bodyNumber(action, 'hours', 1) + 1,
+                          )
+                        }
+                      >
+                        +1h
+                      </Button>
+                      <Button
+                        style={{ flex: 1 }}
+                        onPress={() => void completeAction(action)}
+                      >
+                        Done
+                      </Button>
+                    </View>
+                  </Card>
+                </SwipeableRow>
               ))
             )}
           </View>
@@ -1473,7 +1532,11 @@ function AppContent() {
                           ))}
                         </View>
                       </ScrollView>
-                      <Text style={styles.fieldLabel}>Importance</Text>
+                      <Text style={styles.fieldLabel}>Action importance</Text>
+                      <Text style={styles.listMeta}>
+                        With Urgency → Eisenhower (Do now / Schedule / Delegate /
+                        Eliminate). Separate from Project priority.
+                      </Text>
                       <View style={styles.chipRow}>
                         {PRIORITY_LEVELS.map((level) => (
                           <Pressable
@@ -1495,7 +1558,7 @@ function AppContent() {
                           </Pressable>
                         ))}
                       </View>
-                      <Text style={styles.fieldLabel}>Urgency</Text>
+                      <Text style={styles.fieldLabel}>Action urgency</Text>
                       <View style={styles.chipRow}>
                         {PRIORITY_LEVELS.map((level) => (
                           <Pressable
@@ -1809,7 +1872,11 @@ function AppContent() {
               onChangeText={setActionHours}
               keyboardType="decimal-pad"
             />
-            <Text style={styles.fieldLabel}>Importance</Text>
+            <Text style={styles.fieldLabel}>Action importance</Text>
+            <Text style={styles.listMeta}>
+              Low / Medium / High with Urgency → Eisenhower quadrant. Not the same
+              as Project priority above.
+            </Text>
             <View style={styles.chipRow}>
               {PRIORITY_LEVELS.map((level) => (
                 <Pressable
@@ -1831,7 +1898,7 @@ function AppContent() {
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.fieldLabel}>Urgency</Text>
+            <Text style={styles.fieldLabel}>Action urgency</Text>
             <View style={styles.chipRow}>
               {PRIORITY_LEVELS.map((level) => (
                 <Pressable

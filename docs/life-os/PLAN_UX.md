@@ -32,10 +32,20 @@ Plan is the **decision surface**. Today / Calendar / Capacity are **read surface
 2. **Committed hierarchy:** `Area → Project → Action`.  
    **Idea path (pre-commitment):** `Idea → Project → Action` (Idea is not required to sit between Area and Project for day-to-day work).
 3. **Project priority = High / Medium / Low** — **not** Eisenhower.
-4. **Eisenhower (Do First / Schedule / Delegate / Eliminate)** is **derived** from Action `Important × Urgent`. The priority matrix is a **view of Actions**, not a separate entity type and **not** a Project field.
+4. **Eisenhower (Do First / Schedule / Delegate / Eliminate)** is **derived** from Action `Importance × Urgency` (each Low / Medium / High). The priority matrix is a **view of Actions**, not a separate entity type and **not** a Project field.
 5. **Today, Calendar, and Capacity read Actions** — one source of truth; no duplicate entry of the same work.
 6. **Capacity** sums **Action estimates** for the period (week / day as configured).
 7. **Global +** plus **contextual defaults** for create types: Action / Idea / Project / Spend.
+8. **Archive vs Delete (mobile):** swipe on an Action (or Project) row **Archives** by default (`status = ARCHIVED`) — soft-remove from Today/Plan/Capacity defaults, recoverable via **Show archived**. **Delete** is a secondary confirm that permanently removes the record. **Done** remains completion (`status = DONE`).
+
+### Why two “importance-like” controls?
+
+| Control | Applies to | Values | Purpose |
+|---------|------------|--------|---------|
+| **Project priority** | Project | High / Medium / Low | How soon the project gets attention |
+| **Action importance + urgency** | Action | Low / Medium / High each | Derive Eisenhower quadrant |
+
+Do **not** merge these into one field — clarify labels in UI when both appear nearby.
 
 ### Core implementation rule
 

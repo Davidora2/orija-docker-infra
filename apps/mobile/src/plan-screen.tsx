@@ -26,6 +26,7 @@ import {
   type PriorityQuadrant,
   type ProjectPriority,
 } from './priority-matrix';
+import { SwipeableRow } from './swipeable-row';
 
 const colors = {
   ink: '#14241F',
@@ -79,6 +80,9 @@ type Props = {
   onMoveProjectPriority: (project: LifeItem, priority: ProjectPriority) => void;
   onMoveActionQuadrant: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onArchiveAction: (action: LifeItem) => void;
+  onDeleteAction: (action: LifeItem) => void;
+  onArchiveProject: (project: LifeItem) => void;
   onSetProjectStatus: (
     project: LifeItem,
     status: 'ACTIVE' | 'PAUSED' | 'DONE',
@@ -90,6 +94,8 @@ type Props = {
   onAreaTitleChange: (value: string) => void;
   /** When parent switches to Projects for matrix, prefer matrix view */
   preferMatrix?: boolean;
+  showArchived?: boolean;
+  onShowArchivedChange?: (value: boolean) => void;
 };
 
 function MicroLabel({ children }: { children: ReactNode }) {
@@ -186,6 +192,7 @@ function Button({
 function projectStatusLabel(status: string): string {
   if (status === 'DONE') return 'Done';
   if (status === 'PAUSED') return 'Paused';
+  if (status === 'ARCHIVED') return 'Archived';
   return 'Active';
 }
 
@@ -248,6 +255,9 @@ export function PlanScreen({
   onMoveProjectPriority,
   onMoveActionQuadrant,
   onCompleteAction,
+  onArchiveAction,
+  onDeleteAction,
+  onArchiveProject,
   onSetProjectStatus,
   onAddArea,
   onRemoveArea,
@@ -255,6 +265,8 @@ export function PlanScreen({
   areaTitle,
   onAreaTitleChange,
   preferMatrix = false,
+  showArchived = false,
+  onShowArchivedChange,
 }: Props) {
   const [projectsView, setProjectsView] = useState<ProjectsView>(
     preferMatrix ? 'matrix' : 'list',
@@ -264,6 +276,15 @@ export function PlanScreen({
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [movingActionId, setMovingActionId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const visibleProjects = useMemo(() => {
+    if (!showArchived) return projects;
+    const archived = items.filter(
+      (item) => item.kind === 'PROJECT' && item.status === 'ARCHIVED',
+    );
+    const seen = new Set(projects.map((p) => p.id));
+    return [...projects, ...archived.filter((p) => !seen.has(p.id))];
+  }, [projects, items, showArchived]);
 
   useEffect(() => {
     if (preferMatrix) setProjectsView('matrix');
@@ -292,8 +313,26 @@ export function PlanScreen({
     [allIdeas],
   );
 
-  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+  const selectedProject =
+    visibleProjects.find((p) => p.id === selectedProjectId) ?? null;
   const selectedArea = pillars.find((p) => p.id === selectedAreaId) ?? null;
+
+  const archivedToggle =
+    onShowArchivedChange != null ? (
+      <Pressable
+        onPress={() => onShowArchivedChange(!showArchived)}
+        style={[styles.toggleChip, showArchived && styles.toggleChipActive]}
+      >
+        <Text
+          style={[
+            styles.toggleChipText,
+            showArchived && styles.toggleChipTextActive,
+          ]}
+        >
+          {showArchived ? 'Showing archived' : 'Show archived'}
+        </Text>
+      </Pressable>
+    ) : null;
 
   if (planSegment === 'ideas') {
     const list = ideasTab === 'inbox' ? inboxIdeas : evaluatedIdeas;
@@ -394,7 +433,11 @@ export function PlanScreen({
           onMovePriority={onMoveProjectPriority}
           onQuickAction={onQuickAction}
           onCompleteAction={onCompleteAction}
+          onArchiveAction={onArchiveAction}
+          onDeleteAction={onDeleteAction}
+          onArchiveProject={onArchiveProject}
           onSetProjectStatus={onSetProjectStatus}
+          showArchived={showArchived}
           onShowMatrix={() => {
             setSelectedProjectId(null);
             setSelectedAreaId(null);
@@ -407,8 +450,10 @@ export function PlanScreen({
 
     if (selectedArea) {
       const areaProjects = sortedProjects(
-        projects.filter(
-          (project) => project.parentId === selectedArea.id && isOpen(project),
+        visibleProjects.filter(
+          (project) =>
+            project.parentId === selectedArea.id &&
+            (showArchived || isOpen(project)),
         ),
       );
       const openAreaIdeas = inboxIdeas.filter(
@@ -443,26 +488,31 @@ export function PlanScreen({
               );
               const level = projectPriorityLevel(project.body);
               return (
-                <Pressable
+                <SwipeableRow
                   key={project.id}
-                  onPress={() => {
-                    setSelectedProjectId(project.id);
-                    setDetailsOpen(false);
-                  }}
+                  disabled={busy || project.status === 'ARCHIVED'}
+                  onArchive={() => onArchiveProject(project)}
                 >
-                  <Card>
-                    <View style={styles.rowBetween}>
-                      <Text style={styles.listTitle}>{project.title}</Text>
-                      <Pill>{PROJECT_PRIORITY_META[level].title}</Pill>
-                    </View>
-                    <Text style={styles.listMeta}>
-                      Next:{' '}
-                      {next
-                        ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
-                        : 'Define next action'}
-                    </Text>
-                  </Card>
-                </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setSelectedProjectId(project.id);
+                      setDetailsOpen(false);
+                    }}
+                  >
+                    <Card>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.listTitle}>{project.title}</Text>
+                        <Pill>{PROJECT_PRIORITY_META[level].title}</Pill>
+                      </View>
+                      <Text style={styles.listMeta}>
+                        Next:{' '}
+                        {next
+                          ? `${next.title} (${bodyNumber(next, 'hours', 1)}h)`
+                          : 'Define next action'}
+                      </Text>
+                    </Card>
+                  </Pressable>
+                </SwipeableRow>
               );
             })
           )}
@@ -583,7 +633,11 @@ export function PlanScreen({
         onMovePriority={onMoveProjectPriority}
         onQuickAction={onQuickAction}
         onCompleteAction={onCompleteAction}
+        onArchiveAction={onArchiveAction}
+        onDeleteAction={onDeleteAction}
+        onArchiveProject={onArchiveProject}
         onSetProjectStatus={onSetProjectStatus}
+        showArchived={showArchived}
         onShowMatrix={() => {
           setSelectedProjectId(null);
           setProjectsView('matrix');
@@ -623,12 +677,13 @@ export function PlanScreen({
             </Text>
           </Pressable>
         ))}
+        {archivedToggle}
       </View>
 
       {projectsView === 'matrix' ? (
         <ActionMatrixView
           openActions={openActions}
-          projects={projects}
+          projects={visibleProjects}
           movingActionId={movingActionId}
           onSelectAction={(id) =>
             setMovingActionId((current) => (current === id ? null : id))
@@ -640,7 +695,7 @@ export function PlanScreen({
             setMovingActionId(null);
           }}
         />
-      ) : projects.length === 0 ? (
+      ) : visibleProjects.length === 0 ? (
         <Card>
           <Text style={styles.cardTitle}>No projects yet</Text>
           <Text style={styles.cardBody}>
@@ -650,7 +705,7 @@ export function PlanScreen({
           <Button onPress={onNewProject}>New project</Button>
         </Card>
       ) : (
-        sortedProjects(projects).map((project) => {
+        sortedProjects(visibleProjects).map((project) => {
           const next = childrenOf(items, project.id).find(
             (item) => item.kind === 'ACTION' && isOpen(item),
           );
@@ -658,43 +713,48 @@ export function PlanScreen({
           const area = pillars.find((pillar) => pillar.id === project.parentId);
           const hours = projectHours(items, project.id);
           return (
-            <Pressable
+            <SwipeableRow
               key={project.id}
-              onPress={() => {
-                setSelectedProjectId(project.id);
-                setDetailsOpen(false);
-              }}
+              disabled={busy || project.status === 'ARCHIVED'}
+              onArchive={() => onArchiveProject(project)}
             >
-              <Card>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.cardTitle}>{project.title}</Text>
-                  <Pill
-                    tone={
-                      level === 'HIGH'
-                        ? 'danger'
-                        : level === 'MEDIUM'
-                          ? 'amber'
-                          : 'sage'
-                    }
-                  >
-                    {PROJECT_PRIORITY_META[level].title}
-                  </Pill>
-                </View>
-                <Text style={styles.listMeta}>
-                  {projectStatusLabel(project.status)} ·{' '}
-                  {area?.title ?? 'Unassigned'}
-                </Text>
-                <Text style={styles.nextLine}>
-                  {next
-                    ? `Next: ${next.title}`
-                    : 'Define next action'}
-                </Text>
-                <Text style={styles.listMeta}>
-                  {hours.toFixed(1)}h this week
-                  {next ? ` · ${bodyNumber(next, 'hours', 1)}h next` : ''}
-                </Text>
-              </Card>
-            </Pressable>
+              <Pressable
+                onPress={() => {
+                  setSelectedProjectId(project.id);
+                  setDetailsOpen(false);
+                }}
+              >
+                <Card>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.cardTitle}>{project.title}</Text>
+                    <Pill
+                      tone={
+                        level === 'HIGH'
+                          ? 'danger'
+                          : level === 'MEDIUM'
+                            ? 'amber'
+                            : 'sage'
+                      }
+                    >
+                      {PROJECT_PRIORITY_META[level].title}
+                    </Pill>
+                  </View>
+                  <Text style={styles.listMeta}>
+                    {projectStatusLabel(project.status)} ·{' '}
+                    {area?.title ?? 'Unassigned'}
+                  </Text>
+                  <Text style={styles.nextLine}>
+                    {next
+                      ? `Next: ${next.title}`
+                      : 'Define next action'}
+                  </Text>
+                  <Text style={styles.listMeta}>
+                    {hours.toFixed(1)}h this week
+                    {next ? ` · ${bodyNumber(next, 'hours', 1)}h next` : ''}
+                  </Text>
+                </Card>
+              </Pressable>
+            </SwipeableRow>
           );
         })
       )}
@@ -714,8 +774,12 @@ function ProjectDetail({
   onMovePriority,
   onQuickAction,
   onCompleteAction,
+  onArchiveAction,
+  onDeleteAction,
+  onArchiveProject,
   onSetProjectStatus,
   onShowMatrix,
+  showArchived = false,
 }: {
   project: LifeItem;
   pillars: LifeItem[];
@@ -728,32 +792,39 @@ function ProjectDetail({
   onMovePriority: (project: LifeItem, priority: ProjectPriority) => void;
   onQuickAction: (projectId: string) => void;
   onCompleteAction: (action: LifeItem) => void;
+  onArchiveAction: (action: LifeItem) => void;
+  onDeleteAction: (action: LifeItem) => void;
+  onArchiveProject: (project: LifeItem) => void;
   onSetProjectStatus: (
     project: LifeItem,
     status: 'ACTIVE' | 'PAUSED' | 'DONE',
   ) => void;
   onShowMatrix: () => void;
+  showArchived?: boolean;
 }) {
   const area = pillars.find((pillar) => pillar.id === project.parentId);
   const level = projectPriorityLevel(project.body);
   const statusLabel = projectStatusLabel(project.status);
   const isDone = project.status === 'DONE';
+  const isArchived = project.status === 'ARCHIVED';
   const openProjectActions = childrenOf(items, project.id).filter(
-    (item) => item.kind === 'ACTION' && isOpen(item),
+    (item) =>
+      item.kind === 'ACTION' &&
+      (isOpen(item) || (showArchived && item.status === 'ARCHIVED')),
   );
   const doneProjectActions = childrenOf(items, project.id).filter(
     (item) => item.kind === 'ACTION' && item.status === 'DONE',
   );
-  const next = openProjectActions[0] ?? null;
-  const totalActions = openProjectActions.length + doneProjectActions.length;
+  const next = openProjectActions.find((item) => isOpen(item)) ?? null;
+  const totalActions =
+    openProjectActions.filter(isOpen).length + doneProjectActions.length;
   const progress =
     totalActions === 0
       ? 0
       : Math.round((doneProjectActions.length / totalActions) * 100);
-  const hours = openProjectActions.reduce(
-    (sum, action) => sum + bodyNumber(action, 'hours', 1),
-    0,
-  );
+  const hours = openProjectActions
+    .filter(isOpen)
+    .reduce((sum, action) => sum + bodyNumber(action, 'hours', 1), 0);
   const outcome = bodyString(project, 'outcome');
 
   return (
@@ -773,8 +844,9 @@ function ProjectDetail({
       </View>
       <Text style={styles.listMeta}>
         {area?.title ?? 'Unassigned'} · {statusLabel}
+        {isArchived ? ' · Archived' : ''}
       </Text>
-      {isDone ? (
+      {isArchived ? null : isDone ? (
         <Button
           disabled={busy}
           onPress={() => onSetProjectStatus(project, 'ACTIVE')}
@@ -782,13 +854,22 @@ function ProjectDetail({
           Reopen project
         </Button>
       ) : (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onPress={() => onSetProjectStatus(project, 'DONE')}
-        >
-          Mark done
-        </Button>
+        <View style={{ gap: 8 }}>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onPress={() => onSetProjectStatus(project, 'DONE')}
+          >
+            Mark done
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onPress={() => onArchiveProject(project)}
+          >
+            Archive project
+          </Button>
+        </View>
       )}
 
       <Card>
@@ -801,33 +882,40 @@ function ProjectDetail({
       <Card>
         <MicroLabel>Next action</MicroLabel>
         {next ? (
-          <>
-            <Text style={styles.cardTitle}>{next.title}</Text>
-            <Text style={styles.listMeta}>
-              {bodyNumber(next, 'hours', 1)}h
-              {bodyString(next, 'day') ? ` · ${bodyString(next, 'day')}` : ''}
-              {' · '}
-              {
-                PRIORITY_QUADRANT_META[
-                  actionPriorityQuadrant(next.body, project.body)
-                ].title
-              }
-            </Text>
-            <Button
-              variant="secondary"
-              disabled={busy || isDone}
-              onPress={() => onCompleteAction(next)}
-            >
-              Complete
-            </Button>
-          </>
+          <SwipeableRow
+            disabled={busy || isDone}
+            onArchive={() => onArchiveAction(next)}
+            onDelete={() => onDeleteAction(next)}
+          >
+            <View style={{ padding: 4, gap: 8 }}>
+              <Text style={styles.cardTitle}>{next.title}</Text>
+              <Text style={styles.listMeta}>
+                {bodyNumber(next, 'hours', 1)}h
+                {bodyString(next, 'day') ? ` · ${bodyString(next, 'day')}` : ''}
+                {' · '}
+                {
+                  PRIORITY_QUADRANT_META[
+                    actionPriorityQuadrant(next.body, project.body)
+                  ].title
+                }
+              </Text>
+              <Text style={styles.listMeta}>Swipe left to archive</Text>
+              <Button
+                variant="secondary"
+                disabled={busy || isDone}
+                onPress={() => onCompleteAction(next)}
+              >
+                Complete
+              </Button>
+            </View>
+          </SwipeableRow>
         ) : (
           <>
             <Text style={styles.cardTitle}>Define next action</Text>
             <Text style={styles.cardBody}>
               Active projects need a concrete next move.
             </Text>
-            {!isDone ? (
+            {!isDone && !isArchived ? (
               <Button onPress={() => onQuickAction(project.id)}>
                 Add next action
               </Button>
@@ -841,8 +929,9 @@ function ProjectDetail({
         <Text style={styles.cardTitle}>{progress}%</Text>
         <ProgressBar value={progress} />
         <Text style={styles.listMeta}>
-          {doneProjectActions.length} done · {openProjectActions.length} open ·{' '}
-          {hours.toFixed(1)}h remaining
+          {doneProjectActions.length} done ·{' '}
+          {openProjectActions.filter(isOpen).length} open · {hours.toFixed(1)}h
+          remaining
         </Text>
       </Card>
 
@@ -856,21 +945,29 @@ function ProjectDetail({
         {openProjectActions.length === 0 ? (
           <Text style={styles.cardBody}>No open actions.</Text>
         ) : (
-          openProjectActions.slice(0, 5).map((action) => (
-            <View key={action.id} style={styles.actionPreview}>
-              <Text style={styles.listTitle}>{action.title}</Text>
-              <Text style={styles.listMeta}>
-                {bodyNumber(action, 'hours', 1)}h ·{' '}
-                {
-                  PRIORITY_QUADRANT_META[
-                    actionPriorityQuadrant(action.body, project.body)
-                  ].title
-                }
-              </Text>
-            </View>
+          openProjectActions.slice(0, 8).map((action) => (
+            <SwipeableRow
+              key={action.id}
+              disabled={busy || action.status === 'ARCHIVED'}
+              onArchive={() => onArchiveAction(action)}
+              onDelete={() => onDeleteAction(action)}
+            >
+              <View style={styles.actionPreview}>
+                <Text style={styles.listTitle}>{action.title}</Text>
+                <Text style={styles.listMeta}>
+                  {action.status === 'ARCHIVED' ? 'Archived · ' : ''}
+                  {bodyNumber(action, 'hours', 1)}h ·{' '}
+                  {
+                    PRIORITY_QUADRANT_META[
+                      actionPriorityQuadrant(action.body, project.body)
+                    ].title
+                  }
+                </Text>
+              </View>
+            </SwipeableRow>
           ))
         )}
-        {!isDone ? (
+        {!isDone && !isArchived ? (
           <Button variant="secondary" onPress={() => onQuickAction(project.id)}>
             Quick add action
           </Button>
@@ -887,13 +984,17 @@ function ProjectDetail({
             <View style={{ gap: 10, marginTop: 4 }}>
               <Text style={styles.fieldLabel}>Status</Text>
               <Text style={styles.listMeta}>{statusLabel}</Text>
-              <Text style={styles.fieldLabel}>Priority</Text>
+              <Text style={styles.fieldLabel}>Project priority</Text>
+              <Text style={styles.listMeta}>
+                How soon this project gets attention (High / Medium / Low) — not
+                the same as action Importance × Urgency on the Eisenhower matrix.
+              </Text>
               <View style={styles.chipRow}>
                 {PROJECT_PRIORITIES.map((option) => (
                   <Pressable
                     key={option}
                     onPress={() => {
-                      if (!isDone) onMovePriority(project, option);
+                      if (!isDone && !isArchived) onMovePriority(project, option);
                     }}
                     style={[
                       styles.chip,
@@ -921,6 +1022,7 @@ function ProjectDetail({
     </View>
   );
 }
+
 
 function ActionMatrixView({
   openActions,
