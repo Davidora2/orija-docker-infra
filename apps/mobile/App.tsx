@@ -46,7 +46,6 @@ import {
 import {
   loadCachedAccount,
   loadCachedItems,
-  loadOutbox,
   setSyncPhase,
   subscribeSyncStatus,
 } from './src/offline';
@@ -313,7 +312,6 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [online, setOnline] = useState(true);
-  const [pendingCount, setPendingCount] = useState(0);
   const [accountOpen, setAccountOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -459,7 +457,6 @@ function AppContent() {
       } finally {
         setLoading(false);
         setRefreshing(false);
-        setPendingCount((await loadOutbox()).length);
       }
     },
     [applyVisionHours, flushSync, notify],
@@ -476,8 +473,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    return subscribeSyncStatus((phase, meta) => {
-      setPendingCount(meta.pendingCount);
+    return subscribeSyncStatus((phase) => {
       setOnline(phase !== 'offline');
     });
   }, []);
@@ -979,14 +975,7 @@ function AppContent() {
       <View style={styles.topBar}>
         <View>
           <Text style={styles.brandMark}>Life OS</Text>
-          <Text style={styles.topMeta}>
-            {todayLabel()}
-            {!online
-              ? pendingCount > 0
-                ? ` · Offline · ${pendingCount} queued`
-                : ' · Offline'
-              : ''}
-          </Text>
+          <Text style={styles.topMeta}>{todayLabel()}</Text>
         </View>
         <Pressable
           onPress={() => {

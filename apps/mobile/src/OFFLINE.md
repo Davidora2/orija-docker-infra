@@ -27,7 +27,8 @@
  * ## UI feedback
  *
  * Sync runs quietly in the background (outbox flush + phase tracking stay
- * intact). The top bar only shows a static Offline indicator when unreachable
- * (with queued count when the outbox is non-empty). No Syncing / Synced flashes.
+ * intact). There is no offline toast, modal, banner, or top-bar Offline label —
+ * connectivity and queued mutations stay invisible to the user while still
+ * flushing on reconnect. No Syncing / Synced flashes either.
  */
 export {};
