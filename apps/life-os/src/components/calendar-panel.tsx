@@ -237,49 +237,73 @@ export function CalendarPanel({
       ) : null}
 
       {!loading && data ? (
-        <div
-          className={`grid gap-2 ${
-            view === "month"
-              ? "grid-cols-2 sm:grid-cols-4 md:grid-cols-7"
-              : "grid-cols-1 sm:grid-cols-2 md:grid-cols-7"
-          }`}
-        >
-          {data.days.map((day) => (
-            <article
-              key={day.date}
-              className="min-h-[110px] rounded-2xl border border-[#dde2dd] bg-white p-3"
-            >
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
-                {day.weekday}
-              </p>
-              <p className="text-sm font-semibold">{day.date.slice(8)}</p>
-              <div className="mt-2 space-y-1">
-                {day.events.length === 0 ? (
-                  <p className="text-[11px] text-[#9ba49e]">—</p>
-                ) : (
-                  day.events.map((event) => (
-                    <div
-                      key={event.id}
-                      className={`rounded-lg px-2 py-1 text-[11px] leading-snug ${eventTone(event.type)}`}
-                    >
-                      <p className="font-semibold">{event.title}</p>
-                      {event.amountCents != null ? (
-                        <p>
-                          {formatMoney(
-                            event.amountCents,
-                            preferredCurrency || "GBP",
-                          )}
-                        </p>
-                      ) : null}
-                      {event.areaTitle ? (
-                        <p className="opacity-80">{event.areaTitle}</p>
-                      ) : null}
-                    </div>
-                  ))
-                )}
-              </div>
-            </article>
-          ))}
+        <div className="space-y-2">
+          {view === "month" ? (
+            <div className="hidden grid-cols-7 gap-2 md:grid">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
+                <p
+                  key={label}
+                  className="px-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#6c7771]"
+                >
+                  {label}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          <div
+            className={`grid gap-2 ${
+              view === "month"
+                ? "grid-cols-2 sm:grid-cols-4 md:grid-cols-7"
+                : "grid-cols-1 sm:grid-cols-2 md:grid-cols-7"
+            }`}
+          >
+            {data.days.map((day) => {
+              const inMonth =
+                day.date.startsWith(
+                  `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-`,
+                );
+              return (
+                <article
+                  key={day.date}
+                  className={`min-h-[110px] rounded-2xl border p-3 ${
+                    inMonth
+                      ? "border-[#dde2dd] bg-white"
+                      : "border-[#e8ebe6] bg-[#f7f8f5] opacity-70"
+                  }`}
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+                    {day.weekday}
+                  </p>
+                  <p className="text-sm font-semibold">{day.date.slice(8)}</p>
+                  <div className="mt-2 space-y-1">
+                    {day.events.length === 0 ? (
+                      <p className="text-[11px] text-[#9ba49e]">—</p>
+                    ) : (
+                      day.events.map((event) => (
+                        <div
+                          key={event.id}
+                          className={`rounded-lg px-2 py-1 text-[11px] leading-snug ${eventTone(event.type)}`}
+                        >
+                          <p className="font-semibold">{event.title}</p>
+                          {event.amountCents != null ? (
+                            <p>
+                              {formatMoney(
+                                event.amountCents,
+                                preferredCurrency || "GBP",
+                              )}
+                            </p>
+                          ) : null}
+                          {event.areaTitle ? (
+                            <p className="opacity-80">{event.areaTitle}</p>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       ) : null}
     </section>

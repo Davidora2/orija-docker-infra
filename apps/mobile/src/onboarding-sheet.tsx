@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import {
   Modal,
   Platform,
@@ -9,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   completeOnboarding,
@@ -20,6 +19,7 @@ import {
   type AreaSuggestion,
 } from './api';
 import { SUGGESTED_LIFE_AREAS, WEEK_DAYS } from './life-data';
+import { LifeIcon, lifeIconFromLegacy } from './life-icon';
 
 const colors = {
   ink: '#14241F',
@@ -332,11 +332,8 @@ export function OnboardingSheet({ visible, onComplete, notify }: Props) {
                     onPress={() => toggle(area)}
                     style={[styles.chip, active && styles.chipActive]}
                   >
-                    <Ionicons
-                      name={
-                        (area.icon as ComponentProps<typeof Ionicons>['name']) ||
-                        'compass-outline'
-                      }
+                    <LifeIcon
+                      name={lifeIconFromLegacy(area.icon)}
                       size={16}
                       color={active ? colors.acid : colors.ink}
                     />

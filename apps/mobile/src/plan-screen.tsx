@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { LifeItem } from './api';
+import { CapacityRing } from './capacity-ring';
 import {
   bodyNumber,
   bodyString,
@@ -15,6 +16,7 @@ import {
   ideaScore,
   isOpen,
 } from './life-data';
+import { LifeIcon, lifeIconFromLegacy } from './life-icon';
 import {
   PRIORITY_MATRIX_ORDER,
   PRIORITY_QUADRANT_META,
@@ -367,7 +369,8 @@ export function PlanScreen({
             onPress={() => setProjectsView('list')}
             style={styles.backRow}
           >
-            <Text style={styles.backText}>← Priority</Text>
+            <LifeIcon name="chevron-left" size={16} />
+            <Text style={styles.backText}>Priority</Text>
           </Pressable>
           <ActionMatrixView
             openActions={openActions}
@@ -500,7 +503,7 @@ export function PlanScreen({
           detailsOpen={detailsOpen}
           setDetailsOpen={setDetailsOpen}
           busy={busy}
-          backLabel="← Area"
+          backLabel="Area"
           onBack={() => {
             setSelectedProjectId(null);
             setDetailsOpen(false);
@@ -542,13 +545,42 @@ export function PlanScreen({
             onPress={() => setSelectedAreaId(null)}
             style={styles.backRow}
           >
-            <Text style={styles.backText}>← Areas</Text>
+            <LifeIcon name="chevron-left" size={16} />
+            <Text style={styles.backText}>Areas</Text>
           </Pressable>
-          <Text style={styles.sectionTitle}>{selectedArea.title}</Text>
+          <View style={styles.areaHeading}>
+            <View style={styles.areaIcon}>
+              <LifeIcon
+                name={lifeIconFromLegacy(
+                  bodyString(selectedArea, 'icon'),
+                  Math.max(pillars.findIndex((pillar) => pillar.id === selectedArea.id), 0),
+                )}
+                size={25}
+              />
+            </View>
+            <Text style={styles.sectionTitle}>{selectedArea.title}</Text>
+          </View>
           <Text style={styles.cardBody}>
             {areaProjects.length} active project
             {areaProjects.length === 1 ? '' : 's'} · {hours.toFixed(1)}h this week
           </Text>
+          <Card>
+            <View style={styles.capacitySummary}>
+              <CapacityRing
+                used={hours}
+                capacity={availableHours}
+                size={96}
+                label={`${selectedArea.title} weekly capacity`}
+              />
+              <View style={styles.capacitySummaryCopy}>
+                <MicroLabel>Weekly capacity</MicroLabel>
+                <Text style={styles.cardTitle}>
+                  {hours.toFixed(1)}h of {availableHours}h
+                </Text>
+                <Text style={styles.cardBody}>Committed this week</Text>
+              </View>
+            </View>
+          </Card>
           <MicroLabel>Projects</MicroLabel>
           {areaProjects.length === 0 ? (
             <Card>
@@ -625,7 +657,7 @@ export function PlanScreen({
             </Text>
           </Card>
         ) : (
-          pillars.map((pillar) => {
+          pillars.map((pillar, index) => {
             const pillarProjects = projects.filter(
               (project) => project.parentId === pillar.id && isOpen(project),
             );
@@ -645,17 +677,30 @@ export function PlanScreen({
                 onPress={() => setSelectedAreaId(pillar.id)}
               >
                 <Card>
-                  <View style={styles.rowBetween}>
-                    <Text style={styles.cardTitle}>{pillar.title}</Text>
-                    <Pill tone={health.tone}>{health.label}</Pill>
+                  <View style={styles.areaListRow}>
+                    <View style={styles.areaIcon}>
+                      <LifeIcon
+                        name={lifeIconFromLegacy(
+                          bodyString(pillar, 'icon'),
+                          index,
+                        )}
+                        size={22}
+                      />
+                    </View>
+                    <View style={styles.capacitySummaryCopy}>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.cardTitle}>{pillar.title}</Text>
+                        <Pill tone={health.tone}>{health.label}</Pill>
+                      </View>
+                      <Text style={styles.statLine}>
+                        {pillarProjects.length} active project
+                        {pillarProjects.length === 1 ? '' : 's'}
+                      </Text>
+                      <Text style={styles.statLine}>
+                        {hours.toFixed(1)}h this week · {pct}% of capacity
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.statLine}>
-                    {pillarProjects.length} active project
-                    {pillarProjects.length === 1 ? '' : 's'}
-                  </Text>
-                  <Text style={styles.statLine}>
-                    {hours.toFixed(1)}h this week · {pct}% of capacity
-                  </Text>
                   <ProgressBar value={pct} />
                 </Card>
               </Pressable>
@@ -701,7 +746,7 @@ export function PlanScreen({
         detailsOpen={detailsOpen}
         setDetailsOpen={setDetailsOpen}
         busy={busy}
-        backLabel="← Projects"
+        backLabel="Projects"
         onBack={() => {
           setSelectedProjectId(null);
           setDetailsOpen(false);
@@ -729,6 +774,10 @@ export function PlanScreen({
         <Text style={styles.sectionTitle}>Projects</Text>
         <Button onPress={onNewProject}>New</Button>
       </View>
+      <Text style={styles.listMeta}>
+        Projects use High / Med / Low priority. First actions use Importance ×
+        Urgency on the Eisenhower matrix.
+      </Text>
       <View style={styles.toggleRow}>
         {(
           [
@@ -934,10 +983,14 @@ function ProjectDetail({
   return (
     <View style={styles.stack}>
       <Pressable onPress={onBack} style={styles.backRow}>
+        <LifeIcon name="chevron-left" size={16} />
         <Text style={styles.backText}>{backLabel}</Text>
       </Pressable>
       <View style={styles.rowBetween}>
-        <Text style={[styles.sectionTitle, { flex: 1 }]}>{project.title}</Text>
+        <View style={styles.projectHeading}>
+          <LifeIcon name="priority" size={24} />
+          <Text style={[styles.sectionTitle, { flex: 1 }]}>{project.title}</Text>
+        </View>
         <Pill
           tone={
             level === 'HIGH' ? 'danger' : level === 'MEDIUM' ? 'amber' : 'sage'
@@ -1021,9 +1074,11 @@ function ProjectDetail({
                     next.status === 'DONE' && styles.completeDotDone,
                   ]}
                 >
-                  <Text style={styles.completeDotText}>
-                    {next.status === 'DONE' ? '●' : '○'}
-                  </Text>
+                  <LifeIcon
+                    name="done"
+                    size={16}
+                    weight={next.status === 'DONE' ? 'fill' : 'regular'}
+                  />
                 </View>
                 <Text
                   style={[
@@ -1093,7 +1148,7 @@ function ProjectDetail({
                   onPress={() => onCompleteAction(action)}
                   hitSlop={8}
                 >
-                  <Text style={styles.completeDotText}>○</Text>
+                  <LifeIcon name="done" size={18} />
                 </Pressable>
                 <Text style={styles.listTitle}>{action.title}</Text>
                 <Text style={styles.listMeta}>
@@ -1119,7 +1174,7 @@ function ProjectDetail({
                 onPress={() => onCompleteAction(action)}
                 style={styles.doneActionRow}
               >
-                <Text style={styles.completeDotText}>●</Text>
+                <LifeIcon name="done" size={18} weight="fill" />
                 <Text style={[styles.listTitle, styles.completeLabelDone]} numberOfLines={2}>
                   {action.title}
                 </Text>
@@ -1339,11 +1394,6 @@ const styles = StyleSheet.create({
   completeDotDone: {
     backgroundColor: colors.sage,
   },
-  completeDotText: {
-    color: colors.sageDeep,
-    fontSize: 12,
-    fontWeight: '700',
-  },
   completeLabel: {
     color: colors.ink,
     fontWeight: '600',
@@ -1402,6 +1452,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 10,
+  },
+  areaHeading: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  areaIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.sage,
+    borderRadius: 14,
+    height: 46,
+    justifyContent: 'center',
+    width: 46,
+  },
+  areaListRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 12 },
+  capacitySummary: { alignItems: 'center', flexDirection: 'row', gap: 14 },
+  capacitySummaryCopy: { flex: 1, gap: 4, minWidth: 0 },
+  projectHeading: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 9,
+    minWidth: 0,
   },
   listTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
   listMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
@@ -1476,7 +1545,12 @@ const styles = StyleSheet.create({
   },
   toggleChipText: { fontSize: 13, fontWeight: '700', color: colors.ink },
   toggleChipTextActive: { color: colors.paper },
-  backRow: { paddingVertical: 4 },
+  backRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    paddingVertical: 4,
+  },
   backText: { color: colors.sageDeep, fontWeight: '700', fontSize: 14 },
   fieldLabel: {
     fontSize: 12,

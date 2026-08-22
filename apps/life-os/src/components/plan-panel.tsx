@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LifeItem } from "../lib/api";
+import { CapacityRing } from "./capacity-ring";
+import { LifeIcon, lifeIconFromLegacy } from "./life-icon";
 import { PriorityMatrixPanel } from "./priority-matrix-panel";
 import { PriorityPanel } from "./priority-panel";
 import {
@@ -95,6 +97,7 @@ type Props = {
   actionHours: string;
   actionImportance: PriorityLevel;
   actionUrgency: PriorityLevel;
+  actionScheduleDate: string;
   onProjectTitleChange: (value: string) => void;
   onProjectOutcomeChange: (value: string) => void;
   onProjectPillarIdChange: (value: string) => void;
@@ -103,7 +106,8 @@ type Props = {
   onActionHoursChange: (value: string) => void;
   onActionImportanceChange: (value: PriorityLevel) => void;
   onActionUrgencyChange: (value: PriorityLevel) => void;
-  onSaveProject: () => void;
+  onActionScheduleDateChange: (value: string) => void;
+  onSaveProject: () => void | Promise<void>;
   onMoveProjectPriority: (project: LifeItem, priority: ProjectPriority) => void;
   onMoveAction: (action: LifeItem, quadrant: PriorityQuadrant) => void;
   onCompleteAction: (action: LifeItem) => void;
@@ -136,12 +140,8 @@ type Props = {
   preferPriorityMatrix?: boolean;
 };
 
-const AREA_ICONS = ["🌿", "💪", "💼", "🏠", "🎯", "📚", "💚", "✨"];
-
-function areaIcon(pillar: LifeItem, index: number) {
-  const icon = str(pillar, "icon");
-  if (icon && !icon.includes("outline") && icon.length <= 3) return icon;
-  return AREA_ICONS[index % AREA_ICONS.length];
+function areaIconName(pillar: LifeItem, index: number) {
+  return lifeIconFromLegacy(str(pillar, "icon"), index);
 }
 
 function relativeTime(iso: string) {
@@ -251,9 +251,27 @@ function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-[#14241f]/35 p-3 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-[#f4f5f0] p-5 shadow-xl">
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-[#14241f]/35 p-3 sm:items-center"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-[#f4f5f0] p-5 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-serif text-2xl text-[#14241f]">{title}</h3>
@@ -527,7 +545,10 @@ export function PlanPanel(props: Props) {
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setConvertStep(0)}
           >
-            ← Idea
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={15} />
+              Idea
+            </span>
           </button>
           <h2 className="font-serif text-2xl">Turn into project</h2>
           <p className="text-sm text-[#6c7771]">
@@ -585,6 +606,7 @@ export function PlanPanel(props: Props) {
                     props.onProjectTargetDateChange(e.target.value)
                   }
                 />
+                <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
               </label>
               <button
                 type="button"
@@ -607,12 +629,18 @@ export function PlanPanel(props: Props) {
                 onChange={(e) => props.onActionTitleChange(e.target.value)}
                 placeholder="What needs to happen?"
               />
-              <input
-                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                value={props.actionHours}
-                onChange={(e) => props.onActionHoursChange(e.target.value)}
-                placeholder="Estimate hours"
-              />
+              <label className="block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Hours
+                </span>
+                <input
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  value={props.actionHours}
+                  onChange={(e) => props.onActionHoursChange(e.target.value)}
+                  placeholder="e.g. 2"
+                  inputMode="decimal"
+                />
+              </label>
               <LevelChips
                 label="Importance"
                 value={props.actionImportance}
@@ -625,8 +653,31 @@ export function PlanPanel(props: Props) {
               />
               <p className="text-xs text-[#6c7771]">
                 Importance × Urgency place this first next action on the
-                Eisenhower matrix.
+                Eisenhower matrix (project priority stays High / Med / Low).
               </p>
+              {quadrantRequiresScheduledDate(
+                quadrantFromLevels(
+                  props.actionImportance,
+                  props.actionUrgency,
+                ),
+              ) ? (
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                    Schedule date (required)
+                  </span>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                    value={props.actionScheduleDate}
+                    onChange={(e) =>
+                      props.onActionScheduleDateChange(e.target.value)
+                    }
+                  />
+                  <span className="text-[11px] text-[#6c7771]">
+                    YYYY-MM-DD
+                  </span>
+                </label>
+              ) : null}
               <div className="rounded-xl border border-[#dde2dd] bg-[#f7f8f5] p-3">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
                   Preview · Next action
@@ -654,7 +705,16 @@ export function PlanPanel(props: Props) {
                 </button>
                 <button
                   type="button"
-                  className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white"
+                  className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+                  disabled={
+                    quadrantRequiresScheduledDate(
+                      quadrantFromLevels(
+                        props.actionImportance,
+                        props.actionUrgency,
+                      ),
+                    ) &&
+                    !/^\d{4}-\d{2}-\d{2}$/.test(props.actionScheduleDate)
+                  }
                   onClick={() => setConvertStep(3)}
                 >
                   Review
@@ -672,6 +732,9 @@ export function PlanPanel(props: Props) {
               <p className="text-sm text-[#6c7771]">{props.projectOutcome}</p>
               <p className="text-sm">
                 Next: {props.actionTitle} · {props.actionHours}h
+                {props.actionScheduleDate
+                  ? ` · ${props.actionScheduleDate}`
+                  : ""}
               </p>
               <div className="flex gap-2">
                 <button
@@ -686,9 +749,15 @@ export function PlanPanel(props: Props) {
                   className="flex-1 rounded-xl bg-[#14241f] px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
                   disabled={busy}
                   onClick={() => {
-                    props.onSaveProject();
-                    setConvertStep(0);
-                    setSelectedIdeaId(null);
+                    void (async () => {
+                      try {
+                        await props.onSaveProject();
+                        setConvertStep(0);
+                        setSelectedIdeaId(null);
+                      } catch {
+                        /* parent surfaces error */
+                      }
+                    })();
                   }}
                 >
                   Create project
@@ -715,7 +784,10 @@ export function PlanPanel(props: Props) {
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setSelectedIdeaId(null)}
           >
-            ← Ideas
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={15} />
+              Ideas
+            </span>
           </button>
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#dbe8d7] text-2xl">
@@ -972,29 +1044,64 @@ export function PlanPanel(props: Props) {
           list.map((idea, index) => {
             const area = pillars.find((p) => p.id === idea.parentId);
             return (
-              <button
+              <div
                 key={idea.id}
-                type="button"
                 className="flex w-full items-center gap-3 rounded-2xl border border-[#dde2dd] bg-white p-4 text-left"
-                onClick={() => setSelectedIdeaId(idea.id)}
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef3ea] text-lg">
-                  {AREA_ICONS[index % AREA_ICONS.length]}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-[#14241f]">
-                    {idea.title}
-                  </p>
-                  <p className="text-xs text-[#6c7771]">
-                    {area ? (
-                      <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#617a57]" />
-                    ) : null}
-                    {area?.title ?? "Unassigned"} ·{" "}
-                    {relativeTime(idea.updatedAt || idea.createdAt)}
-                  </p>
-                </div>
-                <span className="text-[#6c7771]">›</span>
-              </button>
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  onClick={() => setSelectedIdeaId(idea.id)}
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef3ea] text-lg">
+                    <LifeIcon
+                      name={
+                        area
+                          ? areaIconName(
+                              area,
+                              Math.max(
+                                pillars.findIndex((pillar) => pillar.id === area.id),
+                                index,
+                              ),
+                            )
+                          : "ideas"
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-[#14241f]">
+                      {idea.title}
+                    </p>
+                    <p className="text-xs text-[#6c7771]">
+                      {area ? (
+                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#617a57]" />
+                      ) : null}
+                      {area?.title ?? "Unassigned"} ·{" "}
+                      {relativeTime(idea.updatedAt || idea.createdAt)}
+                    </p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-xl bg-[#14241f] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => {
+                    setSelectedIdeaId(idea.id);
+                    props.onConvertIdea(idea);
+                    setConvertStep(1);
+                  }}
+                >
+                  To project
+                </button>
+                <button
+                  type="button"
+                  className="shrink-0 text-[#6c7771]"
+                  aria-label={`Open ${idea.title}`}
+                  onClick={() => setSelectedIdeaId(idea.id)}
+                >
+                  <LifeIcon name="chevron-right" size={16} color="#6c7771" />
+                </button>
+              </div>
             );
           })
         )}
@@ -1056,11 +1163,17 @@ export function PlanPanel(props: Props) {
             className="text-sm font-bold text-[#617a57]"
             onClick={() => setSelectedAreaId(null)}
           >
-            ← Areas
+            <span className="inline-flex items-center gap-1">
+              <LifeIcon name="chevron-left" size={15} />
+              Areas
+            </span>
           </button>
           <div className="flex items-start gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dbe8d7] text-3xl">
-              {areaIcon(selectedArea, Math.max(index, 0))}
+              <LifeIcon
+                name={areaIconName(selectedArea, Math.max(index, 0))}
+                size={28}
+              />
             </div>
             <div>
               <h2 className="font-serif text-3xl">{selectedArea.title}</h2>
@@ -1100,16 +1213,12 @@ export function PlanPanel(props: Props) {
                   Weekly capacity
                 </p>
                 <div className="mt-3 flex items-center gap-4">
-                  <div
-                    className="relative flex h-24 w-24 items-center justify-center rounded-full"
-                    style={{
-                      background: `conic-gradient(#617a57 ${Math.min(pct, 100)}%, #dde2dd 0)`,
-                    }}
-                  >
-                    <div className="flex h-[4.5rem] w-[4.5rem] flex-col items-center justify-center rounded-full bg-white">
-                      <span className="font-serif text-xl">{pct}%</span>
-                    </div>
-                  </div>
+                  <CapacityRing
+                    used={hours}
+                    capacity={availableHours}
+                    size={96}
+                    label={`${selectedArea.title} weekly capacity`}
+                  />
                   <div>
                     <p className="font-serif text-2xl text-[#14241f]">
                       {hours.toFixed(1)}h of {availableHours}h
@@ -1184,8 +1293,9 @@ export function PlanPanel(props: Props) {
                         {PROJECT_PRIORITY_META[level].title}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-[#14241f]">
-                      ○ Next: {next ? next.title : "Define next action"}
+                    <p className="mt-2 flex items-center gap-1.5 text-sm text-[#14241f]">
+                      <LifeIcon name="done" size={15} />
+                      Next: {next ? next.title : "Define next action"}
                     </p>
                     <p
                       className={`mt-1 text-xs ${
@@ -1243,7 +1353,7 @@ export function PlanPanel(props: Props) {
                 }}
               >
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#eef3ea] text-2xl">
-                  {areaIcon(pillar, index)}
+                  <LifeIcon name={areaIconName(pillar, index)} size={24} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
@@ -1273,7 +1383,7 @@ export function PlanPanel(props: Props) {
                     <ProgressBar value={pct} tone={pct > 100 ? "warn" : "sage"} />
                   </div>
                 </div>
-                <span className="text-lg text-[#6c7771]">›</span>
+                <LifeIcon name="chevron-right" size={17} color="#6c7771" />
               </div>
             );
           })}
@@ -1365,7 +1475,8 @@ export function PlanPanel(props: Props) {
         <div>
           <h2 className="font-serif text-3xl text-[#14241f]">Projects</h2>
           <p className="text-sm text-[#6c7771]">
-            Outcomes across areas — High / Med / Low, not Eisenhower.
+            Projects use High / Med / Low priority. First actions use Importance ×
+            Urgency on the Eisenhower matrix.
           </p>
         </div>
         <div className="flex gap-2">
@@ -1515,6 +1626,7 @@ export function PlanPanel(props: Props) {
                     props.onProjectTargetDateChange(e.target.value)
                   }
                 />
+                <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
               </label>
               <input
                 className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
@@ -1522,12 +1634,18 @@ export function PlanPanel(props: Props) {
                 value={props.actionTitle}
                 onChange={(e) => props.onActionTitleChange(e.target.value)}
               />
-              <input
-                className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
-                placeholder="Hours"
-                value={props.actionHours}
-                onChange={(e) => props.onActionHoursChange(e.target.value)}
-              />
+              <label className="block space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                  Hours
+                </span>
+                <input
+                  className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                  placeholder="e.g. 2"
+                  value={props.actionHours}
+                  onChange={(e) => props.onActionHoursChange(e.target.value)}
+                  inputMode="decimal"
+                />
+              </label>
               <LevelChips
                 label="Importance"
                 value={props.actionImportance}
@@ -1540,13 +1658,54 @@ export function PlanPanel(props: Props) {
               />
               <p className="text-xs text-[#6c7771]">
                 Importance × Urgency place the first next action on the
-                Eisenhower matrix.
+                Eisenhower matrix (separate from project High / Med / Low).
               </p>
+              {quadrantRequiresScheduledDate(
+                quadrantFromLevels(
+                  props.actionImportance,
+                  props.actionUrgency,
+                ),
+              ) ? (
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-[#6c7771]">
+                    Schedule date (required)
+                  </span>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-[#dde2dd] px-3 py-3"
+                    value={props.actionScheduleDate}
+                    onChange={(e) =>
+                      props.onActionScheduleDateChange(e.target.value)
+                    }
+                  />
+                  <span className="text-[11px] text-[#6c7771]">
+                    YYYY-MM-DD
+                  </span>
+                </label>
+              ) : null}
               <button
                 className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
                 type="button"
-                disabled={busy}
-                onClick={props.onSaveProject}
+                disabled={
+                  busy ||
+                  (quadrantRequiresScheduledDate(
+                    quadrantFromLevels(
+                      props.actionImportance,
+                      props.actionUrgency,
+                    ),
+                  ) &&
+                    !/^\d{4}-\d{2}-\d{2}$/.test(props.actionScheduleDate))
+                }
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      await props.onSaveProject();
+                      setComposerOpen(false);
+                    } catch {
+                      /* parent surfaces error */
+                    }
+                  })();
+                }}
               >
                 Save project
               </button>
@@ -1596,7 +1755,19 @@ export function PlanPanel(props: Props) {
                   }}
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eef3ea] text-lg">
-                    {AREA_ICONS[index % AREA_ICONS.length]}
+                    <LifeIcon
+                      name={
+                        area
+                          ? areaIconName(
+                              area,
+                              Math.max(
+                                pillars.findIndex((pillar) => pillar.id === area.id),
+                                index,
+                              ),
+                            )
+                          : "projects"
+                      }
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
@@ -1619,8 +1790,9 @@ export function PlanPanel(props: Props) {
                       {projectStatusLabel(project.status)} ·{" "}
                       {area?.title ?? "Unassigned"}
                     </p>
-                    <p className="mt-1 truncate text-sm font-medium text-[#14241f]">
-                      ○ Next: {next ? next.title : "Define next action"}
+                    <p className="mt-1 flex items-center gap-1.5 truncate text-sm font-medium text-[#14241f]">
+                      <LifeIcon name="done" size={15} />
+                      Next: {next ? next.title : "Define next action"}
                     </p>
                     <p
                       className={`mt-1 text-xs ${
@@ -1635,7 +1807,7 @@ export function PlanPanel(props: Props) {
                         : ""}
                     </p>
                   </div>
-                  <span className="text-[#6c7771]">›</span>
+                  <LifeIcon name="chevron-right" size={17} color="#6c7771" />
                 </button>
               );
             })
@@ -1910,6 +2082,7 @@ function AddActionSheet({
             value={scheduledDate}
             onChange={(e) => onScheduledDate(e.target.value)}
           />
+          <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
         </label>
       ) : null}
 
@@ -2064,11 +2237,14 @@ function ProjectDetailView({
         className="text-sm font-bold text-[#617a57]"
         onClick={onBack}
       >
-        ← Projects
+        <span className="inline-flex items-center gap-1">
+          <LifeIcon name="chevron-left" size={15} />
+          Projects
+        </span>
       </button>
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#dbe8d7] text-2xl">
-          🎯
+          <LifeIcon name="priority" size={26} />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-serif text-3xl text-[#14241f]">{project.title}</h2>
@@ -2143,7 +2319,11 @@ function ProjectDetailView({
                   : "Mark next action done"
               }
             >
-              {next.status === "DONE" ? "●" : "○"}
+              <LifeIcon
+                name="done"
+                size={14}
+                weight={next.status === "DONE" ? "fill" : "regular"}
+              />
             </button>
             <div>
               <h3
@@ -2245,7 +2425,11 @@ function ProjectDetailView({
                               done ? "Mark action open" : "Mark action done"
                             }
                           >
-                            {done ? "●" : "○"}
+                            <LifeIcon
+                              name="done"
+                              size={14}
+                              weight={done ? "fill" : "regular"}
+                            />
                           </button>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
@@ -2338,6 +2522,7 @@ function ProjectDetailView({
               disabled={busy || isDone}
               onChange={(e) => setDeadlineDraft(e.target.value)}
             />
+            <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
           </label>
           <div className="flex flex-wrap gap-2">
             <button

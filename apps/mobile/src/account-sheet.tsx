@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import {
@@ -35,6 +34,7 @@ import {
   type AuthProviders,
   ApiError,
 } from './api';
+import { LifeIcon, type LifeIconName } from './life-icon';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -91,7 +91,7 @@ function GoogleSignInButton({
   return (
     <ActionButton
       disabled={disabled || busy || !googleRequest}
-      icon="logo-google"
+      icon="google"
       label={busy ? 'Connecting…' : 'Continue with Google'}
       onPress={() =>
         void run(async () => {
@@ -111,18 +111,6 @@ function GoogleSignInButton({
       secondary
     />
   );
-}
-
-function Icon({
-  name,
-  size = 18,
-  color = colors.ink,
-}: {
-  name: React.ComponentProps<typeof Ionicons>['name'];
-  size?: number;
-  color?: string;
-}) {
-  return <Ionicons name={name} size={size} color={color} />;
 }
 
 function Field({
@@ -178,7 +166,7 @@ function ActionButton({
   onPress: () => void;
   secondary?: boolean;
   disabled?: boolean;
-  icon?: React.ComponentProps<typeof Ionicons>['name'];
+  icon?: LifeIconName;
 }) {
   return (
     <Pressable
@@ -191,7 +179,7 @@ function ActionButton({
         pressed && styles.pressed,
       ]}
     >
-      {icon && <Icon name={icon} size={16} color={secondary ? colors.ink : 'white'} />}
+      {icon && <LifeIcon name={icon} size={16} color={secondary ? colors.ink : 'white'} />}
       <Text style={[styles.actionText, secondary && styles.actionTextSecondary]}>
         {label}
       </Text>
@@ -376,7 +364,7 @@ export function AccountSheet({
           <View style={styles.header}>
             <View>
               <View style={styles.eyebrowRow}>
-                <Icon name="shield-checkmark-outline" size={12} color={colors.sageDeep} />
+                <LifeIcon name="shield" size={12} color={colors.sageDeep} />
                 <Text style={styles.eyebrow}>PROFILE & HOUSEHOLD</Text>
               </View>
               <Text style={styles.title}>
@@ -384,7 +372,7 @@ export function AccountSheet({
               </Text>
             </View>
             <Pressable style={styles.close} onPress={onClose}>
-              <Icon name="close" size={20} />
+              <LifeIcon name="close" size={20} />
             </Pressable>
           </View>
 
@@ -428,10 +416,16 @@ export function AccountSheet({
                       setError('');
                       setNotice('');
                     }}
-                    style={{ marginBottom: 14 }}
+                    style={{
+                      alignItems: 'center',
+                      flexDirection: 'row',
+                      gap: 4,
+                      marginBottom: 14,
+                    }}
                   >
+                    <LifeIcon name="chevron-left" size={15} />
                     <Text style={[styles.modeText, { color: colors.sageDeep, fontWeight: '700' }]}>
-                      ← Back to sign in
+                      Back to sign in
                     </Text>
                   </Pressable>
                 )}
@@ -485,7 +479,7 @@ export function AccountSheet({
                 {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
                 {mode === 'login' || mode === 'register' ? (
                   <View style={styles.privacyNote}>
-                    <Icon name="lock-closed-outline" size={17} color={colors.sageDeep} />
+                    <LifeIcon name="lock" size={17} color={colors.sageDeep} />
                     <Text style={styles.privacyText}>
                       Your personal account stays separate. Linking a partner creates a
                       shared household; private items remain private.
@@ -500,7 +494,7 @@ export function AccountSheet({
                       password.length < 10 ||
                       (mode === 'register' && !displayName.trim())
                     }
-                    icon={mode === 'register' ? 'person-add-outline' : 'log-in-outline'}
+                    icon={mode === 'register' ? 'user-add' : 'sign-in'}
                     label={
                       busy
                         ? 'Connecting…'
@@ -514,7 +508,7 @@ export function AccountSheet({
                 {mode === 'forgot' && (
                   <ActionButton
                     disabled={busy || !email.trim()}
-                    icon="mail-outline"
+                    icon="email"
                     label={busy ? 'Sending…' : 'Send verification code'}
                     onPress={() =>
                       void perform(async () => {
@@ -533,7 +527,7 @@ export function AccountSheet({
                       resetCode.trim().length < 4 ||
                       newPassword.length < 10
                     }
-                    icon="key-outline"
+                    icon="key"
                     label={busy ? 'Updating…' : 'Set new password'}
                     onPress={() =>
                       void perform(async () => {
@@ -668,7 +662,7 @@ export function AccountSheet({
                     ]}
                   >
                     <View style={styles.householdIcon}>
-                      <Icon name="home-outline" size={17} color={colors.sageDeep} />
+                      <LifeIcon name="family" size={17} color={colors.sageDeep} />
                     </View>
                     <View style={styles.householdCopy}>
                       <Text style={styles.householdName}>{household.name}</Text>
@@ -677,7 +671,7 @@ export function AccountSheet({
                       </Text>
                     </View>
                     {household.active ? (
-                      <Icon name="checkmark-circle" size={20} color={colors.sageDeep} />
+                      <LifeIcon name="done" size={20} color={colors.sageDeep} weight="fill" />
                     ) : (
                       <Text style={styles.switchText}>Switch</Text>
                     )}
@@ -704,7 +698,7 @@ export function AccountSheet({
                   <View style={styles.inviteCard}>
                     <View style={styles.inviteHeading}>
                       <View style={styles.inviteIcon}>
-                        <Icon name="link-outline" size={18} color={colors.sageDeep} />
+                        <LifeIcon name="link" size={18} color={colors.sageDeep} />
                       </View>
                       <View style={styles.inviteCopy}>
                         <Text style={styles.inviteTitle}>Link your partner</Text>
@@ -724,7 +718,7 @@ export function AccountSheet({
                         />
                         <ActionButton
                           disabled={busy}
-                          icon="paper-plane-outline"
+                          icon="send"
                           label={busy ? 'Creating…' : 'Create secure invitation'}
                           onPress={makeInvite}
                         />
@@ -732,14 +726,14 @@ export function AccountSheet({
                     ) : (
                       <>
                         <View style={styles.inviteReady}>
-                          <Icon name="checkmark-circle" size={20} color={colors.sageDeep} />
+                          <LifeIcon name="done" size={20} color={colors.sageDeep} weight="fill" />
                           <View style={styles.inviteReadyCopy}>
                             <Text style={styles.inviteReadyTitle}>Invitation ready</Text>
                             <Text style={styles.inviteReadyText}>Expires in seven days</Text>
                           </View>
                         </View>
                         <ActionButton
-                          icon="share-outline"
+                          icon="share"
                           label="Share invitation"
                           onPress={shareInvite}
                         />
@@ -771,7 +765,7 @@ export function AccountSheet({
 
                 <ActionButton
                   disabled={busy}
-                  icon="log-out-outline"
+                  icon="sign-out"
                   label="Sign out"
                   onPress={signOut}
                   secondary
@@ -781,7 +775,7 @@ export function AccountSheet({
 
             {error ? (
               <View style={styles.errorBox}>
-                <Icon name="alert-circle-outline" size={17} color={colors.danger} />
+                <LifeIcon name="error" size={17} color={colors.danger} />
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}

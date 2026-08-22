@@ -23,7 +23,9 @@ import {
 } from "../lib/api";
 import { BudgetPanel } from "./budget-panel";
 import { CalendarPanel } from "./calendar-panel";
+import { CapacityRing } from "./capacity-ring";
 import { GoogleSignInButton } from "./google-sign-in-button";
+import { LifeIcon, type LifeIconName } from "./life-icon";
 import { MicrosoftSignInButton } from "./microsoft-sign-in-button";
 import { OnboardingPanel } from "./onboarding-panel";
 import { PlanPanel } from "./plan-panel";
@@ -116,6 +118,7 @@ export function LifeOSApp() {
   const [actionImportance, setActionImportance] =
     useState<PriorityLevel>("HIGH");
   const [actionUrgency, setActionUrgency] = useState<PriorityLevel>("LOW");
+  const [actionScheduleDate, setActionScheduleDate] = useState("");
   const [schedulePrompt, setSchedulePrompt] = useState<{
     actionId: string;
     title: string;
@@ -124,6 +127,7 @@ export function LifeOSApp() {
     urgency: PriorityLevel;
   } | null>(null);
   const [scheduleDateDraft, setScheduleDateDraft] = useState("");
+  const [stickyPrimaryId, setStickyPrimaryId] = useState<string | null>(null);
   const [areaTitle, setAreaTitle] = useState("");
   const [capacityHoursInput, setCapacityHoursInput] = useState("11");
   const [busy, setBusy] = useState(false);
@@ -197,7 +201,7 @@ export function LifeOSApp() {
         )
       : 11;
   const planned = openActions.reduce((sum, action) => sum + num(action, "hours", 1), 0);
-  const primary = useMemo(() => {
+  const rankedOpenPrimary = useMemo(() => {
     if (openActions.length === 0) return null;
     const projectById = new Map(projects.map((project) => [project.id, project]));
     return [...openActions].sort((a, b) => {
@@ -222,7 +226,23 @@ export function LifeOSApp() {
       );
     })[0];
   }, [openActions, projects]);
+  const primary = useMemo(() => {
+    if (stickyPrimaryId) {
+      const sticky = actions.find((item) => item.id === stickyPrimaryId);
+      if (sticky && sticky.kind === "ACTION" && sticky.status === "DONE") {
+        return sticky;
+      }
+    }
+    return rankedOpenPrimary;
+  }, [stickyPrimaryId, actions, rankedOpenPrimary]);
   const needsOnboarding = Boolean(account && !account.user.onboardingCompletedAt);
+
+  useEffect(() => {
+    if (!stickyPrimaryId) return;
+    if (!actions.some((item) => item.id === stickyPrimaryId)) {
+      setStickyPrimaryId(null);
+    }
+  }, [actions, stickyPrimaryId]);
 
   useEffect(() => {
     if (account?.user.preferredCurrency) {
@@ -234,14 +254,16 @@ export function LifeOSApp() {
     setCapacityHoursInput(String(available));
   }, [available]);
 
-  async function run(work: () => Promise<void>) {
+  async function run(work: () => Promise<void>): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await work();
       await refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -294,7 +316,7 @@ export function LifeOSApp() {
           </div>
         ) : (
           <button
-            className="self-start text-xs font-bold text-[#617a57]"
+            className="inline-flex items-center gap-1 self-start text-xs font-bold text-[#617a57]"
             type="button"
             onClick={() => {
               setAuthMode("login");
@@ -302,7 +324,8 @@ export function LifeOSApp() {
               setError(null);
             }}
           >
-            ← Back to sign in
+            <LifeIcon name="chevron-left" size={14} />
+            Back to sign in
           </button>
         )}
 
@@ -537,25 +560,32 @@ export function LifeOSApp() {
         </article>
       ) : null}
 
-      <nav className="mb-5 flex flex-wrap gap-2">
+      <nav className="mb-5 flex flex-nowrap gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(
           [
-            ["today", "Today"],
-            ["plan", "Plan"],
-            ["calendar", "Calendar"],
-            ["money", "Money"],
-            ["you", "You"],
+            ["today", "Today", "today"],
+            ["plan", "Plan", "plan"],
+            ["calendar", "Cal", "calendar"],
+            ["money", "Money", "money"],
+            ["you", "You", "you"],
           ] as const
-        ).map(([id, label]) => (
+        ).map(([id, label, icon]) => (
           <button
             key={id}
-            className={`rounded-full px-3 py-1.5 text-xs font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-bold ${tab === id ? "bg-[#14241f] text-[#d6f57a]" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
             type="button"
+            title={id === "calendar" ? "Calendar" : label}
+            aria-label={id === "calendar" ? "Calendar" : label}
             onClick={() => {
               setTab(id);
               if (id === "you") setYouDest("menu");
             }}
           >
+            <LifeIcon
+              name={icon}
+              size={15}
+              color={tab === id ? "#d6f57a" : "#617a57"}
+            />
             {label}
           </button>
         ))}
@@ -564,21 +594,26 @@ export function LifeOSApp() {
         <div className="mb-4 flex flex-wrap gap-2">
           {(
             [
-              ["priority", "Priority"],
-              ["areas", "Areas"],
-              ["projects", "Projects"],
-              ["ideas", "Ideas"],
+              ["priority", "Priority", "priority"],
+              ["areas", "Areas", "areas"],
+              ["projects", "Projects", "projects"],
+              ["ideas", "Ideas", "ideas"],
             ] as const
-          ).map(([id, label]) => (
+          ).map(([id, label, icon]) => (
             <button
               key={id}
               type="button"
-              className={`rounded-full px-3 py-1 text-xs font-bold ${planSegment === id ? "bg-[#617a57] text-white" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${planSegment === id ? "bg-[#617a57] text-white" : "bg-white border border-[#dde2dd] text-[#14241f]"}`}
               onClick={() => {
                 setPlanSegment(id);
                 if (id !== "priority") setPreferPriorityMatrix(false);
               }}
             >
+              <LifeIcon
+                name={icon}
+                size={14}
+                color={planSegment === id ? "#ffffff" : "#617a57"}
+              />
               {label}
             </button>
           ))}
@@ -597,7 +632,15 @@ export function LifeOSApp() {
             <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Primary move</p>
             {primary ? (
               <>
-                <h2 className="mt-2 font-serif text-2xl">{primary.title}</h2>
+                <h2
+                  className={`mt-2 font-serif text-2xl ${
+                    primary.status === "DONE"
+                      ? "text-[#6c7771] line-through"
+                      : "text-[#14241f]"
+                  }`}
+                >
+                  {primary.title}
+                </h2>
                 <p className="text-sm text-[#6c7771]">
                   {num(primary, "hours", 1)}h
                   {str(primary, "day") ? ` · ${str(primary, "day")}` : ""}
@@ -609,6 +652,7 @@ export function LifeOSApp() {
                       ];
                     return ` · ${meta.title}`;
                   })()}
+                  {primary.status === "DONE" ? " · Done" : ""}
                 </p>
                 <button
                   className="mt-4 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0]"
@@ -616,7 +660,13 @@ export function LifeOSApp() {
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      await updateLifeItem(primary.id, { status: toggledActionStatus(primary.status) });
+                      const wasDone = primary.status === "DONE";
+                      const id = primary.id;
+                      await updateLifeItem(id, {
+                        status: toggledActionStatus(primary.status),
+                      });
+                      if (wasDone) setStickyPrimaryId(null);
+                      else setStickyPrimaryId(id);
                     })
                   }
                 >
@@ -629,14 +679,22 @@ export function LifeOSApp() {
               </p>
             )}
           </article>
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Capacity</p>
-            <h2 className="mt-2 font-serif text-2xl">
-              {planned.toFixed(1)}h / {available}h
-            </h2>
-            <p className="text-sm text-[#6c7771]">
-              {planned > available ? "Over capacity — reduce scope in Capacity." : "Within capacity."}
-            </p>
+          <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
+            <CapacityRing
+              planned={planned}
+              available={available}
+              size={88}
+              label="Today weekly capacity"
+            />
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Capacity</p>
+              <h2 className="mt-1 font-serif text-2xl">
+                {planned.toFixed(1)}h / {available}h
+              </h2>
+              <p className="text-sm text-[#6c7771]">
+                {planned > available ? "Over capacity — reduce scope in Capacity." : "Within capacity."}
+              </p>
+            </div>
           </article>
         </section>
       ) : null}
@@ -730,6 +788,7 @@ export function LifeOSApp() {
           actionHours={actionHours}
           actionImportance={actionImportance}
           actionUrgency={actionUrgency}
+          actionScheduleDate={actionScheduleDate}
           onProjectTitleChange={setProjectTitle}
           onProjectOutcomeChange={setProjectOutcome}
           onProjectPillarIdChange={setProjectPillarId}
@@ -738,14 +797,28 @@ export function LifeOSApp() {
           onActionHoursChange={setActionHours}
           onActionImportanceChange={setActionImportance}
           onActionUrgencyChange={setActionUrgency}
-          onSaveProject={() =>
-            void run(async () => {
+          onActionScheduleDateChange={setActionScheduleDate}
+          onSaveProject={async () => {
+            const ok = await run(async () => {
               if (!projectTitle.trim() || !actionTitle.trim()) {
                 throw new Error("Project and next action are required.");
               }
               const hours = Number(actionHours);
               if (!Number.isFinite(hours) || hours <= 0) {
                 throw new Error("Hours must be a positive number.");
+              }
+              const createQuadrant = quadrantFromLevels(
+                actionImportance,
+                actionUrgency,
+              );
+              const scheduleDate = actionScheduleDate.trim();
+              if (
+                quadrantRequiresScheduledDate(createQuadrant) &&
+                !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)
+              ) {
+                throw new Error(
+                  "Schedule actions need a date — pick a schedule date for the first next action.",
+                );
               }
               const project = await createLifeItem({
                 kind: "PROJECT",
@@ -759,26 +832,14 @@ export function LifeOSApp() {
                   projectPriorityFromImportance(actionImportance),
                 ),
               });
-              const createQuadrant = quadrantFromLevels(
-                actionImportance,
-                actionUrgency,
-              );
-              if (
-                quadrantRequiresScheduledDate(createQuadrant) &&
-                !projectTargetDate
-              ) {
-                throw new Error(
-                  "Schedule actions need a date — set the project deadline or pick Schedule after adding.",
-                );
-              }
               let actionBody: Record<string, unknown> = {
                 hours,
                 day: "This week",
               };
-              if (quadrantRequiresScheduledDate(createQuadrant) && projectTargetDate) {
+              if (quadrantRequiresScheduledDate(createQuadrant)) {
                 actionBody = actionBodyWithScheduledDate(
                   actionBody,
-                  projectTargetDate,
+                  scheduleDate,
                 );
               }
               await createLifeItem({
@@ -795,10 +856,13 @@ export function LifeOSApp() {
               setProjectOutcome("");
               setProjectTargetDate("");
               setActionTitle("");
+              setActionHours("2");
               setActionImportance("HIGH");
               setActionUrgency("LOW");
-            })
-          }
+              setActionScheduleDate("");
+            });
+            if (!ok) throw new Error("Could not save project");
+          }}
           onMoveProjectPriority={(project, priority) =>
             void run(async () => {
               await updateLifeItem(project.id, {
@@ -945,34 +1009,58 @@ export function LifeOSApp() {
         <section className="space-y-3">
           <h2 className="font-serif text-2xl text-[#14241f]">You</h2>
           <p className="text-sm text-[#6c7771]">Capacity and weekly review live here.</p>
-          <button type="button" className="block w-full rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left" onClick={() => setYouDest("capacity")}>
-            <div className="text-sm font-bold text-[#14241f]">Capacity</div>
-            <div className="text-xs text-[#6c7771]">Weekly hours and load</div>
-          </button>
-          <button type="button" className="block w-full rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left" onClick={() => setYouDest("review")}>
-            <div className="text-sm font-bold text-[#14241f]">Weekly Review</div>
-            <div className="text-xs text-[#6c7771]">CEO-style check-in</div>
-          </button>
-          <button type="button" className="block w-full rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left" onClick={() => setSettingsOpen(true)}>
-            <div className="text-sm font-bold text-[#14241f]">Settings</div>
-            <div className="text-xs text-[#6c7771]">Account and currency</div>
-          </button>
+          {(
+            [
+              ["capacity", "Capacity", "Weekly hours and load", "capacity"],
+              ["review", "Weekly Review", "CEO-style check-in", "review"],
+              ["settings", "Settings", "Account and currency", "settings"],
+            ] as const
+          ).map(([id, title, description, icon]) => (
+            <button
+              key={id}
+              type="button"
+              className="flex w-full items-center gap-3 rounded-2xl border border-[#dde2dd] bg-white px-4 py-3 text-left"
+              onClick={() =>
+                id === "settings" ? setSettingsOpen(true) : setYouDest(id)
+              }
+            >
+              <LifeIcon name={icon as LifeIconName} size={22} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold text-[#14241f]">
+                  {title}
+                </span>
+                <span className="block text-xs text-[#6c7771]">
+                  {description}
+                </span>
+              </span>
+              <LifeIcon name="chevron-right" size={16} color="#6c7771" />
+            </button>
+          ))}
         </section>
       ) : null}
 
       {tab === "you" && youDest === "capacity" ? (
         <section className="space-y-4">
           <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
-            <h2 className="font-serif text-2xl">
-              {planned.toFixed(1)}h planned / {available}h available
-            </h2>
-            {planned > available ? (
-              <p className="text-sm text-[#c9634f]">
-                Overcommitted — raise available hours or reduce action hours below.
-              </p>
-            ) : (
-              <p className="text-sm text-[#6c7771]">Healthy load.</p>
-            )}
+            <div className="flex items-center gap-4">
+              <CapacityRing
+                planned={planned}
+                available={available}
+                label="Weekly planned capacity"
+              />
+              <div className="min-w-0">
+                <h2 className="font-serif text-2xl">
+                  {planned.toFixed(1)}h planned / {available}h available
+                </h2>
+                {planned > available ? (
+                  <p className="text-sm text-[#c9634f]">
+                    Overcommitted — raise available hours or reduce action hours below.
+                  </p>
+                ) : (
+                  <p className="text-sm text-[#6c7771]">Healthy load.</p>
+                )}
+              </div>
+            </div>
             <label className="block space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
                 Available hours / week
@@ -1136,18 +1224,25 @@ export function LifeOSApp() {
 
       {tab === "you" && youDest === "review" ? (
         <section className="space-y-4">
-          <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Scorecard</p>
-            <h2 className="mt-2 font-serif text-2xl">
-              {doneActions.length} completed · {openActions.length} open
-            </h2>
-            <p className="text-sm text-[#6c7771]">
-              Completion{" "}
-              {actions.length === 0
-                ? 0
-                : Math.round((doneActions.length / actions.length) * 100)}
-              % · planned {planned.toFixed(1)}h / {available}h
-            </p>
+          <article className="flex items-center gap-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
+            <CapacityRing
+              planned={planned}
+              available={available}
+              label="Weekly review planned capacity"
+            />
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">Scorecard</p>
+              <h2 className="mt-2 font-serif text-2xl">
+                {doneActions.length} completed · {openActions.length} open
+              </h2>
+              <p className="text-sm text-[#6c7771]">
+                Completion{" "}
+                {actions.length === 0
+                  ? 0
+                  : Math.round((doneActions.length / actions.length) * 100)}
+                % · planned {planned.toFixed(1)}h / {available}h
+              </p>
+            </div>
           </article>
         </section>
       ) : null}
@@ -1183,6 +1278,7 @@ export function LifeOSApp() {
                 value={scheduleDateDraft}
                 onChange={(e) => setScheduleDateDraft(e.target.value)}
               />
+              <span className="text-[11px] text-[#6c7771]">YYYY-MM-DD</span>
             </label>
             <div className="mt-4 flex gap-2">
               <button

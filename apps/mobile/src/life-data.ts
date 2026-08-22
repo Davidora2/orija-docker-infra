@@ -10,7 +10,7 @@ import {
   projectPriorityRank,
 } from './priority-matrix';
 
-/** Suggested life areas for onboarding (icons match Ionicons names). */
+/** Suggested life areas retain legacy keys mapped by LifeIcon on every client. */
 export const SUGGESTED_LIFE_AREAS = [
   { title: 'Health', icon: 'fitness-outline' },
   { title: 'Career', icon: 'trending-up-outline' },
