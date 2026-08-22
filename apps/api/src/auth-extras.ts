@@ -6,7 +6,7 @@ import type { Database } from './db.js';
 import { ApiError } from './errors.js';
 import { verifyGoogleIdToken } from './google-auth.js';
 import { verifyMicrosoftIdToken } from './microsoft-auth.js';
-import { createMailer, generateNumericCode } from './mailer.js';
+import { createMailer, generateNumericCode, type Mailer } from './mailer.js';
 import { hashPassword, hashToken } from './security.js';
 
 type UserRow = {
@@ -21,8 +21,47 @@ type UserRow = {
   onboardingCompletedAt: Date | null;
   googleSub: string | null;
   microsoftSub?: string | null;
+  emailVerifiedAt?: Date | null;
   createdAt: Date;
 };
+
+type AuthCodePurpose = 'password_reset' | 'email_verification' | 'oauth_link';
+
+export async function issueEmailVerificationCode(
+  sql: Database,
+  mailer: Mailer,
+  config: AppConfig,
+  userId: string,
+  email: string,
+): Promise<{ code: string; delivery: { delivered: boolean; mode: string } }> {
+  const code = generateNumericCode(6);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  await sql`
+    UPDATE auth_codes
+    SET consumed_at = now()
+    WHERE email = ${email}
+      AND purpose = 'email_verification'
+      AND consumed_at IS NULL
+  `;
+  await sql`
+    INSERT INTO auth_codes (email, user_id, purpose, code_hash, expires_at)
+    VALUES (
+      ${email},
+      ${userId},
+      'email_verification',
+      ${hashToken(code)},
+      ${expiresAt}
+    )
+  `;
+
+  const delivery = await mailer.send({
+    to: email,
+    subject: 'Verify your Life OS email',
+    text: `Your Life OS verification code is ${code}. It expires in 15 minutes.\n\nIf you did not create an account, you can ignore this email.`,
+  });
+
+  return { code, delivery };
+}
 
 export function registerAuthExtras(
   app: FastifyInstance,
@@ -65,11 +104,287 @@ export function registerAuthExtras(
         WHERE id = ${user.id}
         RETURNING
           id, email, password_hash, display_name, avatar_url, timezone,
-          active_household_id, onboarding_completed_at, google_sub, created_at
+          active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+          email_verified_at, created_at
       `;
       if (!updated) throw new ApiError(500, 'user_update_failed', 'Could not update user.');
       return updated;
     });
+  }
+
+  async function createOAuthUser(params: {
+    email: string;
+    displayName: string;
+    avatarUrl: string | null;
+    timezone: string;
+    googleSub?: string | null;
+    microsoftSub?: string | null;
+    emailVerified: boolean;
+  }): Promise<UserRow> {
+    if (!params.emailVerified) {
+      throw new ApiError(
+        403,
+        'idp_email_unverified',
+        'Your identity provider email must be verified before signing in.',
+      );
+    }
+
+    return sql.begin(async (tx) => {
+      const [created] = await tx<UserRow[]>`
+        INSERT INTO users (
+          email, password_hash, display_name, avatar_url, timezone,
+          google_sub, microsoft_sub, email_verified_at
+        ) VALUES (
+          ${params.email},
+          NULL,
+          ${params.displayName},
+          ${params.avatarUrl},
+          ${params.timezone},
+          ${params.googleSub ?? null},
+          ${params.microsoftSub ?? null},
+          ${new Date()}
+        )
+        RETURNING
+          id, email, password_hash, display_name, avatar_url, timezone,
+          active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+          email_verified_at, created_at
+      `;
+      if (!created) {
+        throw new ApiError(500, 'user_create_failed', 'Could not create OAuth user.');
+      }
+      const [household] = await tx<{ id: string }[]>`
+        INSERT INTO households (name, created_by)
+        VALUES (${`${created.displayName}'s Life OS`}, ${created.id})
+        RETURNING id
+      `;
+      if (!household) {
+        throw new ApiError(500, 'household_create_failed', 'Could not create household.');
+      }
+      await tx`
+        INSERT INTO household_members (household_id, user_id, role)
+        VALUES (${household.id}, ${created.id}, 'OWNER')
+      `;
+      const [updated] = await tx<UserRow[]>`
+        UPDATE users
+        SET active_household_id = ${household.id}, updated_at = now()
+        WHERE id = ${created.id}
+        RETURNING
+          id, email, password_hash, display_name, avatar_url, timezone,
+          active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+          email_verified_at, created_at
+      `;
+      if (!updated) {
+        throw new ApiError(500, 'user_update_failed', 'Could not update OAuth user.');
+      }
+      return updated;
+    });
+  }
+
+  async function resolveOAuthSignIn(params: {
+    provider: 'google' | 'microsoft';
+    sub: string;
+    email: string;
+    emailVerified: boolean;
+    name: string | null;
+    picture: string | null;
+    timezone: string;
+  }): Promise<UserRow> {
+    if (!params.emailVerified) {
+      throw new ApiError(
+        403,
+        'idp_email_unverified',
+        'Your identity provider email must be verified before signing in.',
+      );
+    }
+
+    const [bySub] =
+      params.provider === 'google'
+        ? await sql<UserRow[]>`
+            SELECT
+              id, email, password_hash, display_name, avatar_url, timezone,
+              active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+              email_verified_at, created_at
+            FROM users
+            WHERE google_sub = ${params.sub}
+            LIMIT 1
+          `
+        : await sql<UserRow[]>`
+            SELECT
+              id, email, password_hash, display_name, avatar_url, timezone,
+              active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+              email_verified_at, created_at
+            FROM users
+            WHERE microsoft_sub = ${params.sub}
+            LIMIT 1
+          `;
+
+    if (bySub) {
+      if (params.provider === 'google') {
+        await sql`
+          UPDATE users SET
+            avatar_url = COALESCE(avatar_url, ${params.picture}),
+            email_verified_at = COALESCE(email_verified_at, ${new Date()}),
+            updated_at = now()
+          WHERE id = ${bySub.id}
+        `;
+      } else {
+        await sql`
+          UPDATE users SET
+            email_verified_at = COALESCE(email_verified_at, ${new Date()}),
+            updated_at = now()
+          WHERE id = ${bySub.id}
+        `;
+      }
+      return ensureHousehold(bySub);
+    }
+
+    const [emailOwner] = await sql<{ id: string; emailVerifiedAt: Date | null }[]>`
+      SELECT id, email_verified_at
+      FROM users
+      WHERE email = ${params.email}
+      LIMIT 1
+    `;
+    if (emailOwner) {
+      throw new ApiError(
+        409,
+        'account_exists_link_required',
+        'An account with this email already exists. Sign in with your password (after verifying email if needed), then link this provider from account settings.',
+      );
+    }
+
+    const displayName =
+      params.name ?? params.email.split('@')[0] ?? 'Life OS user';
+
+    try {
+      return await createOAuthUser({
+        email: params.email,
+        displayName,
+        avatarUrl: params.picture,
+        timezone: params.timezone,
+        googleSub: params.provider === 'google' ? params.sub : null,
+        microsoftSub: params.provider === 'microsoft' ? params.sub : null,
+        emailVerified: true,
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw new ApiError(
+          409,
+          'account_exists_link_required',
+          'An account with this email already exists. Sign in with your password, then link this provider from account settings.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async function linkProviderToAuthenticatedUser(params: {
+    userId: string;
+    provider: 'google' | 'microsoft';
+    sub: string;
+    email: string;
+    emailVerified: boolean;
+    picture: string | null;
+  }): Promise<UserRow> {
+    if (!params.emailVerified) {
+      throw new ApiError(
+        403,
+        'idp_email_unverified',
+        'Your identity provider email must be verified before linking.',
+      );
+    }
+
+    const [user] = await sql<UserRow[]>`
+      SELECT
+        id, email, password_hash, display_name, avatar_url, timezone,
+        active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+        email_verified_at, created_at
+      FROM users
+      WHERE id = ${params.userId}
+    `;
+    if (!user) {
+      throw new ApiError(404, 'user_not_found', 'Account not found.');
+    }
+    if (!user.emailVerifiedAt) {
+      throw new ApiError(
+        403,
+        'email_not_verified',
+        'Verify your email before linking a social account.',
+      );
+    }
+    if (params.email !== user.email) {
+      throw new ApiError(
+        400,
+        'email_mismatch',
+        'The social account email must match your Life OS account email.',
+      );
+    }
+
+    if (params.provider === 'google') {
+      if (user.googleSub && user.googleSub !== params.sub) {
+        throw new ApiError(
+          409,
+          'provider_already_linked',
+          'A different Google account is already linked.',
+        );
+      }
+      const [conflict] = await sql<{ id: string }[]>`
+        SELECT id FROM users
+        WHERE google_sub = ${params.sub} AND id <> ${user.id}
+        LIMIT 1
+      `;
+      if (conflict) {
+        throw new ApiError(
+          409,
+          'provider_in_use',
+          'That Google account is already linked to another Life OS user.',
+        );
+      }
+      const [updated] = await sql<UserRow[]>`
+        UPDATE users SET
+          google_sub = ${params.sub},
+          avatar_url = COALESCE(avatar_url, ${params.picture}),
+          updated_at = now()
+        WHERE id = ${user.id}
+        RETURNING
+          id, email, password_hash, display_name, avatar_url, timezone,
+          active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+          email_verified_at, created_at
+      `;
+      if (!updated) throw new ApiError(500, 'user_update_failed', 'Could not link Google.');
+      return updated;
+    }
+
+    if (user.microsoftSub && user.microsoftSub !== params.sub) {
+      throw new ApiError(
+        409,
+        'provider_already_linked',
+        'A different Microsoft account is already linked.',
+      );
+    }
+    const [conflict] = await sql<{ id: string }[]>`
+      SELECT id FROM users
+      WHERE microsoft_sub = ${params.sub} AND id <> ${user.id}
+      LIMIT 1
+    `;
+    if (conflict) {
+      throw new ApiError(
+        409,
+        'provider_in_use',
+        'That Microsoft account is already linked to another Life OS user.',
+      );
+    }
+    const [updated] = await sql<UserRow[]>`
+      UPDATE users SET
+        microsoft_sub = ${params.sub},
+        updated_at = now()
+      WHERE id = ${user.id}
+      RETURNING
+        id, email, password_hash, display_name, avatar_url, timezone,
+        active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+        email_verified_at, created_at
+    `;
+    if (!updated) throw new ApiError(500, 'user_update_failed', 'Could not link Microsoft.');
+    return updated;
   }
 
   app.get('/v1/auth/providers', async () => {
@@ -92,6 +407,107 @@ export function registerAuthExtras(
   });
 
   app.post(
+    '/v1/auth/verify-email',
+    {
+      config: {
+        rateLimit: { max: config.nodeEnv === 'test' ? 1000 : 20, timeWindow: '10 minutes' },
+      },
+    },
+    async (request, reply) => {
+      const body = z
+        .object({
+          email: z.string().email().max(320).transform((value) => value.toLowerCase()),
+          code: z.string().trim().min(4).max(12),
+          deviceName: z.string().trim().max(120).optional(),
+        })
+        .parse(request.body);
+
+      const codeRow = await assertValidAuthCode(
+        sql,
+        body.email,
+        body.code,
+        'email_verification',
+      );
+
+      const [user] = await sql<UserRow[]>`
+        UPDATE users
+        SET email_verified_at = COALESCE(email_verified_at, now()), updated_at = now()
+        WHERE id = ${codeRow.userId}
+        RETURNING
+          id, email, password_hash, display_name, avatar_url, timezone,
+          active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+          email_verified_at, created_at
+      `;
+      if (!user) {
+        throw new ApiError(404, 'user_not_found', 'Account not found.');
+      }
+
+      await sql`
+        UPDATE auth_codes
+        SET consumed_at = now()
+        WHERE id = ${codeRow.id}
+      `;
+
+      const session = await auth.issueSession(
+        { id: user.id, email: user.email },
+        body.deviceName,
+      );
+      return reply.send({
+        ...session,
+        account: await helpers.getAccountPayload(sql, user.id),
+      });
+    },
+  );
+
+  app.post(
+    '/v1/auth/resend-verification',
+    {
+      config: {
+        rateLimit: { max: config.nodeEnv === 'test' ? 1000 : 5, timeWindow: '10 minutes' },
+      },
+    },
+    async (request, reply) => {
+      const body = z
+        .object({
+          email: z.string().email().max(320).transform((value) => value.toLowerCase()),
+        })
+        .parse(request.body);
+
+      const generic = {
+        ok: true,
+        message: 'If that email needs verification, a code is on its way.',
+      };
+
+      const [user] = await sql<(UserRow & { emailVerifiedAt: Date | null })[]>`
+        SELECT
+          id, email, password_hash, display_name, avatar_url, timezone,
+          active_household_id, onboarding_completed_at, google_sub, microsoft_sub,
+          email_verified_at, created_at
+        FROM users
+        WHERE email = ${body.email}
+      `;
+
+      if (!user || user.emailVerifiedAt || !user.passwordHash) {
+        return reply.send(generic);
+      }
+
+      const { code, delivery } = await issueEmailVerificationCode(
+        sql,
+        mailer,
+        config,
+        user.id,
+        user.email,
+      );
+
+      return reply.send({
+        ...generic,
+        delivery: delivery.mode,
+        ...(config.authDebugCodes ? { debugCode: code } : {}),
+      });
+    },
+  );
+
+  app.post(
     '/v1/auth/google',
     { config: { rateLimit: { max: config.nodeEnv === 'test' ? 1000 : 20, timeWindow: '1 minute' } } },
     async (request, reply) => {
@@ -104,74 +520,15 @@ export function registerAuthExtras(
         .parse(request.body);
 
       const identity = await verifyGoogleIdToken(body.idToken, config.googleClientIds);
-
-      let [user] = await sql<UserRow[]>`
-        SELECT
-          id, email, password_hash, display_name, avatar_url, timezone,
-          active_household_id, onboarding_completed_at, google_sub, created_at
-        FROM users
-        WHERE google_sub = ${identity.sub} OR email = ${identity.email}
-        LIMIT 1
-      `;
-
-      if (!user) {
-        user = await sql.begin(async (tx) => {
-          const [created] = await tx<UserRow[]>`
-            INSERT INTO users (
-              email, password_hash, display_name, avatar_url, timezone,
-              google_sub, email_verified_at
-            ) VALUES (
-              ${identity.email},
-              NULL,
-              ${identity.name ?? identity.email.split('@')[0] ?? 'Life OS user'},
-              ${identity.picture},
-              ${body.timezone},
-              ${identity.sub},
-              ${identity.emailVerified ? new Date() : null}
-            )
-            RETURNING
-              id, email, password_hash, display_name, avatar_url, timezone,
-              active_household_id, onboarding_completed_at, google_sub, created_at
-          `;
-          if (!created) {
-            throw new ApiError(500, 'user_create_failed', 'Could not create Google user.');
-          }
-          const [household] = await tx<{ id: string }[]>`
-            INSERT INTO households (name, created_by)
-            VALUES (${`${created.displayName}'s Life OS`}, ${created.id})
-            RETURNING id
-          `;
-          if (!household) {
-            throw new ApiError(500, 'household_create_failed', 'Could not create household.');
-          }
-          await tx`
-            INSERT INTO household_members (household_id, user_id, role)
-            VALUES (${household.id}, ${created.id}, 'OWNER')
-          `;
-          const [updated] = await tx<UserRow[]>`
-            UPDATE users
-            SET active_household_id = ${household.id}, updated_at = now()
-            WHERE id = ${created.id}
-            RETURNING
-              id, email, password_hash, display_name, avatar_url, timezone,
-              active_household_id, onboarding_completed_at, google_sub, created_at
-          `;
-          if (!updated) {
-            throw new ApiError(500, 'user_update_failed', 'Could not update Google user.');
-          }
-          return updated;
-        });
-      } else {
-        await sql`
-          UPDATE users SET
-            google_sub = COALESCE(google_sub, ${identity.sub}),
-            avatar_url = COALESCE(avatar_url, ${identity.picture}),
-            email_verified_at = COALESCE(email_verified_at, ${identity.emailVerified ? new Date() : null}),
-            updated_at = now()
-          WHERE id = ${user.id}
-        `;
-        user = await ensureHousehold(user);
-      }
+      const user = await resolveOAuthSignIn({
+        provider: 'google',
+        sub: identity.sub,
+        email: identity.email,
+        emailVerified: identity.emailVerified,
+        name: identity.name,
+        picture: identity.picture,
+        timezone: body.timezone,
+      });
 
       const session = await auth.issueSession(
         { id: user.id, email: user.email },
@@ -201,73 +558,15 @@ export function registerAuthExtras(
         config.microsoftClientId ? [config.microsoftClientId] : [],
         config.microsoftTenantId,
       );
-
-      let [user] = await sql<UserRow[]>`
-        SELECT
-          id, email, password_hash, display_name, avatar_url, timezone,
-          active_household_id, onboarding_completed_at, google_sub, microsoft_sub, created_at
-        FROM users
-        WHERE microsoft_sub = ${identity.sub} OR email = ${identity.email}
-        LIMIT 1
-      `;
-
-      if (!user) {
-        user = await sql.begin(async (tx) => {
-          const [created] = await tx<UserRow[]>`
-            INSERT INTO users (
-              email, password_hash, display_name, avatar_url, timezone,
-              microsoft_sub, email_verified_at
-            ) VALUES (
-              ${identity.email},
-              NULL,
-              ${identity.name ?? identity.email.split('@')[0] ?? 'Life OS user'},
-              NULL,
-              ${body.timezone},
-              ${identity.sub},
-              ${identity.emailVerified ? new Date() : null}
-            )
-            RETURNING
-              id, email, password_hash, display_name, avatar_url, timezone,
-              active_household_id, onboarding_completed_at, google_sub, microsoft_sub, created_at
-          `;
-          if (!created) {
-            throw new ApiError(500, 'user_create_failed', 'Could not create Microsoft user.');
-          }
-          const [household] = await tx<{ id: string }[]>`
-            INSERT INTO households (name, created_by)
-            VALUES (${`${created.displayName}'s Life OS`}, ${created.id})
-            RETURNING id
-          `;
-          if (!household) {
-            throw new ApiError(500, 'household_create_failed', 'Could not create household.');
-          }
-          await tx`
-            INSERT INTO household_members (household_id, user_id, role)
-            VALUES (${household.id}, ${created.id}, 'OWNER')
-          `;
-          const [updated] = await tx<UserRow[]>`
-            UPDATE users
-            SET active_household_id = ${household.id}, updated_at = now()
-            WHERE id = ${created.id}
-            RETURNING
-              id, email, password_hash, display_name, avatar_url, timezone,
-              active_household_id, onboarding_completed_at, google_sub, microsoft_sub, created_at
-          `;
-          if (!updated) {
-            throw new ApiError(500, 'user_update_failed', 'Could not update Microsoft user.');
-          }
-          return updated;
-        });
-      } else {
-        await sql`
-          UPDATE users SET
-            microsoft_sub = COALESCE(microsoft_sub, ${identity.sub}),
-            email_verified_at = COALESCE(email_verified_at, ${identity.emailVerified ? new Date() : null}),
-            updated_at = now()
-          WHERE id = ${user.id}
-        `;
-        user = await ensureHousehold(user);
-      }
+      const user = await resolveOAuthSignIn({
+        provider: 'microsoft',
+        sub: identity.sub,
+        email: identity.email,
+        emailVerified: identity.emailVerified,
+        name: identity.name,
+        picture: identity.picture,
+        timezone: body.timezone,
+      });
 
       const session = await auth.issueSession(
         { id: user.id, email: user.email },
@@ -275,6 +574,72 @@ export function registerAuthExtras(
       );
       return reply.code(200).send({
         ...session,
+        account: await helpers.getAccountPayload(sql, user.id),
+      });
+    },
+  );
+
+  app.post(
+    '/v1/auth/link/google',
+    {
+      preHandler: auth.authenticate,
+      config: { rateLimit: { max: config.nodeEnv === 'test' ? 1000 : 20, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const body = z
+        .object({
+          idToken: z.string().min(20),
+        })
+        .parse(request.body);
+
+      const identity = await verifyGoogleIdToken(body.idToken, config.googleClientIds);
+      const user = await linkProviderToAuthenticatedUser({
+        userId: request.authUser.id,
+        provider: 'google',
+        sub: identity.sub,
+        email: identity.email,
+        emailVerified: identity.emailVerified,
+        picture: identity.picture,
+      });
+
+      return reply.send({
+        ok: true,
+        linked: 'google',
+        account: await helpers.getAccountPayload(sql, user.id),
+      });
+    },
+  );
+
+  app.post(
+    '/v1/auth/link/microsoft',
+    {
+      preHandler: auth.authenticate,
+      config: { rateLimit: { max: config.nodeEnv === 'test' ? 1000 : 20, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const body = z
+        .object({
+          idToken: z.string().min(20),
+        })
+        .parse(request.body);
+
+      const identity = await verifyMicrosoftIdToken(
+        body.idToken,
+        config.microsoftClientId ? [config.microsoftClientId] : [],
+        config.microsoftTenantId,
+      );
+      const user = await linkProviderToAuthenticatedUser({
+        userId: request.authUser.id,
+        provider: 'microsoft',
+        sub: identity.sub,
+        email: identity.email,
+        emailVerified: identity.emailVerified,
+        picture: identity.picture,
+      });
+
+      return reply.send({
+        ok: true,
+        linked: 'microsoft',
         account: await helpers.getAccountPayload(sql, user.id),
       });
     },
@@ -361,7 +726,7 @@ export function registerAuthExtras(
         })
         .parse(request.body);
 
-      await assertValidResetCode(sql, body.email, body.code);
+      await assertValidAuthCode(sql, body.email, body.code, 'password_reset');
       return { ok: true, message: 'Code verified. You can set a new password.' };
     },
   );
@@ -383,12 +748,15 @@ export function registerAuthExtras(
         })
         .parse(request.body);
 
-      const codeRow = await assertValidResetCode(sql, body.email, body.code);
+      const codeRow = await assertValidAuthCode(sql, body.email, body.code, 'password_reset');
       const passwordHash = await hashPassword(body.newPassword);
 
       const [user] = await sql<UserRow[]>`
         UPDATE users
-        SET password_hash = ${passwordHash}, updated_at = now()
+        SET
+          password_hash = ${passwordHash},
+          email_verified_at = COALESCE(email_verified_at, now()),
+          updated_at = now()
         WHERE id = ${codeRow.userId}
         RETURNING
           id, email, password_hash, display_name, avatar_url, timezone,
@@ -421,10 +789,11 @@ export function registerAuthExtras(
   );
 }
 
-async function assertValidResetCode(
+async function assertValidAuthCode(
   sql: Database,
   email: string,
   code: string,
+  purpose: AuthCodePurpose,
 ): Promise<{ id: string; userId: string }> {
   const [row] = await sql<{
     id: string;
@@ -436,7 +805,7 @@ async function assertValidResetCode(
     SELECT id, user_id, code_hash, attempts, expires_at
     FROM auth_codes
     WHERE email = ${email}
-      AND purpose = 'password_reset'
+      AND purpose = ${purpose}
       AND consumed_at IS NULL
     ORDER BY created_at DESC
     LIMIT 1
@@ -450,7 +819,6 @@ async function assertValidResetCode(
   }
 
   const ok = hashToken(code) === row.codeHash;
-  // Also accept verifyPassword-style? No — codes are hashed with hashToken
   if (!ok) {
     await sql`
       UPDATE auth_codes SET attempts = attempts + 1 WHERE id = ${row.id}

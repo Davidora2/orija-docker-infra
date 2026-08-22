@@ -65,6 +65,12 @@ const migrations = [
       new URL('../migrations/011_microsoft_calendar_sync.sql', import.meta.url),
     ),
   },
+  {
+    version: '013_email_verification_oauth_link',
+    path: fileURLToPath(
+      new URL('../migrations/013_email_verification_oauth_link.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

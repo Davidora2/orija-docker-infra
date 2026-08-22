@@ -21,7 +21,12 @@ suite('account and couple household API', () => {
     accessTokenTtl: '15m',
     refreshTokenDays: 30,
     autoMigrate: true,
-    googleClientIds: [],
+    googleClientIds: ['test-google-client'],
+    googleOauthClientSecret: null,
+    microsoftClientId: 'test-microsoft-client',
+    microsoftClientSecret: null,
+    microsoftTenantId: 'common',
+    calendarTokenEncryptionKey: null,
     resendApiKey: null,
     emailFrom: 'Life OS <test@example.com>',
     smtpUser: null,
@@ -83,7 +88,25 @@ suite('account and couple household API', () => {
       },
     });
     expect(response.statusCode).toBe(201);
-    return response.json();
+    const registered = response.json<{
+      requiresEmailVerification: boolean;
+      debugCode: string;
+      email: string;
+    }>();
+    expect(registered.requiresEmailVerification).toBe(true);
+    expect(registered.debugCode).toBeTruthy();
+
+    const verify = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/verify-email',
+      payload: {
+        email,
+        code: registered.debugCode,
+        deviceName: 'vitest',
+      },
+    });
+    expect(verify.statusCode).toBe(200);
+    return verify.json();
   }
 
   it('links two accounts while preserving private items', async () => {
