@@ -247,6 +247,64 @@ export async function loadCalendarEvents(
         meta: { projectId: project.id, targetDate: due },
       });
     }
+
+    const savingGoals = await sql<
+      {
+        id: string;
+        name: string;
+        targetCents: number;
+        currentCents: number;
+        targetDate: string;
+      }[]
+    >`
+      SELECT
+        saving_goals.id,
+        saving_goals.name,
+        saving_goals.target_cents,
+        saving_goals.current_cents,
+        saving_goals.target_date::text
+      FROM saving_goals
+      WHERE saving_goals.target_date >= ${rangeStart}::date
+        AND saving_goals.target_date <= ${rangeEnd}::date
+        AND (
+          saving_goals.owner_user_id = ${userId}
+          OR (
+            saving_goals.visibility = 'SHARED'
+            AND EXISTS (
+              SELECT 1
+              FROM household_members hm
+              WHERE hm.household_id = saving_goals.household_id
+                AND hm.user_id = ${userId}
+            )
+          )
+        )
+    `;
+
+    for (const goal of savingGoals) {
+      const date = goal.targetDate.slice(0, 10);
+      events.push({
+        id: `milestone:saving-goal:${goal.id}`,
+        type: 'milestone',
+        date,
+        title: `Saving target · ${goal.name}`,
+        amountCents: Number(goal.targetCents),
+        areaId: null,
+        areaTitle: null,
+        status:
+          Number(goal.currentCents) >= Number(goal.targetCents)
+            ? 'ACHIEVED'
+            : 'ACTIVE',
+        source: 'saving_goal',
+        meta: {
+          savingGoalId: goal.id,
+          targetDate: date,
+          deepLink: {
+            mobile: `lifeos://money/wealth/savings/${encodeURIComponent(goal.id)}`,
+            web: `/?tab=money&money=wealth&savingGoalId=${encodeURIComponent(goal.id)}`,
+          },
+        },
+      });
+    }
   }
 
   if (typeSet.has('payment') || typeSet.has('payday')) {

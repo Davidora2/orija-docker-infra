@@ -18,6 +18,7 @@ import {
   quadrantRequiresScheduledDate,
   type PriorityQuadrant,
 } from './priority-matrix';
+import { LandscapeHero } from './landscape-hero';
 import { LifeIcon, lifeIconFromLegacy } from './life-icon';
 
 const colors = {
@@ -234,6 +235,11 @@ export function PriorityScreen({
 
   return (
     <View style={styles.stack}>
+      <LandscapeHero
+        title="Plan"
+        subtitle="Decide what exists and what matters."
+        detail="Shape Areas, commit Projects, and protect the actions that deserve this week."
+      />
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
           <Text style={styles.title}>Priority</Text>
