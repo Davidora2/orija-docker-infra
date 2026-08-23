@@ -850,9 +850,10 @@ function PersonalOutgoingsPanel({
       </article>
 
       <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
-        <h4 className="font-semibold">Add daily expense</h4>
+        <h4 className="font-semibold">Log past expense</h4>
         <p className="text-sm text-[#6c7771]">
-          One-off spends count toward this month&apos;s total outgoings and delta.
+          Pick any past date to backfill actual spending. One-off spends count
+          toward that month&apos;s total outgoings and delta.
         </p>
         <div className="flex flex-wrap gap-2">
           {categories.map((category) => (
@@ -923,7 +924,7 @@ function PersonalOutgoingsPanel({
           className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
           onClick={() => void addDailyExpense()}
         >
-          Add to this month&apos;s outgoings
+          Log expense
         </button>
       </article>
 

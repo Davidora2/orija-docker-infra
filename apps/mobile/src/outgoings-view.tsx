@@ -758,9 +758,10 @@ function PersonalOutgoingsView({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>Add daily expense</Text>
+        <Text style={styles.eyebrow}>Log past expense</Text>
         <Text style={styles.meta}>
-          One-off spends count toward this month&apos;s total and delta.
+          Pick any past date to backfill actual spending. One-off spends count
+          toward that month&apos;s total.
         </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.row}>
@@ -826,7 +827,7 @@ function PersonalOutgoingsView({
           disabled={busy}
           onPress={() => void addDailyExpense()}
         >
-          <Text style={styles.buttonText}>Add to this month&apos;s outgoings</Text>
+          <Text style={styles.buttonText}>Log expense</Text>
         </Pressable>
       </View>
 

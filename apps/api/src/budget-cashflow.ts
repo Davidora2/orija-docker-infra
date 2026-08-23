@@ -3,6 +3,8 @@ import type { Database } from './db.js';
 
 export type PayFrequency = 'weekly' | 'biweekly' | 'four_weekly' | 'monthly';
 
+export type MonthRef = { year: number; month: number };
+
 export type RecurringOutgoing = {
   id: string;
   budgetId: string;
@@ -15,6 +17,12 @@ export type RecurringOutgoing = {
   anchorDate: string | null;
   note: string;
   active: boolean;
+  createdAt: string | null;
+};
+
+export type MonthlyContributable = {
+  monthlyAmountCents: number;
+  createdAt: string | null;
 };
 
 export type OutgoingItem = {
@@ -71,6 +79,107 @@ export function parseDate(value: string): Date {
 
 export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+export function monthFromDate(value: string): MonthRef {
+  const parts = value.split('-').map(Number);
+  return { year: parts[0] ?? 0, month: parts[1] ?? 1 };
+}
+
+export function monthFromTimestamp(value: string | Date): MonthRef {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
+}
+
+export function isMonthBefore(
+  year: number,
+  month: number,
+  refYear: number,
+  refMonth: number,
+): boolean {
+  return year < refYear || (year === refYear && month < refMonth);
+}
+
+export function isMonthOnOrAfter(
+  year: number,
+  month: number,
+  refYear: number,
+  refMonth: number,
+): boolean {
+  return !isMonthBefore(year, month, refYear, refMonth);
+}
+
+export function compareMonths(a: MonthRef, b: MonthRef): number {
+  if (a.year !== b.year) return a.year - b.year;
+  return a.month - b.month;
+}
+
+export function earliestMonth(candidates: MonthRef[]): MonthRef | null {
+  if (candidates.length === 0) return null;
+  return candidates.reduce((min, candidate) =>
+    compareMonths(candidate, min) < 0 ? candidate : min,
+  );
+}
+
+export function maxMonth(a: MonthRef, b: MonthRef): MonthRef {
+  return compareMonths(a, b) >= 0 ? a : b;
+}
+
+export function subtractMonths(
+  year: number,
+  month: number,
+  count: number,
+): MonthRef {
+  const total = year * 12 + (month - 1) - count;
+  return { year: Math.floor(total / 12), month: (total % 12) + 1 };
+}
+
+export function addMonths(year: number, month: number, count = 1): MonthRef {
+  const total = year * 12 + (month - 1) + count;
+  return { year: Math.floor(total / 12), month: (total % 12) + 1 };
+}
+
+export function monthsFromToInclusive(start: MonthRef, end: MonthRef): MonthRef[] {
+  const months: MonthRef[] = [];
+  let cursor = { ...start };
+  while (!isMonthBefore(end.year, end.month, cursor.year, cursor.month)) {
+    months.push({ ...cursor });
+    if (cursor.year === end.year && cursor.month === end.month) break;
+    cursor = addMonths(cursor.year, cursor.month, 1);
+  }
+  return months;
+}
+
+export function monthLabel(ref: MonthRef): string {
+  return `${ref.year}-${pad(ref.month)}`;
+}
+
+export function recurringActiveInMonth(
+  row: RecurringOutgoing,
+  year: number,
+  month: number,
+): boolean {
+  if (!row.createdAt) return true;
+  const created = monthFromTimestamp(row.createdAt);
+  return isMonthOnOrAfter(year, month, created.year, created.month);
+}
+
+export function monthlyContributionsForMonth(
+  items: MonthlyContributable[],
+  year: number,
+  month: number,
+): number {
+  return items
+    .filter((item) => {
+      if (!item.createdAt) return true;
+      const created = monthFromTimestamp(item.createdAt);
+      return isMonthOnOrAfter(year, month, created.year, created.month);
+    })
+    .reduce((sum, item) => sum + item.monthlyAmountCents, 0);
+}
+
+export function cashflowHistoryStartMonth(candidates: MonthRef[]): MonthRef | null {
+  return earliestMonth(candidates);
 }
 
 export function addDays(date: Date, days: number): Date {
@@ -164,6 +273,7 @@ export function projectRecurringForMonth(
   const dim = daysInMonth(year, month);
 
   for (const row of recurring.filter((item) => item.active)) {
+    if (!recurringActiveInMonth(row, year, month)) continue;
     if (row.cadence === 'monthly' || row.cadence === 'yearly') {
       if (!row.dayOfMonth) continue;
       const day = Math.min(row.dayOfMonth, dim);
@@ -433,17 +543,25 @@ export function projectedExpenseCentsForMonth(input: {
   recurring: RecurringOutgoing[];
   year: number;
   month: number;
-  savingContributionCents: number;
-  debtPaymentCents: number;
+  savingContributionCents?: number;
+  debtPaymentCents?: number;
+  savingGoals?: MonthlyContributable[];
+  debts?: MonthlyContributable[];
 }): number {
   const recurringCents = projectRecurringForMonth(
     input.year,
     input.month,
     input.recurring,
   ).reduce((sum, item) => sum + item.amountCents, 0);
-  return (
-    recurringCents + input.savingContributionCents + input.debtPaymentCents
-  );
+  const savingContributionCents =
+    input.savingGoals != null
+      ? monthlyContributionsForMonth(input.savingGoals, input.year, input.month)
+      : (input.savingContributionCents ?? 0);
+  const debtPaymentCents =
+    input.debts != null
+      ? monthlyContributionsForMonth(input.debts, input.year, input.month)
+      : (input.debtPaymentCents ?? 0);
+  return recurringCents + savingContributionCents + debtPaymentCents;
 }
 
 export async function actualExpenseCentsForMonth(
@@ -487,7 +605,22 @@ export async function listRecurring(
   sql: Database,
   budgetId: string,
 ): Promise<RecurringOutgoing[]> {
-  const rows = await sql<RecurringOutgoing[]>`
+  type RecurringRow = {
+    id: string;
+    budgetId: string;
+    categoryId: string | null;
+    name: string;
+    amountCents: number;
+    cadence: RecurringOutgoing['cadence'];
+    dayOfMonth: number | null;
+    weekday: number | null;
+    anchorDate: string | null;
+    note: string;
+    active: boolean;
+    createdAt: string | null;
+  };
+
+  const rows = await sql<RecurringRow[]>`
     SELECT
       id,
       budget_id,
@@ -499,7 +632,8 @@ export async function listRecurring(
       weekday,
       anchor_date::text AS anchor_date,
       note,
-      active
+      active,
+      created_at::text AS created_at
     FROM budget_recurring_outgoings
     WHERE budget_id = ${budgetId}
     ORDER BY active DESC, cadence ASC, name ASC
@@ -508,6 +642,7 @@ export async function listRecurring(
     ...row,
     note: row.note ?? '',
     anchorDate: row.anchorDate ? String(row.anchorDate).slice(0, 10) : null,
+    createdAt: row.createdAt ? String(row.createdAt) : null,
   }));
 }
 

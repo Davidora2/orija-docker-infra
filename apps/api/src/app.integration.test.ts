@@ -557,13 +557,21 @@ suite('account and couple household API', () => {
         incomeCents: number;
         expectedIncomeCents: number;
         expenseCents: number;
+        projectedExpenseCents: number;
       }[];
+      historyStartMonth: number;
+      historyStartYear: number;
     }>();
-    expect(series.series).toHaveLength(3);
+    expect(series.series.length).toBeGreaterThanOrEqual(1);
+    expect(series.series.length).toBeLessThanOrEqual(3);
     const august = series.series.find((point) => point.month === 8);
     expect(august?.incomeCents).toBe(0);
     expect(august?.expectedIncomeCents).toBe(250_000);
     expect(august?.expenseCents).toBeGreaterThan(0);
+    const july = series.series.find((point) => point.month === 7);
+    if (july) {
+      expect(july.projectedExpenseCents).toBe(0);
+    }
 
     const moved = await app.inject({
       method: 'PATCH',
@@ -965,7 +973,8 @@ suite('account and couple household API', () => {
       headers: { authorization: `Bearer ${user.accessToken}` },
     });
     expect(series.statusCode).toBe(200);
-    expect(series.json<{ series: unknown[] }>().series).toHaveLength(3);
+    expect(series.json<{ series: unknown[] }>().series.length).toBeGreaterThanOrEqual(1);
+    expect(series.json<{ series: unknown[] }>().series.length).toBeLessThanOrEqual(3);
 
     await app.inject({
       method: 'PATCH',

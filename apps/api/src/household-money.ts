@@ -237,6 +237,7 @@ export async function moveRecurringToHousehold(
       anchorDate: string | null;
       note: string;
       active: boolean;
+      createdAt: string | null;
     }[]
   >`
     UPDATE budget_recurring_outgoings SET
@@ -255,7 +256,8 @@ export async function moveRecurringToHousehold(
       weekday,
       anchor_date::text AS anchor_date,
       note,
-      active
+      active,
+      created_at::text AS created_at
   `;
   if (!moved) {
     throw new ApiError(500, 'move_failed', 'Could not move recurring outgoing.');
@@ -273,6 +275,7 @@ export async function moveRecurringToHousehold(
     anchorDate: moved.anchorDate ? moved.anchorDate.slice(0, 10) : null,
     note: moved.note ?? '',
     active: moved.active,
+    createdAt: moved.createdAt ? String(moved.createdAt) : null,
   };
 }
 

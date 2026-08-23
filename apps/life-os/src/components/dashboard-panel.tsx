@@ -48,6 +48,19 @@ function formatDate(date: string) {
   }).format(new Date(`${date}T12:00:00`));
 }
 
+function cashflowHistorySubtitle(data: CashflowSeries | null): string | null {
+  if (!data?.historyStartMonth || !data.historyStartYear) return null;
+  const monthName = MONTH_SHORT[data.historyStartMonth - 1];
+  const year = data.historyStartYear;
+  if (data.historyStartReason === "first_bill") {
+    return `Showing from ${monthName} ${year} when you added your first bill.`;
+  }
+  if (data.historyStartReason === "first_activity") {
+    return `Showing from ${monthName} ${year} when you first logged spending.`;
+  }
+  return `Showing from ${monthName} ${year} when you started this budget.`;
+}
+
 export function DashboardPanel({
   budget,
   currency,
@@ -107,6 +120,19 @@ export function DashboardPanel({
       ),
     [data],
   );
+
+  const hasCashflowChart = useMemo(
+    () =>
+      (data?.series ?? []).some(
+        (point) =>
+          (point.actualExpenseCents ?? 0) > 0 ||
+          (point.projectedExpenseCents ?? 0) > 0 ||
+          (point.expenseCents ?? 0) > 0,
+      ),
+    [data],
+  );
+
+  const historySubtitle = useMemo(() => cashflowHistorySubtitle(data), [data]);
 
   const chartUsesExpectedIncome = useMemo(
     () =>
@@ -442,10 +468,29 @@ export function DashboardPanel({
                 ? "Expected pay with projected (light) and actual (solid) outgoings by month."
                 : "Recorded income with projected (light) and actual (solid) outgoings by month."}
             </p>
+            {historySubtitle ? (
+              <p className="mt-2 text-xs leading-5 text-[#6c7771]">
+                {historySubtitle}{" "}
+                <button
+                  type="button"
+                  className="font-semibold text-[#617a57] underline-offset-2 hover:underline"
+                  onClick={() => onNavigate("spending")}
+                >
+                  Add older data manually
+                </button>
+              </p>
+            ) : null}
           </div>
+          <button
+            type="button"
+            className="rounded-xl border border-[#dde2dd] px-3 py-2 text-xs font-bold text-[#14241f]"
+            onClick={() => onNavigate("spending")}
+          >
+            Log past expense
+          </button>
         </div>
         {data?.series.length ? (
-          hasActualCashflow ? (
+          hasCashflowChart ? (
             <BarChart
               series={data.series}
               maxValue={maxValue}
@@ -472,12 +517,19 @@ export function DashboardPanel({
             />
           ) : (
             <div className="mt-4 rounded-xl bg-[#f7f8f5] p-4">
-              <p className="text-sm font-semibold">No actual cashflow yet</p>
+              <p className="text-sm font-semibold">No cashflow yet</p>
               <p className="mt-1 text-xs leading-5 text-[#6c7771]">
-                Mark bills paid in Spending to build your actual cashflow history.
-                Projected outgoings from recurring bills are already included in
-                your month pulse above.
+                Add recurring bills or log past expenses in Spending to build your
+                chart. We only show months from when you started tracking — not
+                guessed history before that.
               </p>
+              <button
+                type="button"
+                className="mt-3 rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0]"
+                onClick={() => onNavigate("spending")}
+              >
+                Log past expense
+              </button>
             </div>
           )
         ) : (

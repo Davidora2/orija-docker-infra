@@ -57,6 +57,19 @@ function formatDate(date: string) {
   }).format(new Date(`${date}T12:00:00`));
 }
 
+function cashflowHistorySubtitle(data: CashflowSeries | null): string | null {
+  if (!data?.historyStartMonth || !data.historyStartYear) return null;
+  const monthName = MONTH_SHORT[data.historyStartMonth - 1];
+  const year = data.historyStartYear;
+  if (data.historyStartReason === 'first_bill') {
+    return `Showing from ${monthName} ${year} when you added your first bill.`;
+  }
+  if (data.historyStartReason === 'first_activity') {
+    return `Showing from ${monthName} ${year} when you first logged spending.`;
+  }
+  return `Showing from ${monthName} ${year} when you started this budget.`;
+}
+
 export function DashboardView({
   currency,
   budget,
@@ -166,6 +179,19 @@ export function DashboardView({
       ),
     [data],
   );
+
+  const hasCashflowChart = useMemo(
+    () =>
+      (data?.series ?? []).some(
+        (point) =>
+          (point.actualExpenseCents ?? 0) > 0 ||
+          (point.projectedExpenseCents ?? 0) > 0 ||
+          (point.expenseCents ?? 0) > 0,
+      ),
+    [data],
+  );
+
+  const historySubtitle = useMemo(() => cashflowHistorySubtitle(data), [data]);
 
   const chartUsesExpectedIncome = useMemo(
     () =>
@@ -424,7 +450,17 @@ export function DashboardView({
               ? 'Expected pay with projected (light) and actual (solid) outgoings.'
               : 'Income with projected (light) and actual (solid) outgoings.'}
           </Text>
-          {hasActualCashflow ? (
+          {historySubtitle ? (
+            <Text style={styles.meta}>{historySubtitle}</Text>
+          ) : null}
+          <AppButton
+            onPress={() => onNavigate('outgoings')}
+            variant="secondary"
+            style={{ marginTop: 8 }}
+          >
+            Log past expense
+          </AppButton>
+          {hasCashflowChart ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <CashflowBarChart
                 currency={displayCurrency}
@@ -435,7 +471,8 @@ export function DashboardView({
             </ScrollView>
           ) : (
             <Text style={styles.meta}>
-              Mark bills paid in Spending to build your actual cashflow history.
+              Add recurring bills or log past expenses in Spending. We only show
+              months from when you started tracking.
             </Text>
           )}
         </SurfaceCard>

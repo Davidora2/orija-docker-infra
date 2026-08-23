@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRecommendations,
+  isMonthBefore,
+  monthlyContributionsForMonth,
   payDatesInMonth,
   projectedExpenseCentsForMonth,
   projectRecurringForMonth,
+  recurringActiveInMonth,
   type OutgoingItem,
   type RecurringOutgoing,
 } from './budget-cashflow.js';
@@ -23,6 +26,7 @@ describe('budget cashflow helpers', () => {
         anchorDate: null,
         note: '',
         active: true,
+        createdAt: null,
       },
       {
         id: 'gym',
@@ -36,6 +40,7 @@ describe('budget cashflow helpers', () => {
         anchorDate: null,
         note: '',
         active: true,
+        createdAt: null,
       },
     ];
 
@@ -60,6 +65,7 @@ describe('budget cashflow helpers', () => {
         anchorDate: '2026-08-07',
         note: 'From current account',
         active: true,
+        createdAt: null,
       },
     ];
     const items = projectRecurringForMonth(2026, 8, recurring);
@@ -85,6 +91,7 @@ describe('budget cashflow helpers', () => {
         anchorDate: null,
         note: '',
         active: true,
+        createdAt: null,
       },
     ];
     expect(
@@ -96,6 +103,79 @@ describe('budget cashflow helpers', () => {
         debtPaymentCents: 10_000,
       }),
     ).toBe(135_000);
+  });
+
+  it('does not project recurring outgoings before the bill was created', () => {
+    const recurring: RecurringOutgoing[] = [
+      {
+        id: 'rent',
+        budgetId: 'b1',
+        categoryId: null,
+        name: 'Rent',
+        amountCents: 120_000,
+        cadence: 'monthly',
+        dayOfMonth: 1,
+        weekday: null,
+        anchorDate: null,
+        note: '',
+        active: true,
+        createdAt: '2026-08-15T10:00:00.000Z',
+      },
+    ];
+
+    const july = projectRecurringForMonth(2026, 7, recurring);
+    const august = projectRecurringForMonth(2026, 8, recurring);
+
+    expect(july).toHaveLength(0);
+    expect(august.some((item) => item.title === 'Rent')).toBe(true);
+    expect(
+      projectedExpenseCentsForMonth({
+        recurring,
+        year: 2026,
+        month: 7,
+        savingContributionCents: 0,
+        debtPaymentCents: 0,
+      }),
+    ).toBe(0);
+    expect(
+      projectedExpenseCentsForMonth({
+        recurring,
+        year: 2026,
+        month: 8,
+        savingContributionCents: 0,
+        debtPaymentCents: 0,
+      }),
+    ).toBe(120_000);
+  });
+
+  it('filters savings and debt contributions by creation month', () => {
+    const goals = [
+      {
+        monthlyAmountCents: 25_000,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      },
+    ];
+    expect(monthlyContributionsForMonth(goals, 2026, 7)).toBe(0);
+    expect(monthlyContributionsForMonth(goals, 2026, 8)).toBe(25_000);
+    expect(recurringActiveInMonth(
+      {
+        id: 'g1',
+        budgetId: 'b1',
+        categoryId: null,
+        name: 'Goal',
+        amountCents: 25_000,
+        cadence: 'monthly',
+        dayOfMonth: 1,
+        weekday: null,
+        anchorDate: null,
+        note: '',
+        active: true,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      },
+      2026,
+      7,
+    )).toBe(false);
+    expect(isMonthBefore(2026, 7, 2026, 8)).toBe(true);
   });
 
   it('recommends moving bills that land before payday', () => {
@@ -189,6 +269,7 @@ describe('budget cashflow helpers', () => {
           anchorDate: null,
           note: '',
           active: true,
+          createdAt: null,
         },
       ],
     });

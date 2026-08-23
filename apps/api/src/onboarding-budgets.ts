@@ -4,12 +4,24 @@ import {
   actualExpenseCentsForMonth,
   assertRecurringCadence,
   buildRecommendations,
+  cashflowHistoryStartMonth,
+  compareMonths,
   daysInMonth,
+  earliestMonth,
   listRecurring,
+  maxMonth,
+  monthFromDate,
+  monthFromTimestamp,
+  monthLabel,
+  monthsFromToInclusive,
+  monthlyContributionsForMonth,
   payDatesInMonth,
   projectedExpenseCentsForMonth,
   projectRecurringForMonth,
+  recurringActiveInMonth,
+  subtractMonths,
   toDateString,
+  type MonthRef,
   type OutgoingItem,
   type PayFrequency,
 } from './budget-cashflow.js';
@@ -988,10 +1000,15 @@ export function registerOnboardingAndBudgetRoutes(
           name: string;
           monthlyContributionCents: number;
           contributionDay: number;
+          createdAt: string | null;
         }[]
       >`
         SELECT
-          id, name, monthly_contribution_cents, contribution_day
+          id,
+          name,
+          monthly_contribution_cents,
+          contribution_day,
+          created_at::text AS created_at
         FROM saving_goals
         WHERE monthly_contribution_cents IS NOT NULL
           AND contribution_day IS NOT NULL
@@ -1008,7 +1025,28 @@ export function registerOnboardingAndBudgetRoutes(
           )
       `;
 
-      const savingItems: OutgoingItem[] = savingsGoals.map((goal) => {
+      const savingItems: OutgoingItem[] = savingsGoals
+        .filter((goal) =>
+          recurringActiveInMonth(
+            {
+              id: goal.id,
+              budgetId: id,
+              categoryId: null,
+              name: goal.name,
+              amountCents: Number(goal.monthlyContributionCents),
+              cadence: 'monthly',
+              dayOfMonth: goal.contributionDay,
+              weekday: null,
+              anchorDate: null,
+              note: '',
+              active: true,
+              createdAt: goal.createdAt,
+            },
+            query.year,
+            query.month,
+          ),
+        )
+        .map((goal) => {
         const day = Math.min(goal.contributionDay, endDay);
         const date = `${query.year}-${String(query.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         return {
@@ -1037,9 +1075,16 @@ export function registerOnboardingAndBudgetRoutes(
           monthlyPaymentCents: number;
           paymentDay: number;
           note: string;
+          createdAt: string | null;
         }[]
       >`
-        SELECT id, name, monthly_payment_cents, payment_day, note
+        SELECT
+          id,
+          name,
+          monthly_payment_cents,
+          payment_day,
+          note,
+          created_at::text AS created_at
         FROM debts
         WHERE monthly_payment_cents IS NOT NULL
           AND payment_day IS NOT NULL
@@ -1057,7 +1102,28 @@ export function registerOnboardingAndBudgetRoutes(
           )
       `;
 
-      const debtItems: OutgoingItem[] = debts.map((debt) => {
+      const debtItems: OutgoingItem[] = debts
+        .filter((debt) =>
+          recurringActiveInMonth(
+            {
+              id: debt.id,
+              budgetId: id,
+              categoryId: null,
+              name: debt.name,
+              amountCents: Number(debt.monthlyPaymentCents),
+              cadence: 'monthly',
+              dayOfMonth: debt.paymentDay,
+              weekday: null,
+              anchorDate: null,
+              note: debt.note ?? '',
+              active: true,
+              createdAt: debt.createdAt,
+            },
+            query.year,
+            query.month,
+          ),
+        )
+        .map((debt) => {
         const day = Math.min(debt.paymentDay, endDay);
         const date = `${query.year}-${String(query.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         return {
@@ -1281,12 +1347,14 @@ export function registerOnboardingAndBudgetRoutes(
         payFrequency: PayFrequency | null;
         nextPayDate: string | null;
         typicalPayCents: number | null;
+        createdAt: string;
       }[]>`
         SELECT
           currency,
           pay_frequency,
           next_pay_date::text AS next_pay_date,
-          typical_pay_cents
+          typical_pay_cents,
+          created_at::text AS created_at
         FROM budgets
         WHERE id = ${id}
       `;
@@ -1299,9 +1367,10 @@ export function registerOnboardingAndBudgetRoutes(
         {
           monthlyContributionCents: number;
           contributionDay: number;
+          createdAt: string | null;
         }[]
       >`
-        SELECT monthly_contribution_cents, contribution_day
+        SELECT monthly_contribution_cents, contribution_day, created_at::text AS created_at
         FROM saving_goals
         WHERE monthly_contribution_cents IS NOT NULL
           AND contribution_day IS NOT NULL
@@ -1318,9 +1387,9 @@ export function registerOnboardingAndBudgetRoutes(
           )
       `;
       const debts = await sql<
-        { monthlyPaymentCents: number; paymentDay: number }[]
+        { monthlyPaymentCents: number; paymentDay: number; createdAt: string | null }[]
       >`
-        SELECT monthly_payment_cents, payment_day
+        SELECT monthly_payment_cents, payment_day, created_at::text AS created_at
         FROM debts
         WHERE monthly_payment_cents IS NOT NULL
           AND payment_day IS NOT NULL
@@ -1337,14 +1406,94 @@ export function registerOnboardingAndBudgetRoutes(
           )
       `;
 
+      const savingContributables = savingGoals.map((goal) => ({
+        monthlyAmountCents: Number(goal.monthlyContributionCents),
+        createdAt: goal.createdAt,
+      }));
+      const debtContributables = debts.map((debt) => ({
+        monthlyAmountCents: Number(debt.monthlyPaymentCents),
+        createdAt: debt.createdAt,
+      }));
+
+      const [firstEntry] = await sql<{ occurredOn: string | null }[]>`
+        SELECT MIN(occurred_on)::text AS occurred_on
+        FROM budget_entries
+        WHERE budget_id = ${id}
+      `;
+      const [firstPayment] = await sql<{ paidAt: string | null }[]>`
+        SELECT MIN(paid_at::date)::text AS paid_at
+        FROM payment_occurrences
+        WHERE owner_user_id = ${userId}
+          AND (
+            budget_id = ${id}
+            OR source_type IN ('saving_goal', 'debt')
+          )
+      `;
+
+      const historyCandidates: MonthRef[] = [monthFromTimestamp(budget.createdAt)];
+      if (firstEntry?.occurredOn) {
+        historyCandidates.push(monthFromDate(firstEntry.occurredOn.slice(0, 10)));
+      }
+      if (firstPayment?.paidAt) {
+        historyCandidates.push(monthFromDate(firstPayment.paidAt.slice(0, 10)));
+      }
+      for (const row of recurring) {
+        if (row.createdAt) historyCandidates.push(monthFromTimestamp(row.createdAt));
+      }
+      for (const goal of savingGoals) {
+        if (goal.createdAt) historyCandidates.push(monthFromTimestamp(goal.createdAt));
+      }
+      for (const debt of debts) {
+        if (debt.createdAt) historyCandidates.push(monthFromTimestamp(debt.createdAt));
+      }
+
+      const historyStart =
+        cashflowHistoryStartMonth(historyCandidates) ?? monthFromTimestamp(new Date());
+      const earliestRecurringMonth = earliestMonth(
+        recurring
+          .filter((row) => row.createdAt)
+          .map((row) => monthFromTimestamp(row.createdAt!)),
+      );
+      const firstActivityMonth = earliestMonth(
+        [
+          firstEntry?.occurredOn
+            ? monthFromDate(firstEntry.occurredOn.slice(0, 10))
+            : null,
+          firstPayment?.paidAt
+            ? monthFromDate(firstPayment.paidAt.slice(0, 10))
+            : null,
+        ].filter((value): value is MonthRef => value != null),
+      );
+      let historyStartReason: 'budget_created' | 'first_bill' | 'first_activity' =
+        'budget_created';
+      if (
+        earliestRecurringMonth &&
+        compareMonths(historyStart, earliestRecurringMonth) === 0
+      ) {
+        historyStartReason = 'first_bill';
+      } else if (
+        firstActivityMonth &&
+        compareMonths(historyStart, firstActivityMonth) === 0
+      ) {
+        historyStartReason = 'first_activity';
+      }
+
       const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth() + 1;
+      const windowStart = subtractMonths(
+        currentYear,
+        currentMonth,
+        query.months - 1,
+      );
+      const seriesStart = maxMonth(windowStart, historyStart);
+      const monthRange = monthsFromToInclusive(seriesStart, {
+        year: currentYear,
+        month: currentMonth,
+      });
+
       const series = [];
-      for (let offset = query.months - 1; offset >= 0; offset -= 1) {
-        const cursor = new Date(
-          Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1),
-        );
-        const year = cursor.getUTCFullYear();
-        const month = cursor.getUTCMonth() + 1;
+      for (const { year, month } of monthRange) {
         const start = `${year}-${String(month).padStart(2, '0')}-01`;
         const endDay = daysInMonth(year, month);
         const end = `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
@@ -1383,20 +1532,22 @@ export function registerOnboardingAndBudgetRoutes(
           budget.typicalPayCents != null && payDates.length > 0
             ? Number(budget.typicalPayCents) * payDates.length
             : 0;
-        const savingContributionCents = savingGoals.reduce(
-          (sum, goal) => sum + Number(goal.monthlyContributionCents),
-          0,
+        const savingContributionCents = monthlyContributionsForMonth(
+          savingContributables,
+          year,
+          month,
         );
-        const debtPaymentCents = debts.reduce(
-          (sum, debt) => sum + Number(debt.monthlyPaymentCents),
-          0,
+        const debtPaymentCents = monthlyContributionsForMonth(
+          debtContributables,
+          year,
+          month,
         );
         const projectedExpenseCents = projectedExpenseCentsForMonth({
           recurring,
           year,
           month,
-          savingContributionCents,
-          debtPaymentCents,
+          savingGoals: savingContributables,
+          debts: debtContributables,
         });
         const actualExpenseCents = await actualExpenseCentsForMonth(sql, {
           budgetId: id,
@@ -1413,7 +1564,7 @@ export function registerOnboardingAndBudgetRoutes(
         series.push({
           year,
           month,
-          label: `${year}-${String(month).padStart(2, '0')}`,
+          label: monthLabel({ year, month }),
           incomeCents,
           expectedIncomeCents,
           expenseCents,
@@ -1431,6 +1582,10 @@ export function registerOnboardingAndBudgetRoutes(
         budgetId: id,
         currency: budget.currency,
         months: query.months,
+        historyStartYear: historyStart.year,
+        historyStartMonth: historyStart.month,
+        historyStartLabel: monthLabel(historyStart),
+        historyStartReason,
         series,
       };
     },

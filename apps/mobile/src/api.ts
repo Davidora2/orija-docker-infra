@@ -1449,6 +1449,10 @@ export type CashflowSeries = {
   budgetId: string;
   currency: string;
   months: number;
+  historyStartYear?: number;
+  historyStartMonth?: number;
+  historyStartLabel?: string;
+  historyStartReason?: 'budget_created' | 'first_bill' | 'first_activity';
   series: CashflowSeriesPoint[];
 };
 
