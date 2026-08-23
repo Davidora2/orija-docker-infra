@@ -12,11 +12,11 @@ import {
   Text,
   TextInput,
   View,
-  Alert,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountPrivacySection } from './account-privacy-section';
+import { MoneyVisibilitySection } from './money-visibility-section';
 import {
   acceptPartnerInvite,
   apiBaseUrl,
@@ -204,6 +204,7 @@ export function AccountSheet({
 }: Props) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView | null>(null);
+  const moneyVisibilityOffsetY = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [mode, setMode] = useState<'register' | 'login' | 'forgot' | 'reset'>('register');
   const [displayName, setDisplayName] = useState('');
@@ -272,7 +273,10 @@ export function AccountSheet({
   useEffect(() => {
     if (!visible || !scrollToMoneyVisibility || !account) return;
     const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, moneyVisibilityOffsetY.current - 12),
+        animated: true,
+      });
       onScrollToMoneyVisibilityHandled?.();
     }, 200);
     return () => clearTimeout(timer);
@@ -359,29 +363,6 @@ export function AccountSheet({
   const activeHousehold = account?.households.find((household) => household.active);
   const canInvite =
     activeHousehold?.role === 'OWNER' && (account?.members.length ?? 0) < 2;
-  const partner = account?.members.find((member) => member.id !== account.user.id);
-  const yourGrant = account?.moneyVisibilityGrant ?? 'SHARED_BILLS_ONLY';
-
-  async function saveMoneyGrant(grant: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY') {
-    await perform(async () => {
-      onAccountChange(await updateMoneyVisibilityGrant(grant));
-      notify('Money visibility updated.');
-    });
-  }
-
-  function confirmFullVisibility() {
-    Alert.alert(
-      'Share full visibility?',
-      `${partner?.displayName ?? 'Your partner'} will see your personal recurring bills, daily spending entries, and pay schedule in Household view. They won't be able to edit your personal budget.`,
-      [
-        { text: 'Keep shared bills only', style: 'cancel' },
-        {
-          text: 'Turn on full visibility',
-          onPress: () => void saveMoneyGrant('FULL_VISIBILITY'),
-        },
-      ],
-    );
-  }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -676,6 +657,19 @@ export function AccountSheet({
                   secondary
                 />
 
+                {account ? (
+                  <MoneyVisibilitySection
+                    account={account}
+                    busy={busy}
+                    onAccountChange={onAccountChange}
+                    onError={setError}
+                    onLayoutOffset={(offsetY) => {
+                      moneyVisibilityOffsetY.current = offsetY;
+                    }}
+                    onNotify={notify}
+                  />
+                ) : null}
+
                 <View style={styles.sectionHeading}>
                   <View>
                     <Text style={styles.sectionTitle}>Household</Text>
@@ -734,67 +728,6 @@ export function AccountSheet({
                     <Text style={styles.memberRole}>{member.role}</Text>
                   </View>
                 ))}
-
-                {partner ? (
-                  <View style={styles.inviteCard}>
-                    <Text style={styles.sectionTitle}>Money visibility</Text>
-                    <Text style={styles.sectionCaption}>
-                      Choose what your partner can see of your money. They control what
-                      you see of theirs.
-                    </Text>
-                    <Text style={styles.label}>BILLS & SPENDING</Text>
-                    <Text style={styles.label}>
-                      WHAT {partner.displayName.toUpperCase()} CAN SEE
-                    </Text>
-                    <Pressable
-                      style={[
-                        styles.modeButton,
-                        yourGrant === 'SHARED_BILLS_ONLY' && styles.modeButtonActive,
-                      ]}
-                      onPress={() => void saveMoneyGrant('SHARED_BILLS_ONLY')}
-                    >
-                      <Text
-                        style={[
-                          styles.modeText,
-                          yourGrant === 'SHARED_BILLS_ONLY' && styles.modeTextActive,
-                        ]}
-                      >
-                        Shared bills only
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.modeButton,
-                        yourGrant === 'FULL_VISIBILITY' && styles.modeButtonActive,
-                      ]}
-                      onPress={confirmFullVisibility}
-                    >
-                      <Text
-                        style={[
-                          styles.modeText,
-                          yourGrant === 'FULL_VISIBILITY' && styles.modeTextActive,
-                        ]}
-                      >
-                        Full visibility
-                      </Text>
-                    </Pressable>
-                    <Text style={[styles.label, { marginTop: 12 }]}>WEALTH & SAVINGS</Text>
-                    <View style={styles.wealthInfoCard}>
-                      <Text style={styles.inviteTitle}>Shared wealth items only</Text>
-                      <Text style={styles.inviteText}>
-                        Your partner sees savings, debt, and investments you mark Share
-                        with household — not your full personal detail.
-                      </Text>
-                    </View>
-                    <View style={styles.wealthPlannedCard}>
-                      <Text style={styles.inviteTitle}>Full wealth visibility</Text>
-                      <Text style={styles.inviteText}>
-                        Read-only access to all personal wealth in Household view —
-                        planned for a future release.
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
 
                 {canInvite && (
                   <View style={styles.inviteCard}>

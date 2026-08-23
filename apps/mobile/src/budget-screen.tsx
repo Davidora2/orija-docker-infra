@@ -184,7 +184,7 @@ export function BudgetScreen({ account, notify, onOpenHouseholdSettings }: Props
                 onPress={() => onOpenHouseholdSettings?.()}
                 style={styles.link}
               >
-                Change in Household
+                Change in Profile
               </Text>
               {visibilityLines.partner ? `\n${visibilityLines.partner}` : ''}
             </Text>

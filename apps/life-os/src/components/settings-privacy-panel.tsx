@@ -10,6 +10,7 @@ import {
   updateProfile,
   type Account,
 } from "../lib/api";
+import { MoneyVisibilitySection } from "./money-visibility-section";
 
 export function SettingsPrivacyPanel({
   account,
@@ -17,12 +18,18 @@ export function SettingsPrivacyPanel({
   onAccountChange,
   onDeleted,
   onError,
+  focusMoneyVisibility = false,
+  onFocusMoneyVisibilityHandled,
+  onOpenHousehold,
 }: {
   account: Account;
   currencies: string[];
   onAccountChange: (account: Account) => void;
   onDeleted: () => void;
   onError: (message: string | null) => void;
+  focusMoneyVisibility?: boolean;
+  onFocusMoneyVisibilityHandled?: () => void;
+  onOpenHousehold?: () => void;
 }) {
   const [currency, setCurrency] = useState(account.user.preferredCurrency || "GBP");
   const [emailReminders, setEmailReminders] = useState(true);
@@ -95,6 +102,16 @@ export function SettingsPrivacyPanel({
           Save profile
         </button>
       </article>
+
+      <MoneyVisibilitySection
+        account={account}
+        focus={focusMoneyVisibility}
+        onAccountChange={onAccountChange}
+        onError={onError}
+        onFocusHandled={onFocusMoneyVisibilityHandled}
+        onOpenHousehold={onOpenHousehold}
+        showHouseholdLink={Boolean(onOpenHousehold)}
+      />
 
       <article className="space-y-3 rounded-2xl border border-[#dde2dd] bg-white p-5">
         <h3 className="font-serif text-xl">Email reminders</h3>
