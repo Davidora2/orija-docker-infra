@@ -807,6 +807,8 @@ export type MonthOutgoings = {
   list: OutgoingItem[];
   totals: {
     expenseCents: number;
+    projectedExpenseCents?: number;
+    actualExpenseCents?: number;
     incomeCents: number;
     recurringCents: number;
     oneOffCents: number;
@@ -1125,6 +1127,8 @@ export async function markOutgoingPaid(
     sourceType: "recurring_outgoing" | "saving_goal" | "debt";
     sourceId: string;
     dueDate: string;
+    amountCents?: number;
+    paidAt?: string;
     note?: string;
   },
 ): Promise<Record<string, unknown>> {
@@ -1562,6 +1566,8 @@ export type CashflowSeriesPoint = {
   incomeCents: number;
   expectedIncomeCents: number;
   expenseCents: number;
+  projectedExpenseCents: number;
+  actualExpenseCents: number;
   dailyExpenseCents: number;
   recurringCents: number;
   savingContributionCents: number;

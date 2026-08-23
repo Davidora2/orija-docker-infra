@@ -429,6 +429,60 @@ function formatMoneyAmount(cents: number, currency: string): string {
   }
 }
 
+export function projectedExpenseCentsForMonth(input: {
+  recurring: RecurringOutgoing[];
+  year: number;
+  month: number;
+  savingContributionCents: number;
+  debtPaymentCents: number;
+}): number {
+  const recurringCents = projectRecurringForMonth(
+    input.year,
+    input.month,
+    input.recurring,
+  ).reduce((sum, item) => sum + item.amountCents, 0);
+  return (
+    recurringCents + input.savingContributionCents + input.debtPaymentCents
+  );
+}
+
+export async function actualExpenseCentsForMonth(
+  sql: Database,
+  input: {
+    budgetId: string;
+    userId: string;
+    year: number;
+    month: number;
+    start: string;
+    end: string;
+  },
+): Promise<number> {
+  const [entryTotals] = await sql<{ expenseCents: string | number }[]>`
+    SELECT COALESCE(SUM(amount_cents), 0) AS expense_cents
+    FROM budget_entries
+    WHERE budget_id = ${input.budgetId}
+      AND kind = 'EXPENSE'
+      AND occurred_on >= ${input.start}::date
+      AND occurred_on <= ${input.end}::date
+  `;
+  const [legacyPayments] = await sql<{ totalCents: string | number }[]>`
+    SELECT COALESCE(SUM(amount_cents), 0) AS total_cents
+    FROM payment_occurrences
+    WHERE owner_user_id = ${input.userId}
+      AND budget_entry_id IS NULL
+      AND paid_at::date >= ${input.start}::date
+      AND paid_at::date <= ${input.end}::date
+      AND (
+        budget_id = ${input.budgetId}
+        OR source_type IN ('saving_goal', 'debt')
+      )
+  `;
+  return (
+    Number(entryTotals?.expenseCents ?? 0) +
+    Number(legacyPayments?.totalCents ?? 0)
+  );
+}
+
 export async function listRecurring(
   sql: Database,
   budgetId: string,

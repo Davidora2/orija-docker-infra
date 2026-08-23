@@ -101,6 +101,12 @@ const migrations = [
       new URL('../migrations/018_household_money_visibility.sql', import.meta.url),
     ),
   },
+  {
+    version: '019_payment_budget_entry',
+    path: fileURLToPath(
+      new URL('../migrations/019_payment_budget_entry.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {

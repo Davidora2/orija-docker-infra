@@ -1,11 +1,13 @@
 import { ApiError } from './errors.js';
 import type { Database } from './db.js';
 import {
+  actualExpenseCentsForMonth,
   assertRecurringCadence,
   buildRecommendations,
   daysInMonth,
   listRecurring,
   payDatesInMonth,
+  projectedExpenseCentsForMonth,
   projectRecurringForMonth,
   toDateString,
   type OutgoingItem,
@@ -1200,6 +1202,16 @@ export function registerOnboardingAndBudgetRoutes(
             item.paid,
         )
         .reduce((sum, item) => sum + item.amountCents, 0);
+      const projectedExpenseCents =
+        recurringCents + savingContributionCents + debtPaymentCents;
+      const actualExpenseCents = await actualExpenseCentsForMonth(sql, {
+        budgetId: id,
+        userId,
+        year: query.year,
+        month: query.month,
+        start,
+        end,
+      });
       const expectedPayCents =
         schedule?.typicalPayCents != null && payDates.length > 0
           ? Number(schedule.typicalPayCents) * payDates.length
@@ -1231,6 +1243,8 @@ export function registerOnboardingAndBudgetRoutes(
         list: list.filter((item) => item.kind === 'EXPENSE'),
         totals: {
           expenseCents,
+          projectedExpenseCents,
+          actualExpenseCents,
           incomeCents,
           recurringCents,
           dailyExpenseCents,
@@ -1377,11 +1391,22 @@ export function registerOnboardingAndBudgetRoutes(
           (sum, debt) => sum + Number(debt.monthlyPaymentCents),
           0,
         );
-        const expenseCents =
-          dailyExpenseCents +
-          recurringCents +
-          savingContributionCents +
-          debtPaymentCents;
+        const projectedExpenseCents = projectedExpenseCentsForMonth({
+          recurring,
+          year,
+          month,
+          savingContributionCents,
+          debtPaymentCents,
+        });
+        const actualExpenseCents = await actualExpenseCentsForMonth(sql, {
+          budgetId: id,
+          userId,
+          year,
+          month,
+          start,
+          end,
+        });
+        const expenseCents = projectedExpenseCents;
         const effectiveIncomeCents =
           incomeCents > 0 ? incomeCents : expectedIncomeCents;
 
@@ -1392,11 +1417,13 @@ export function registerOnboardingAndBudgetRoutes(
           incomeCents,
           expectedIncomeCents,
           expenseCents,
+          projectedExpenseCents,
+          actualExpenseCents,
           dailyExpenseCents,
           recurringCents,
           savingContributionCents,
           debtPaymentCents,
-          netCents: effectiveIncomeCents - expenseCents,
+          netCents: effectiveIncomeCents - projectedExpenseCents,
         });
       }
 
@@ -1421,18 +1448,22 @@ export function registerOnboardingAndBudgetRoutes(
           sourceType: z.enum(['recurring_outgoing', 'saving_goal', 'debt']),
           sourceId: z.string().uuid(),
           dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          amountCents: z.number().int().positive().optional(),
+          paidAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
           note: z.string().trim().max(500).optional(),
         })
         .parse(request.body);
 
-      let amountCents = 0;
+      let amountCents = body.amountCents ?? 0;
       let title = '';
+      let categoryId: string | null = null;
+      let entryBudgetId = id;
 
       if (body.sourceType === 'recurring_outgoing') {
         const [row] = await sql<
-          { id: string; name: string; amountCents: number }[]
+          { id: string; name: string; amountCents: number; categoryId: string | null }[]
         >`
-          SELECT id, name, amount_cents
+          SELECT id, name, amount_cents, category_id
           FROM budget_recurring_outgoings
           WHERE id = ${body.sourceId} AND budget_id = ${id} AND active = true
         `;
@@ -1443,8 +1474,9 @@ export function registerOnboardingAndBudgetRoutes(
             'Recurring outgoing not found on this budget.',
           );
         }
-        amountCents = Number(row.amountCents);
+        if (!body.amountCents) amountCents = Number(row.amountCents);
         title = row.name;
+        categoryId = row.categoryId ?? null;
       } else if (body.sourceType === 'saving_goal') {
         const [row] = await sql<
           {
@@ -1475,8 +1507,11 @@ export function registerOnboardingAndBudgetRoutes(
             'Saving goal with a monthly contribution was not found.',
           );
         }
-        amountCents = Number(row.monthlyContributionCents);
+        if (!body.amountCents) {
+          amountCents = Number(row.monthlyContributionCents);
+        }
         title = `Savings · ${row.name}`;
+        entryBudgetId = id;
       } else {
         const [row] = await sql<
           {
@@ -1512,10 +1547,47 @@ export function registerOnboardingAndBudgetRoutes(
         title = `Debt · ${row.name}`;
       }
 
+        if (!row || row.monthlyPaymentCents == null) {
+          throw new ApiError(
+            404,
+            'debt_not_found',
+            'Debt with a monthly payment was not found.',
+          );
+        }
+        if (!body.amountCents) {
+          amountCents = Number(row.monthlyPaymentCents);
+        }
+        title = `Debt · ${row.name}`;
+        entryBudgetId = id;
+      }
+
+      if (amountCents <= 0) {
+        throw new ApiError(400, 'invalid_amount', 'Payment amount must be positive.');
+      }
+
+      const paidOn = body.paidAt ?? toDateString(new Date());
+      const entryNote = body.note?.trim() || title;
+
+      const [entry] = await sql<{ id: string }[]>`
+        INSERT INTO budget_entries (
+          budget_id, category_id, created_by, kind, amount_cents, note, occurred_on
+        ) VALUES (
+          ${entryBudgetId},
+          ${categoryId},
+          ${userId},
+          'EXPENSE',
+          ${amountCents},
+          ${entryNote},
+          ${paidOn}::date
+        )
+        RETURNING id
+      `;
+      await sql`UPDATE budgets SET updated_at = now() WHERE id = ${entryBudgetId}`;
+
       const [payment] = await sql`
         INSERT INTO payment_occurrences (
           owner_user_id, budget_id, source_type, source_id,
-          due_date, amount_cents, title, paid_by, note
+          due_date, amount_cents, title, paid_by, note, paid_at, budget_entry_id
         ) VALUES (
           ${userId},
           ${body.sourceType === 'recurring_outgoing' ? id : null},
@@ -1525,15 +1597,18 @@ export function registerOnboardingAndBudgetRoutes(
           ${amountCents},
           ${title},
           ${userId},
-          ${body.note ?? ''}
+          ${body.note ?? ''},
+          ${paidOn}::date,
+          ${entry.id}
         )
         ON CONFLICT (source_type, source_id, due_date) DO UPDATE SET
-          paid_at = now(),
+          paid_at = EXCLUDED.paid_at,
           paid_by = EXCLUDED.paid_by,
           amount_cents = EXCLUDED.amount_cents,
           title = EXCLUDED.title,
           note = EXCLUDED.note,
-          budget_id = EXCLUDED.budget_id
+          budget_id = EXCLUDED.budget_id,
+          budget_entry_id = EXCLUDED.budget_entry_id
         RETURNING *
       `;
 
@@ -1559,7 +1634,9 @@ export function registerOnboardingAndBudgetRoutes(
         .object({ id: z.string().uuid(), paymentId: z.string().uuid() })
         .parse(request.params);
       await assertBudgetAccess(sql, userId, params.id);
-      const result = await sql`
+      const [deleted] = await sql<
+        { id: string; budgetEntryId: string | null }[]
+      >`
         DELETE FROM payment_occurrences
         WHERE id = ${params.paymentId}
           AND owner_user_id = ${userId}
@@ -1567,10 +1644,18 @@ export function registerOnboardingAndBudgetRoutes(
             budget_id = ${params.id}
             OR (budget_id IS NULL AND source_type IN ('saving_goal', 'debt'))
           )
-        RETURNING id
+        RETURNING id, budget_entry_id
       `;
-      if (result.count === 0) {
+      if (!deleted) {
         throw new ApiError(404, 'payment_not_found', 'Payment record not found.');
+      }
+      if (deleted.budgetEntryId) {
+        await sql`
+          DELETE FROM budget_entries
+          WHERE id = ${deleted.budgetEntryId}
+            AND budget_id = ${params.id}
+        `;
+        await sql`UPDATE budgets SET updated_at = now() WHERE id = ${params.id}`;
       }
       return reply.code(204).send();
     },

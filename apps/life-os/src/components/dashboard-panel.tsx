@@ -94,11 +94,19 @@ export function DashboardPanel({
       1,
       ...data.series.flatMap((point) => [
         point.incomeCents > 0 ? point.incomeCents : point.expectedIncomeCents,
-        point.expenseCents,
-        point.savingContributionCents,
+        point.projectedExpenseCents ?? point.expenseCents,
+        point.actualExpenseCents ?? 0,
       ]),
     );
   }, [data]);
+
+  const hasActualCashflow = useMemo(
+    () =>
+      (data?.series ?? []).some(
+        (point) => (point.actualExpenseCents ?? 0) > 0,
+      ),
+    [data],
+  );
 
   const chartUsesExpectedIncome = useMemo(
     () =>
@@ -115,6 +123,10 @@ export function DashboardPanel({
       0,
     );
   const monthOutgoingsCents = month?.totals.expenseCents ?? 0;
+  const projectedExpenseCents =
+    month?.totals.projectedExpenseCents ?? month?.totals.recurringCents ?? 0;
+  const actualExpenseCents =
+    month?.totals.actualExpenseCents ?? month?.totals.dailyExpenseCents ?? 0;
   const recurringMonthlyCents = month?.totals.recurringCents ?? 0;
   const oneOffCents = month?.totals.dailyExpenseCents ?? month?.totals.oneOffCents ?? 0;
   const savingCents = month?.totals.savingContributionCents ?? 0;
@@ -233,15 +245,21 @@ export function DashboardPanel({
           <p className="mt-3 max-w-xl text-sm leading-6 text-[#c9d3ce]">
             {expectedPayCents != null
               ? `${formatMoney(expectedPayCents, currency)} expected pay minus ${formatMoney(
-                  monthOutgoingsCents,
+                  projectedExpenseCents,
                   currency,
-                )} in scheduled and recorded outgoings.`
+                )} projected outgoings (${formatMoney(
+                  actualExpenseCents,
+                  currency,
+                )} logged so far).`
               : recordedIncomeCents > 0
                 ? `${formatMoney(recordedIncomeCents, currency)} recorded income minus ${formatMoney(
-                    monthOutgoingsCents,
+                    projectedExpenseCents,
                     currency,
-                  )} in scheduled and recorded outgoings.`
-                : "This is the total of scheduled and recorded outgoings. Add a pay schedule in Spending to see what may remain."}
+                  )} projected outgoings (${formatMoney(
+                    actualExpenseCents,
+                    currency,
+                  )} logged so far).`
+                : `${formatMoney(projectedExpenseCents, currency)} projected this month from scheduled bills. Mark bills paid or log spending to build actual history.`}
           </p>
           {topCue ? (
             <div className="mt-5 border-l-2 border-[#d6f57a] pl-3">
@@ -330,22 +348,26 @@ export function DashboardPanel({
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-[#87918c]">
-                Month outgoings
+                Projected
               </p>
               <p className="mt-1 text-sm font-bold">
-                {formatMoney(monthOutgoingsCents, currency)}
+                {formatMoney(projectedExpenseCents, currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#87918c]">
+                Actual logged
+              </p>
+              <p className="mt-1 text-sm font-bold">
+                {formatMoney(actualExpenseCents, currency)}
               </p>
             </div>
           </div>
           <p className="mt-3 text-[11px] leading-4 text-[#87918c]">
             {hasCategoryPlan
-              ? "Compares category targets with all scheduled or recorded outgoings this month."
+              ? "Category plan is your target. Projected is scheduled bills; actual is logged spending and confirmed payments."
               : hasOutgoings
-                ? `Month outgoings include ${formatMoney(recurringMonthlyCents, currency)} regular bills${
-                    oneOffCents > 0
-                      ? `, ${formatMoney(oneOffCents, currency)} one-off spending`
-                      : ""
-                  }${
+                ? `Projected includes ${formatMoney(recurringMonthlyCents, currency)} regular bills${
                     savingCents > 0
                       ? `, ${formatMoney(savingCents, currency)} savings`
                       : ""
@@ -353,7 +375,7 @@ export function DashboardPanel({
                     debtCents > 0
                       ? `, ${formatMoney(debtCents, currency)} debt payments`
                       : ""
-                  }. Set category amounts in Spending to track against a plan.`
+                  }. Actual is what you logged or marked paid.`
                 : "Add recurring bills or category amounts in Spending."}
           </p>
         </article>
@@ -417,26 +439,47 @@ export function DashboardPanel({
             <h4 className="mt-2 font-serif text-2xl">Six-month context</h4>
             <p className="mt-1 text-sm text-[#6c7771]">
               {chartUsesExpectedIncome
-                ? "Expected pay and total outgoings by month (recorded income when logged)."
-                : "Recorded income and total outgoings by month."}
+                ? "Expected pay with projected (light) and actual (solid) outgoings by month."
+                : "Recorded income with projected (light) and actual (solid) outgoings by month."}
             </p>
           </div>
         </div>
         {data?.series.length ? (
-          <BarChart
-            series={data.series}
-            maxValue={maxValue}
-            currency={currency}
-            bars={[
-              {
-                key: "incomeCents",
-                fallbackKey: "expectedIncomeCents",
-                label: chartUsesExpectedIncome ? "Expected pay" : "Income",
-                color: "#617a57",
-              },
-              { key: "expenseCents", label: "Outgoings", color: "#d88b77" },
-            ]}
-          />
+          hasActualCashflow ? (
+            <BarChart
+              series={data.series}
+              maxValue={maxValue}
+              currency={currency}
+              bars={[
+                {
+                  key: "incomeCents",
+                  fallbackKey: "expectedIncomeCents",
+                  label: chartUsesExpectedIncome ? "Expected pay" : "Income",
+                  color: "#617a57",
+                },
+                {
+                  key: "projectedExpenseCents",
+                  fallbackKey: "expenseCents",
+                  label: "Projected outgoings",
+                  color: "#e8c4b8",
+                },
+                {
+                  key: "actualExpenseCents",
+                  label: "Actual outgoings",
+                  color: "#d88b77",
+                },
+              ]}
+            />
+          ) : (
+            <div className="mt-4 rounded-xl bg-[#f7f8f5] p-4">
+              <p className="text-sm font-semibold">No actual cashflow yet</p>
+              <p className="mt-1 text-xs leading-5 text-[#6c7771]">
+                Mark bills paid in Spending to build your actual cashflow history.
+                Projected outgoings from recurring bills are already included in
+                your month pulse above.
+              </p>
+            </div>
+          )
         ) : (
           <div className="mt-4 rounded-xl bg-[#f7f8f5] p-4">
             <p className="text-sm font-semibold">No cashflow history yet</p>
