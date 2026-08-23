@@ -10,6 +10,7 @@ This package converts the product brief into estimation-ready planning artifacts
 |----------|---------|
 | [UX_IA.md](./UX_IA.md) | **Locked UX IA** — nav, onboarding, six mockup screens, shipped→target label map |
 | [PLAN_UX.md](./PLAN_UX.md) | **Locked Plan UX** — functional developer ticket for Plan (Areas/Projects/Ideas, Action Eisenhower, Capacity Σ) |
+| [HOUSEHOLD_MONEY_VISIBILITY.md](./HOUSEHOLD_MONEY_VISIBILITY.md) | Household money visibility — shared bills only vs full visibility (Approach B extension) |
 | [PRODUCT_BRIEF.md](./PRODUCT_BRIEF.md) | Condensed product brief (source of truth for scope) |
 | [TECHNICAL_REQUIREMENTS.md](./TECHNICAL_REQUIREMENTS.md) | Architecture, data model, NFRs, security, and team recommendations |
 | [FEATURE_BACKLOG.md](./FEATURE_BACKLOG.md) | Prioritized MVP backlog (MoSCoW + phases) |

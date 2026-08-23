@@ -297,6 +297,7 @@ Under You: results, time used vs capacity, bottlenecks, start/stop/continue, nex
 
 - **Item-level:** Private | Household (apply to actions, projects, money items as product already supports visibility)
 - Household management lives under **You**; privacy toggles live on the item
+- **Money between partners:** shared bills only (default) vs full visibility of personal outgoings — per-member grant in **You → Household**, combined Household lens without row duplication — see [HOUSEHOLD_MONEY_VISIBILITY.md](./HOUSEHOLD_MONEY_VISIBILITY.md)
 
 ### Global FAB + sheet
 
