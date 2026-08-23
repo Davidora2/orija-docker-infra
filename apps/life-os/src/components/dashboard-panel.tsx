@@ -137,7 +137,7 @@ export function DashboardPanel({
   const expectedPayCents = month?.totals.expectedPayCents ?? null;
   const hasCashflowBasis = expectedPayCents != null || recordedIncomeCents > 0;
   const cashflowInCents = expectedPayCents ?? recordedIncomeCents;
-  const cashflowDeltaCents = cashflowInCents - monthOutgoingsCents;
+  const cashflowDeltaCents = cashflowInCents - projectedExpenseCents;
   const topCue =
     month?.recommendations.find((item) => item.flagged) ??
     month?.recommendations[0] ??

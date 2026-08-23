@@ -125,6 +125,10 @@ export function DashboardView({
     ) ??
     0;
   const monthOutgoingsCents = month?.totals.expenseCents ?? 0;
+  const projectedExpenseCents =
+    month?.totals.projectedExpenseCents ?? month?.totals.recurringCents ?? 0;
+  const actualExpenseCents =
+    month?.totals.actualExpenseCents ?? month?.totals.dailyExpenseCents ?? 0;
   const recurringMonthlyCents = month?.totals.recurringCents ?? 0;
   const oneOffCents = month?.totals.dailyExpenseCents ?? month?.totals.oneOffCents ?? 0;
   const savingCents = month?.totals.savingContributionCents ?? 0;
@@ -135,7 +139,7 @@ export function DashboardView({
   const expectedPayCents = month?.totals.expectedPayCents ?? null;
   const hasCashflowBasis = expectedPayCents != null || recordedIncomeCents > 0;
   const cashflowInCents = expectedPayCents ?? recordedIncomeCents;
-  const cashflowDeltaCents = cashflowInCents - monthOutgoingsCents;
+  const cashflowDeltaCents = cashflowInCents - projectedExpenseCents;
   const topCue =
     month?.recommendations.find((item) => item.flagged) ??
     month?.recommendations[0] ??
@@ -149,10 +153,19 @@ export function DashboardView({
       1,
       ...data.series.flatMap((point) => [
         point.incomeCents > 0 ? point.incomeCents : point.expectedIncomeCents,
-        point.expenseCents,
+        point.projectedExpenseCents ?? point.expenseCents,
+        point.actualExpenseCents ?? 0,
       ]),
     );
   }, [data]);
+
+  const hasActualCashflow = useMemo(
+    () =>
+      (data?.series ?? []).some(
+        (point) => (point.actualExpenseCents ?? 0) > 0,
+      ),
+    [data],
+  );
 
   const chartUsesExpectedIncome = useMemo(
     () =>
@@ -248,15 +261,15 @@ export function DashboardView({
               : 'Household spending across shared bills'
             : expectedPayCents != null
               ? `${formatMoney(expectedPayCents, displayCurrency)} expected pay minus ${formatMoney(
-                  monthOutgoingsCents,
+                  projectedExpenseCents,
                   displayCurrency,
-                )} in scheduled and recorded outgoings.`
+                )} projected (${formatMoney(actualExpenseCents, displayCurrency)} logged).`
               : recordedIncomeCents > 0
-                ? `${formatMoney(recordedIncomeCents, displayCurrency)} recorded income minus ${formatMoney(
-                    monthOutgoingsCents,
+                ? `${formatMoney(recordedIncomeCents, displayCurrency)} income minus ${formatMoney(
+                    projectedExpenseCents,
                     displayCurrency,
-                  )} in scheduled and recorded outgoings.`
-                : 'Total scheduled and recorded outgoings. Add a pay schedule in Spending to see what may remain.'
+                  )} projected (${formatMoney(actualExpenseCents, displayCurrency)} logged).`
+                : `${formatMoney(projectedExpenseCents, displayCurrency)} projected from scheduled bills. Mark paid to build actual history.`
         }
         actions={
           <>
@@ -324,21 +337,23 @@ export function DashboardView({
             </Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Month outgoings</Text>
+            <Text style={styles.statLabel}>Projected</Text>
             <Text style={styles.statValue}>
-              {formatMoney(monthOutgoingsCents, displayCurrency)}
+              {formatMoney(projectedExpenseCents, displayCurrency)}
+            </Text>
+          </View>
+          <View style={styles.stat}>
+            <Text style={styles.statLabel}>Actual logged</Text>
+            <Text style={styles.statValue}>
+              {formatMoney(actualExpenseCents, displayCurrency)}
             </Text>
           </View>
         </View>
         <Text style={styles.footnote}>
           {hasCategoryPlan
-            ? 'Compares category targets with all scheduled or recorded outgoings this month.'
+            ? 'Category plan is your target. Projected is scheduled bills; actual is logged spending and confirmed payments.'
             : hasOutgoings
-              ? `Month outgoings include ${formatMoney(recurringMonthlyCents, displayCurrency)} regular bills${
-                  oneOffCents > 0
-                    ? `, ${formatMoney(oneOffCents, displayCurrency)} one-off spending`
-                    : ''
-                }${
+              ? `Projected includes ${formatMoney(recurringMonthlyCents, displayCurrency)} regular bills${
                   savingCents > 0
                     ? `, ${formatMoney(savingCents, displayCurrency)} savings`
                     : ''
@@ -346,7 +361,7 @@ export function DashboardView({
                   debtCents > 0
                     ? `, ${formatMoney(debtCents, displayCurrency)} debt payments`
                     : ''
-                }. Set category amounts in Spending to track against a plan.`
+                }. Actual is what you logged or marked paid.`
               : 'Add recurring bills or category amounts in Spending.'}
         </Text>
       </SurfaceCard>
@@ -406,17 +421,23 @@ export function DashboardView({
           <Text style={styles.cardTitle}>Six-month context</Text>
           <Text style={styles.meta}>
             {chartUsesExpectedIncome
-              ? 'Expected pay and total outgoings by month (recorded income when logged).'
-              : 'Recorded income and total outgoings by month.'}
+              ? 'Expected pay with projected (light) and actual (solid) outgoings.'
+              : 'Income with projected (light) and actual (solid) outgoings.'}
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <CashflowBarChart
-              currency={displayCurrency}
-              maxValue={maxValue}
-              series={data.series}
-              usesExpectedIncome={chartUsesExpectedIncome}
-            />
-          </ScrollView>
+          {hasActualCashflow ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <CashflowBarChart
+                currency={displayCurrency}
+                maxValue={maxValue}
+                series={data.series}
+                usesExpectedIncome={chartUsesExpectedIncome}
+              />
+            </ScrollView>
+          ) : (
+            <Text style={styles.meta}>
+              Mark bills paid in Spending to build your actual cashflow history.
+            </Text>
+          )}
         </SurfaceCard>
       ) : isHousehold ? (
         <SurfaceCard>
@@ -440,11 +461,11 @@ function CashflowBarChart({
   currency: string;
   usesExpectedIncome: boolean;
 }) {
-  const width = Math.max(320, series.length * 64);
+  const width = Math.max(320, series.length * 72);
   const height = 180;
   const pad = 24;
   const groupWidth = (width - pad * 2) / Math.max(series.length, 1);
-  const barWidth = Math.max(8, (groupWidth - 8) / 2);
+  const barWidth = Math.max(6, (groupWidth - 8) / 3);
 
   return (
     <View>
@@ -453,9 +474,12 @@ function CashflowBarChart({
           const x0 = pad + index * groupWidth;
           const incomeValue =
             point.incomeCents > 0 ? point.incomeCents : point.expectedIncomeCents;
+          const projectedValue =
+            point.projectedExpenseCents ?? point.expenseCents;
           const bars = [
             { value: incomeValue, color: '#617A57' },
-            { value: point.expenseCents, color: '#D88B77' },
+            { value: projectedValue, color: '#E8C4B8' },
+            { value: point.actualExpenseCents ?? 0, color: '#D88B77' },
           ];
           return (
             <G key={point.label}>
@@ -497,8 +521,12 @@ function CashflowBarChart({
           </Text>
         </View>
         <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, { backgroundColor: '#E8C4B8' }]} />
+          <Text style={styles.legendText}>Projected</Text>
+        </View>
+        <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: '#D88B77' }]} />
-          <Text style={styles.legendText}>Outgoings</Text>
+          <Text style={styles.legendText}>Actual</Text>
         </View>
       </View>
     </View>

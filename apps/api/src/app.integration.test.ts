@@ -685,9 +685,26 @@ suite('account and couple household API', () => {
         sourceType: 'recurring_outgoing',
         sourceId: recurringId,
         dueDate,
+        amountCents: 14_500,
+        note: 'Paid from current account',
       },
     });
     expect(markBill.statusCode).toBe(201);
+    expect(markBill.json<{ amount_cents?: number; budget_entry_id?: string }>()).toMatchObject({
+      amount_cents: 14_500,
+    });
+
+    const cashflow = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${budgetId}/cashflow-series?months=1`,
+      headers: { authorization: `Bearer ${user.accessToken}` },
+    });
+    expect(cashflow.statusCode).toBe(200);
+    const cashflowPoint = cashflow.json<{
+      series: { actualExpenseCents: number; projectedExpenseCents: number }[];
+    }>().series[0];
+    expect(cashflowPoint?.actualExpenseCents).toBe(14_500);
+    expect(cashflowPoint?.projectedExpenseCents).toBeGreaterThanOrEqual(15_000);
 
     const afterPay = await app.inject({
       method: 'GET',

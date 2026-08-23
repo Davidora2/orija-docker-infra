@@ -90,6 +90,10 @@ function PersonalOutgoingsPanel({
   const [editCategoryId, setEditCategoryId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingPayment, setPendingPayment] = useState<OutgoingItem | null>(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payNote, setPayNote] = useState("");
 
   const [payFrequency, setPayFrequency] = useState(budget.payFrequency ?? "monthly");
   const [nextPayDate, setNextPayDate] = useState(budget.nextPayDate ?? "");
@@ -426,32 +430,61 @@ function PersonalOutgoingsPanel({
       item.source !== "debt"
     )
       return;
+    if (item.paid && item.paymentId) {
+      setBusy(true);
+      try {
+        await unmarkOutgoingPaid(budget.id, item.paymentId);
+        await load();
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "Could not update payment.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    setPendingPayment(item);
+    setPayAmount(String(item.amountCents / 100));
+    setPayDate(new Date().toISOString().slice(0, 10));
+    setPayNote("");
+  }
+
+  async function confirmPayment() {
+    if (!pendingPayment) return;
+    const sourceId =
+      pendingPayment.source === "recurring"
+        ? pendingPayment.recurringId
+        : pendingPayment.source === "saving"
+          ? pendingPayment.savingGoalId
+          : pendingPayment.debtId;
+    if (!sourceId) {
+      onError("Missing payment source.");
+      return;
+    }
+    const amountCents = Math.round(Number(payAmount) * 100);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      onError("Enter a valid payment amount.");
+      return;
+    }
     setBusy(true);
     try {
-      if (item.paid && item.paymentId) {
-        await unmarkOutgoingPaid(budget.id, item.paymentId);
-      } else {
-        const sourceId =
-          item.source === "recurring"
-            ? item.recurringId
-            : item.source === "saving"
-              ? item.savingGoalId
-              : item.debtId;
-        if (!sourceId) throw new Error("Missing payment source.");
-        await markOutgoingPaid(budget.id, {
-          sourceType:
-            item.source === "recurring"
-              ? "recurring_outgoing"
-              : item.source === "saving"
-                ? "saving_goal"
-                : "debt",
-          sourceId,
-          dueDate: item.date,
-        });
-      }
+      await markOutgoingPaid(budget.id, {
+        sourceType:
+          pendingPayment.source === "recurring"
+            ? "recurring_outgoing"
+            : pendingPayment.source === "saving"
+              ? "saving_goal"
+              : "debt",
+        sourceId,
+        dueDate: pendingPayment.date,
+        amountCents,
+        paidAt: payDate,
+        note: payNote.trim() || undefined,
+      });
+      setPendingPayment(null);
       await load();
+      onChanged();
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Could not update payment.");
+      onError(error instanceof Error ? error.message : "Could not record payment.");
     } finally {
       setBusy(false);
     }
@@ -1469,6 +1502,79 @@ function PersonalOutgoingsPanel({
             ))
           )}
         </article>
+      ) : null}
+
+      {pendingPayment ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-payment-title"
+            className="w-full max-w-md rounded-2xl border border-[#dde2dd] bg-white p-5 shadow-lg"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#617a57]">
+              Confirm payment
+            </p>
+            <h3
+              id="confirm-payment-title"
+              className="mt-1 font-serif text-2xl text-[#14241f]"
+            >
+              {pendingPayment.title}
+            </h3>
+            <p className="mt-1 text-sm text-[#6c7771]">
+              Due {pendingPayment.date} · logs actual outgoing for cashflow
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-xs font-bold text-[#6c7771]">
+                Paid on
+                <input
+                  type="date"
+                  value={payDate}
+                  onChange={(event) => setPayDate(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-[#6c7771]">
+                Amount ({symbol})
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={payAmount}
+                  onChange={(event) => setPayAmount(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-[#6c7771]">
+                Note (optional)
+                <input
+                  type="text"
+                  value={payNote}
+                  onChange={(event) => setPayNote(event.target.value)}
+                  placeholder="e.g. paid from joint account"
+                  className="mt-1 w-full rounded-xl border border-[#dde2dd] px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl bg-[#14241f] px-4 py-2 text-xs font-bold text-[#f4f5f0] disabled:opacity-50"
+                onClick={() => void confirmPayment()}
+              >
+                Log payment
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-[#dde2dd] px-4 py-2 text-xs font-bold"
+                onClick={() => setPendingPayment(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );

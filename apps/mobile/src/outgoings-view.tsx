@@ -1,4 +1,5 @@
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -134,6 +135,10 @@ function PersonalOutgoingsView({
   const [data, setData] = useState<MonthOutgoings | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingPayment, setPendingPayment] = useState<OutgoingItem | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payNote, setPayNote] = useState('');
   const [payFrequency, setPayFrequency] = useState(budget.payFrequency ?? 'monthly');
   const [nextPayDate, setNextPayDate] = useState(budget.nextPayDate ?? '');
   const [typicalPay, setTypicalPay] = useState(
@@ -505,32 +510,61 @@ function PersonalOutgoingsView({
       item.source !== 'debt'
     )
       return;
+    if (item.paid && item.paymentId) {
+      setBusy(true);
+      try {
+        await unmarkOutgoingPaid(budget.id, item.paymentId);
+        await load();
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Could not update payment.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    setPendingPayment(item);
+    setPayAmount(String(item.amountCents / 100));
+    setPayDate(new Date().toISOString().slice(0, 10));
+    setPayNote('');
+  }
+
+  async function confirmPayment() {
+    if (!pendingPayment) return;
+    const sourceId =
+      pendingPayment.source === 'recurring'
+        ? pendingPayment.recurringId
+        : pendingPayment.source === 'saving'
+          ? pendingPayment.savingGoalId
+          : pendingPayment.debtId;
+    if (!sourceId) {
+      notify('Missing payment source.');
+      return;
+    }
+    const amountCents = Math.round(Number(payAmount) * 100);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      notify('Enter a valid payment amount.');
+      return;
+    }
     setBusy(true);
     try {
-      if (item.paid && item.paymentId) {
-        await unmarkOutgoingPaid(budget.id, item.paymentId);
-      } else {
-        const sourceId =
-          item.source === 'recurring'
-            ? item.recurringId
-            : item.source === 'saving'
-              ? item.savingGoalId
-              : item.debtId;
-        if (!sourceId) throw new Error('Missing payment source.');
-        await markOutgoingPaid(budget.id, {
-          sourceType:
-            item.source === 'recurring'
-              ? 'recurring_outgoing'
-              : item.source === 'saving'
-                ? 'saving_goal'
-                : 'debt',
-          sourceId,
-          dueDate: item.date,
-        });
-      }
+      await markOutgoingPaid(budget.id, {
+        sourceType:
+          pendingPayment.source === 'recurring'
+            ? 'recurring_outgoing'
+            : pendingPayment.source === 'saving'
+              ? 'saving_goal'
+              : 'debt',
+        sourceId,
+        dueDate: pendingPayment.date,
+        amountCents,
+        paidAt: payDate,
+        note: payNote.trim() || undefined,
+      });
+      setPendingPayment(null);
       await load();
+      onChanged();
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Could not update payment.');
+      notify(error instanceof Error ? error.message : 'Could not record payment.');
     } finally {
       setBusy(false);
     }
@@ -1288,6 +1322,59 @@ function PersonalOutgoingsView({
           ))}
         </View>
       ) : null}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={pendingPayment != null}
+        onRequestClose={() => setPendingPayment(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.eyebrow}>Confirm payment</Text>
+            <Text style={styles.title}>{pendingPayment?.title}</Text>
+            <Text style={styles.meta}>
+              Due {pendingPayment?.date} · logs actual outgoing for cashflow
+            </Text>
+            <Text style={styles.label}>Paid on</Text>
+            <TextInput
+              style={styles.input}
+              value={payDate}
+              onChangeText={setPayDate}
+              placeholder="YYYY-MM-DD"
+            />
+            <Text style={styles.label}>Amount ({symbol})</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="decimal-pad"
+              value={payAmount}
+              onChangeText={setPayAmount}
+            />
+            <Text style={styles.label}>Note (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={payNote}
+              onChangeText={setPayNote}
+              placeholder="e.g. paid from joint account"
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                disabled={busy}
+                style={[styles.chip, styles.chipPrimary]}
+                onPress={() => void confirmPayment()}
+              >
+                <Text style={styles.chipPrimaryText}>Log payment</Text>
+              </Pressable>
+              <Pressable
+                style={styles.chip}
+                onPress={() => setPendingPayment(null)}
+              >
+                <Text style={styles.chipText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1407,4 +1494,32 @@ const styles = StyleSheet.create({
   recoHigh: { backgroundColor: '#FFF7F5', borderColor: '#EFD4CD' },
   recoMedium: { backgroundColor: '#FFF8EC', borderColor: '#F2E2C4' },
   action: { color: colors.ink, fontWeight: '700', fontSize: 12, marginTop: 4 },
+  label: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(20, 36, 31, 0.45)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: colors.paper,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    gap: 4,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  chipPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipPrimaryText: { color: colors.paper, fontWeight: '700', fontSize: 12 },
 });

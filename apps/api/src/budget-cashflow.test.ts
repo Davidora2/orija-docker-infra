@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRecommendations,
   payDatesInMonth,
+  projectedExpenseCentsForMonth,
   projectRecurringForMonth,
   type OutgoingItem,
   type RecurringOutgoing,
@@ -68,6 +69,33 @@ describe('budget cashflow helpers', () => {
 
   it('lists monthly payday from next pay date', () => {
     expect(payDatesInMonth(2026, 8, 'monthly', '2026-08-28')).toEqual(['2026-08-28']);
+  });
+
+  it('sums projected monthly outgoings from recurring, savings, and debt', () => {
+    const recurring: RecurringOutgoing[] = [
+      {
+        id: 'rent',
+        budgetId: 'b1',
+        categoryId: null,
+        name: 'Rent',
+        amountCents: 100_000,
+        cadence: 'monthly',
+        dayOfMonth: 1,
+        weekday: null,
+        anchorDate: null,
+        note: '',
+        active: true,
+      },
+    ];
+    expect(
+      projectedExpenseCentsForMonth({
+        recurring,
+        year: 2026,
+        month: 8,
+        savingContributionCents: 25_000,
+        debtPaymentCents: 10_000,
+      }),
+    ).toBe(135_000);
   });
 
   it('recommends moving bills that land before payday', () => {

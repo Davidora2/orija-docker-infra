@@ -1543,17 +1543,6 @@ export function registerOnboardingAndBudgetRoutes(
             'Debt with a monthly payment was not found.',
           );
         }
-        amountCents = Number(row.monthlyPaymentCents);
-        title = `Debt · ${row.name}`;
-      }
-
-        if (!row || row.monthlyPaymentCents == null) {
-          throw new ApiError(
-            404,
-            'debt_not_found',
-            'Debt with a monthly payment was not found.',
-          );
-        }
         if (!body.amountCents) {
           amountCents = Number(row.monthlyPaymentCents);
         }

@@ -19,16 +19,18 @@ describe('schema migrations 014–018', () => {
       '016_weekly_reviews_privacy',
       '017_cleanup_duplicate_empty_budgets',
       '018_household_money_visibility',
+      '019_payment_budget_entry',
     ]);
   });
 
-  it('includes SQL files for migrations 014–018', () => {
+  it('includes SQL files for migrations 014–019', () => {
     for (const version of [
       '014_onboarding_progress',
       '015_user_profile_body',
       '016_weekly_reviews_privacy',
       '017_cleanup_duplicate_empty_budgets',
       '018_household_money_visibility',
+      '019_payment_budget_entry',
     ]) {
       const path = fileURLToPath(
         new URL(`../migrations/${version}.sql`, import.meta.url),
