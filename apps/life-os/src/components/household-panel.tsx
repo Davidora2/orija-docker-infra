@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   createPartnerInvite,
   setActiveHousehold,
+  updateMoneyVisibilityGrant,
   type Account,
 } from "../lib/api";
 
@@ -23,8 +24,26 @@ export function HouseholdPanel({
     expiresAt: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmFullVisibility, setConfirmFullVisibility] = useState(false);
   const active = account.households.find((household) => household.active);
   const canInvite = active?.role === "OWNER" && account.members.length < 2;
+  const partner = account.members.find((member) => member.id !== account.user.id);
+  const yourGrant = account.moneyVisibilityGrant ?? "SHARED_BILLS_ONLY";
+
+  async function saveGrant(grant: "SHARED_BILLS_ONLY" | "FULL_VISIBILITY") {
+    setBusy(true);
+    onError(null);
+    try {
+      onAccountChange(await updateMoneyVisibilityGrant(grant));
+      setConfirmFullVisibility(false);
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Could not update money visibility.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -123,6 +142,89 @@ export function HouseholdPanel({
           </div>
         ) : null}
       </article>
+
+      {partner ? (
+        <article className="space-y-4 rounded-2xl border border-[#dde2dd] bg-white p-5">
+          <div>
+            <h3 className="font-serif text-xl">Money visibility</h3>
+            <p className="mt-1 text-sm text-[#6c7771]">
+              Choose what your partner can see of your spending. They control what
+              you see of theirs.
+            </p>
+          </div>
+          <fieldset className="space-y-3" disabled={busy}>
+            <legend className="text-sm font-semibold text-[#14241f]">
+              What {partner.displayName} can see
+            </legend>
+            <label className="flex cursor-pointer gap-3 rounded-xl border border-[#dde2dd] px-3 py-3">
+              <input
+                type="radio"
+                name="money-visibility"
+                checked={yourGrant === "SHARED_BILLS_ONLY"}
+                onChange={() => void saveGrant("SHARED_BILLS_ONLY")}
+              />
+              <span>
+                <span className="block font-semibold">Shared bills only</span>
+                <span className="block text-xs text-[#6c7771]">
+                  Only bills you move to the household budget. Everything else stays
+                  private.
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer gap-3 rounded-xl border border-[#dde2dd] px-3 py-3">
+              <input
+                type="radio"
+                name="money-visibility"
+                checked={yourGrant === "FULL_VISIBILITY"}
+                onChange={() => setConfirmFullVisibility(true)}
+              />
+              <span>
+                <span className="block font-semibold">Full visibility</span>
+                <span className="block text-xs text-[#6c7771]">
+                  They can see all your personal outgoings and pay schedule in the
+                  Household view. Nothing is copied — they get read-only access.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+          <p className="text-xs text-[#87918c]">
+            Full visibility applies to spending and pay context in MVP, not
+            savings/debt detail.
+          </p>
+        </article>
+      ) : null}
+
+      {confirmFullVisibility ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <article className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5">
+            <h3 className="font-serif text-2xl">Share full visibility?</h3>
+            <p className="text-sm leading-6 text-[#6c7771]">
+              {partner?.displayName} will see your personal recurring bills, daily
+              spending entries, and pay schedule in Household view. They won&apos;t be
+              able to edit your personal budget. You can change this anytime in
+              Household settings.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl bg-[#14241f] px-4 py-3 text-sm font-bold text-[#f4f5f0] disabled:opacity-50"
+                onClick={() => void saveGrant("FULL_VISIBILITY")}
+              >
+                Turn on full visibility
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl border border-[#dde2dd] px-4 py-3 text-sm font-bold disabled:opacity-50"
+                onClick={() => setConfirmFullVisibility(false)}
+              >
+                Keep shared bills only
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
     </section>
   );
 }

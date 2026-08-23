@@ -11,11 +11,13 @@ import {
   getMonthOutgoings,
   listRecurringOutgoings,
   markOutgoingPaid,
+  moveRecurringToHousehold,
   unmarkOutgoingPaid,
   updateBudget,
   updateBudgetEntry,
   updateRecurringOutgoing,
   type Budget,
+  type HouseholdMoneyLens,
   type MonthOutgoings,
   type OutgoingItem,
   type RecurringOutgoing,
@@ -38,20 +40,40 @@ const MONTH_NAMES = [
 ];
 
 type Props = {
-  budget: Budget;
+  budget?: Budget;
   preferredCurrency?: string;
   onError: (message: string) => void;
   onChanged: () => void;
   focusDailyExpense?: number;
+  canMoveToHousehold?: boolean;
+  yourGrant?: "SHARED_BILLS_ONLY" | "FULL_VISIBILITY";
+  householdLens?: HouseholdMoneyLens;
+  viewerId?: string;
 };
 
-export function OutgoingsPanel({
+export function OutgoingsPanel(props: Props) {
+  if (props.householdLens) {
+    return (
+      <HouseholdOutgoingsView
+        lens={props.householdLens}
+        viewerId={props.viewerId ?? ""}
+        preferredCurrency={props.preferredCurrency}
+      />
+    );
+  }
+  if (!props.budget) return null;
+  return <PersonalOutgoingsPanel {...props} budget={props.budget} />;
+}
+
+function PersonalOutgoingsPanel({
   budget,
   preferredCurrency,
   onError,
   onChanged,
   focusDailyExpense = 0,
-}: Props) {
+  canMoveToHousehold = false,
+  yourGrant = "SHARED_BILLS_ONLY",
+}: Props & { budget: Budget }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -556,6 +578,22 @@ export function OutgoingsPanel({
       setBusy(false);
     }
   }
+
+  async function moveToHousehold(row: RecurringOutgoing) {
+    setBusy(true);
+    try {
+      await moveRecurringToHousehold(budget.id, row.id);
+      await load();
+      onChanged();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not move bill to household.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const moveLabel =
+    yourGrant === "FULL_VISIBILITY" ? "Mark as household bill" : "Move to household";
 
   return (
     <section className="space-y-4">
@@ -1186,7 +1224,17 @@ export function OutgoingsPanel({
                       {row.note ? ` · ${row.note}` : ""}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {canMoveToHousehold ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="rounded-lg border border-[#cfd8ce] px-2.5 py-1 text-[11px] font-bold disabled:opacity-50"
+                        onClick={() => void moveToHousehold(row)}
+                      >
+                        {moveLabel}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="rounded-lg border border-[#dde2dd] px-2.5 py-1 text-[11px] font-bold"
@@ -1422,6 +1470,100 @@ export function OutgoingsPanel({
           )}
         </article>
       ) : null}
+    </section>
+  );
+}
+
+function ownerChip(label: string, readOnly: boolean) {
+  return (
+    <span className="rounded-full bg-[#eef3eb] px-2 py-0.5 text-[10px] font-bold text-[#617a57]">
+      {label}
+      {readOnly ? " · read-only" : ""}
+    </span>
+  );
+}
+
+function HouseholdOutgoingsView({
+  lens,
+  viewerId,
+  preferredCurrency,
+}: {
+  lens: HouseholdMoneyLens;
+  viewerId: string;
+  preferredCurrency?: string;
+}) {
+  const displayCurrency = preferredCurrency || lens.currency || "GBP";
+
+  return (
+    <section className="space-y-4">
+      {lens.emptySharedOnly ? (
+        <article className="rounded-2xl border border-[#dde2dd] bg-white p-5">
+          <p className="text-sm text-[#6c7771]">
+            No household bills yet. Move a bill from Personal, or ask your partner
+            to share one.
+          </p>
+        </article>
+      ) : null}
+
+      <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+        <h4 className="font-semibold">Household bills this month</h4>
+        {lens.list.length === 0 ? (
+          <p className="text-sm text-[#6c7771]">No outgoings recorded for this month.</p>
+        ) : (
+          lens.list.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between gap-3 border-t border-[#eef0ec] py-3 first:border-0 first:pt-0"
+            >
+              <div className="space-y-1">
+                <p className="font-semibold">{item.title}</p>
+                <p className="text-xs text-[#6c7771]">
+                  {item.date}
+                  {item.note ? ` · ${item.note}` : ""}
+                </p>
+                {ownerChip(
+                  item.ownerUserId === viewerId ? "You" : item.ownerDisplayName,
+                  item.readOnly,
+                )}
+              </div>
+              <p className="text-sm font-bold text-[#c9634f]">
+                -{formatMoney(item.amountCents, displayCurrency)}
+              </p>
+            </div>
+          ))
+        )}
+      </article>
+
+      <article className="rounded-2xl border border-[#dde2dd] bg-white p-5 space-y-3">
+        <h4 className="font-semibold">Recurring household bills</h4>
+        {lens.recurring.length === 0 ? (
+          <p className="text-sm text-[#6c7771]">No recurring household bills yet.</p>
+        ) : (
+          lens.recurring.map((row) => (
+            <div
+              key={row.id}
+              className="flex items-start justify-between gap-3 border-t border-[#eef0ec] py-3 first:border-0 first:pt-0"
+            >
+              <div className="space-y-1">
+                <p className="font-semibold">{row.name}</p>
+                <p className="text-xs text-[#6c7771]">
+                  {formatMoney(row.amountCents, displayCurrency)} · {row.cadence}
+                  {row.note ? ` · ${row.note}` : ""}
+                </p>
+                {ownerChip(
+                  row.ownerUserId === viewerId ? "You" : row.ownerDisplayName,
+                  row.readOnly,
+                )}
+                {row.sourceVisibility === "SHARED" ? (
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#87918c]">
+                    In household budget
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ))
+        )}
+      </article>
     </section>
   );
 }
