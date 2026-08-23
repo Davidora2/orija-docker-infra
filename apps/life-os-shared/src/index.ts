@@ -62,10 +62,34 @@ export function clampEvaluationScore(value: number): number {
   return Math.max(0, Math.min(10, value));
 }
 
-/**
- * Plot points in label order: top, right, bottom, left. Values stay raw so
- * effort is not inverted or blended into a potentially misleading aggregate.
- */
+export type MoneyVisibilityGrant = "SHARED_BILLS_ONLY" | "FULL_VISIBILITY";
+
+export function moneyScopeLabel(visibility: "PRIVATE" | "SHARED"): "Personal" | "Household" {
+  return visibility === "SHARED" ? "Household" : "Personal";
+}
+
+export function visibilityGrantLabel(grant: MoneyVisibilityGrant): string {
+  return grant === "FULL_VISIBILITY" ? "full visibility" : "shared bills only";
+}
+
+export function partnerVisibilityDiscoveryLine(input: {
+  partnerName: string;
+  yourGrant: MoneyVisibilityGrant;
+  partnerGrant: MoneyVisibilityGrant | null;
+}): { yours: string; partner: string | null } {
+  const yours =
+    input.yourGrant === "FULL_VISIBILITY"
+      ? `${input.partnerName} sees full visibility of your spending.`
+      : `${input.partnerName} sees shared bills only.`;
+  const partner =
+    input.partnerGrant == null
+      ? null
+      : input.partnerGrant === "FULL_VISIBILITY"
+        ? `${input.partnerName} shares full visibility with you.`
+        : `${input.partnerName} shares shared bills only with you.`;
+  return { yours, partner };
+}
+
 export type BudgetListItem = {
   id: string;
   ownerUserId: string;
