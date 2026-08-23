@@ -1571,6 +1571,9 @@ export function registerOnboardingAndBudgetRoutes(
         )
         RETURNING id
       `;
+      if (!entry) {
+        throw new ApiError(500, 'entry_create_failed', 'Could not log payment entry.');
+      }
       await sql`UPDATE budgets SET updated_at = now() WHERE id = ${entryBudgetId}`;
 
       const [payment] = await sql`
