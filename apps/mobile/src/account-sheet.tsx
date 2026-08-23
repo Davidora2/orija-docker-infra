@@ -14,7 +14,7 @@ import {
   View,
   Alert,
 } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountPrivacySection } from './account-privacy-section';
 import {
@@ -60,8 +60,10 @@ type Props = {
   visible: boolean;
   account: Account | null;
   initialInviteToken?: string;
+  scrollToMoneyVisibility?: boolean;
   onClose: () => void;
   onAccountChange: (account: Account | null) => void;
+  onScrollToMoneyVisibilityHandled?: () => void;
   notify: (message: string) => void;
 };
 
@@ -194,11 +196,14 @@ export function AccountSheet({
   visible,
   account,
   initialInviteToken,
+  scrollToMoneyVisibility = false,
   onClose,
   onAccountChange,
+  onScrollToMoneyVisibilityHandled,
   notify,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [mode, setMode] = useState<'register' | 'login' | 'forgot' | 'reset'>('register');
   const [displayName, setDisplayName] = useState('');
@@ -263,6 +268,15 @@ export function AccountSheet({
       hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!visible || !scrollToMoneyVisibility || !account) return;
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+      onScrollToMoneyVisibilityHandled?.();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [visible, scrollToMoneyVisibility, account, onScrollToMoneyVisibilityHandled]);
 
   async function perform(work: () => Promise<void>) {
     setBusy(true);
@@ -403,6 +417,7 @@ export function AccountSheet({
           </View>
 
           <ScrollView
+            ref={scrollRef}
             contentContainerStyle={[
               styles.body,
               {
@@ -724,10 +739,13 @@ export function AccountSheet({
                   <View style={styles.inviteCard}>
                     <Text style={styles.sectionTitle}>Money visibility</Text>
                     <Text style={styles.sectionCaption}>
-                      Choose what your partner can see of your spending. They control what
+                      Choose what your partner can see of your money. They control what
                       you see of theirs.
                     </Text>
-                    <Text style={styles.label}>WHAT {partner.displayName.toUpperCase()} CAN SEE</Text>
+                    <Text style={styles.label}>BILLS & SPENDING</Text>
+                    <Text style={styles.label}>
+                      WHAT {partner.displayName.toUpperCase()} CAN SEE
+                    </Text>
                     <Pressable
                       style={[
                         styles.modeButton,
@@ -760,6 +778,21 @@ export function AccountSheet({
                         Full visibility
                       </Text>
                     </Pressable>
+                    <Text style={[styles.label, { marginTop: 12 }]}>WEALTH & SAVINGS</Text>
+                    <View style={styles.wealthInfoCard}>
+                      <Text style={styles.inviteTitle}>Shared wealth items only</Text>
+                      <Text style={styles.inviteText}>
+                        Your partner sees savings, debt, and investments you mark Share
+                        with household — not your full personal detail.
+                      </Text>
+                    </View>
+                    <View style={styles.wealthPlannedCard}>
+                      <Text style={styles.inviteTitle}>Full wealth visibility</Text>
+                      <Text style={styles.inviteText}>
+                        Read-only access to all personal wealth in Household view —
+                        planned for a future release.
+                      </Text>
+                    </View>
                   </View>
                 ) : null}
 
@@ -1226,6 +1259,22 @@ const styles = StyleSheet.create({
     padding: 15,
     backgroundColor: '#F5F8F3',
     marginVertical: 17,
+  },
+  wealthInfoCard: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: colors.canvas,
+    marginTop: 8,
+  },
+  wealthPlannedCard: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    padding: 12,
+    borderStyle: 'dashed',
+    marginTop: 8,
   },
   inviteHeading: {
     flexDirection: 'row',

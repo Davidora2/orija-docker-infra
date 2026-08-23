@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createBudget,
@@ -32,12 +31,14 @@ type MoneyScope = "personal" | "household";
 type Props = {
   account: Account;
   onError: (message: string) => void;
+  onOpenHouseholdSettings?: () => void;
   spendCaptureNonce?: number;
 };
 
 export function BudgetPanel({
   account,
   onError,
+  onOpenHouseholdSettings,
   spendCaptureNonce = 0,
 }: Props) {
   const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
@@ -243,12 +244,13 @@ export function BudgetPanel({
           {visibilityLines ? (
             <p className="mt-3 text-xs text-[#6c7771]">
               {visibilityLines.yours}{" "}
-              <Link
-                href="?tab=you&dest=household"
+              <button
+                type="button"
                 className="font-bold text-[#617a57] underline"
+                onClick={() => onOpenHouseholdSettings?.()}
               >
-                Change in Household
-              </Link>
+                Change in Profile
+              </button>
               {visibilityLines.partner ? (
                 <span className="mt-1 block">{visibilityLines.partner}</span>
               ) : null}
