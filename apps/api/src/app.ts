@@ -19,6 +19,7 @@ import { lifeItemBodySchema } from './life-notes.js';
 import { assertRegistrationEmailAllowed } from './email-guard.js';
 import { createMailer } from './mailer.js';
 import { runMigrations } from './migrations.js';
+import { registerHouseholdMoneyRoutes } from './household-money.js';
 import { registerOnboardingAndBudgetRoutes } from './onboarding-budgets.js';
 import { registerWealthRoutes } from './wealth.js';
 import { registerWeeklyReviewRoutes } from './weekly-reviews.js';
@@ -245,10 +246,17 @@ async function getAccountPayload(sql: Database, userId: string) {
           avatarUrl: string | null;
           role: 'OWNER' | 'PARTNER';
           joinedAt: Date;
+          moneyVisibilityGrant: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY';
         }[]
       >`
         SELECT
-          u.id, u.email, u.display_name, u.avatar_url, hm.role, hm.joined_at
+          u.id,
+          u.email,
+          u.display_name,
+          u.avatar_url,
+          hm.role,
+          hm.joined_at,
+          hm.money_visibility_grant
         FROM household_members hm
         JOIN users u ON u.id = hm.user_id
         WHERE hm.household_id = ${activeHouseholdId}
@@ -256,9 +264,14 @@ async function getAccountPayload(sql: Database, userId: string) {
       `
     : [];
 
+  const selfMember = members.find((member) => member.id === userId);
+  const partnerMember = members.find((member) => member.id !== userId);
+
   return {
     user: publicUser(user),
     activeHouseholdId,
+    moneyVisibilityGrant: selfMember?.moneyVisibilityGrant ?? 'SHARED_BILLS_ONLY',
+    partnerMoneyVisibilityGrant: partnerMember?.moneyVisibilityGrant ?? null,
     households: memberships.map((membership) => ({
       id: membership.householdId,
       name: membership.householdName,
@@ -266,7 +279,7 @@ async function getAccountPayload(sql: Database, userId: string) {
       joinedAt: membership.joinedAt,
       active: membership.householdId === activeHouseholdId,
     })),
-    members,
+    members: members.map(({ moneyVisibilityGrant: _grant, ...member }) => member),
   };
 }
 
@@ -1074,6 +1087,10 @@ export async function buildApp(
   });
 
   registerOnboardingAndBudgetRoutes(app, sql, auth, {
+    getUser,
+    getAccountPayload,
+  });
+  registerHouseholdMoneyRoutes(app, sql, auth, {
     getUser,
     getAccountPayload,
   });

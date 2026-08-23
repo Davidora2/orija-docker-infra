@@ -95,6 +95,12 @@ const migrations = [
       new URL('../migrations/017_cleanup_duplicate_empty_budgets.sql', import.meta.url),
     ),
   },
+  {
+    version: '018_household_money_visibility',
+    path: fileURLToPath(
+      new URL('../migrations/018_household_money_visibility.sql', import.meta.url),
+    ),
+  },
 ];
 
 export async function runMigrations(sql: Database): Promise<void> {
