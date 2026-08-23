@@ -116,6 +116,8 @@ export function LifeOSApp() {
   const [youDest, setYouDest] = useState<
     "menu" | "capacity" | "review" | "household" | "integrations" | "settings"
   >("menu");
+  const [focusProfileMoneyVisibility, setFocusProfileMoneyVisibility] =
+    useState(false);
   const [authMode, setAuthMode] = useState<
     "login" | "register" | "forgot" | "reset"
   >("login");
@@ -163,6 +165,37 @@ export function LifeOSApp() {
     "EUR",
   ]);
 
+  const syncAppUrl = useCallback(
+    (nextTab: typeof tab, nextYouDest?: typeof youDest, focus?: string) => {
+      const params = new URLSearchParams();
+      if (nextTab !== "today") params.set("tab", nextTab);
+      if (nextTab === "you" && nextYouDest && nextYouDest !== "menu") {
+        params.set("dest", nextYouDest);
+      }
+      if (focus) params.set("focus", focus);
+      const query = params.toString();
+      const url = query
+        ? `${window.location.pathname}?${query}`
+        : window.location.pathname;
+      window.history.replaceState(null, "", url);
+    },
+    [],
+  );
+
+  const openProfileMoneySettings = useCallback(() => {
+    setTab("you");
+    setYouDest("settings");
+    setFocusProfileMoneyVisibility(true);
+    syncAppUrl("you", "settings", "money-visibility");
+  }, [syncAppUrl]);
+
+  const openHouseholdSettings = useCallback(() => {
+    setTab("you");
+    setYouDest("household");
+    setFocusProfileMoneyVisibility(false);
+    syncAppUrl("you", "household");
+  }, [syncAppUrl]);
+
   const refresh = useCallback(async () => {
     setError(null);
     const reachable = await pingApi();
@@ -201,20 +234,37 @@ export function LifeOSApp() {
   }, [refresh]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("tab") === "you") {
-      setTab("you");
-      const destination = params.get("dest");
+    const applyUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = params.get("tab");
       if (
-        destination === "capacity" ||
-        destination === "review" ||
-        destination === "household" ||
-        destination === "integrations" ||
-        destination === "settings"
+        urlTab === "today" ||
+        urlTab === "plan" ||
+        urlTab === "calendar" ||
+        urlTab === "money" ||
+        urlTab === "you"
       ) {
-        setYouDest(destination);
+        setTab(urlTab);
       }
-    }
+      if (urlTab === "you") {
+        const destination = params.get("dest");
+        if (
+          destination === "capacity" ||
+          destination === "review" ||
+          destination === "household" ||
+          destination === "integrations" ||
+          destination === "settings"
+        ) {
+          setYouDest(destination);
+        }
+      }
+      setFocusProfileMoneyVisibility(
+        params.get("focus") === "money-visibility",
+      );
+    };
+    applyUrl();
+    window.addEventListener("popstate", applyUrl);
+    return () => window.removeEventListener("popstate", applyUrl);
   }, []);
 
   const pillars = useMemo(() => items.filter((i) => i.kind === "PILLAR" && open(i)), [items]);
@@ -673,7 +723,13 @@ export function LifeOSApp() {
             aria-label={id === "calendar" ? "Calendar" : label}
             onClick={() => {
               setTab(id);
-              if (id === "you") setYouDest("menu");
+              if (id === "you") {
+                setYouDest("menu");
+                setFocusProfileMoneyVisibility(false);
+                syncAppUrl("you", "menu");
+              } else {
+                syncAppUrl(id);
+              }
             }}
           >
             <LifeIcon
@@ -733,6 +789,8 @@ export function LifeOSApp() {
           onOpenCapacity={() => {
             setTab("you");
             setYouDest("capacity");
+            setFocusProfileMoneyVisibility(false);
+            syncAppUrl("you", "capacity");
           }}
           onOpenPlan={() => {
             setTab("plan");
@@ -1320,6 +1378,7 @@ export function LifeOSApp() {
         <BudgetPanel
           account={account}
           onError={setError}
+          onOpenHouseholdSettings={openProfileMoneySettings}
           spendCaptureNonce={spendCaptureNonce}
         />
       ) : null}
@@ -1380,8 +1439,10 @@ export function LifeOSApp() {
       {tab === "you" && youDest === "household" ? (
         <HouseholdPanel
           account={account}
+          focusMoneyVisibility={focusProfileMoneyVisibility}
           onAccountChange={setAccount}
           onError={setError}
+          onFocusMoneyVisibilityHandled={() => setFocusProfileMoneyVisibility(false)}
         />
       ) : null}
 
@@ -1495,12 +1556,15 @@ export function LifeOSApp() {
         <SettingsPrivacyPanel
           account={account}
           currencies={currencies}
+          focusMoneyVisibility={focusProfileMoneyVisibility}
           onAccountChange={setAccount}
           onDeleted={() => {
             setAccount(null);
             setItems([]);
           }}
           onError={setError}
+          onFocusMoneyVisibilityHandled={() => setFocusProfileMoneyVisibility(false)}
+          onOpenHousehold={openHouseholdSettings}
         />
       ) : null}
 

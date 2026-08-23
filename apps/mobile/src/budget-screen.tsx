@@ -50,9 +50,10 @@ type MoneyScope = 'personal' | 'household';
 type Props = {
   account: Account;
   notify: (message: string) => void;
+  onOpenHouseholdSettings?: () => void;
 };
 
-export function BudgetScreen({ account, notify }: Props) {
+export function BudgetScreen({ account, notify, onOpenHouseholdSettings }: Props) {
   const [displayBudgets, setDisplayBudgets] = useState<BudgetListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
@@ -178,7 +179,13 @@ export function BudgetScreen({ account, notify }: Props) {
           </View>
           {visibilityLines ? (
             <Text style={styles.meta}>
-              {visibilityLines.yours}
+              {visibilityLines.yours}{' '}
+              <Text
+                onPress={() => onOpenHouseholdSettings?.()}
+                style={styles.link}
+              >
+                Change in Household
+              </Text>
               {visibilityLines.partner ? `\n${visibilityLines.partner}` : ''}
             </Text>
           ) : null}
@@ -306,6 +313,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 22, fontWeight: '700', color: colors.ink },
   meta: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  link: { color: colors.sageDeep, fontWeight: '700', textDecorationLine: 'underline' },
   scopeChip: {
     flex: 1,
     borderWidth: 1,

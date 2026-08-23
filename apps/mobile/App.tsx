@@ -345,6 +345,8 @@ function AppContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [online, setOnline] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [accountScrollToMoneyVisibility, setAccountScrollToMoneyVisibility] =
+    useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -403,6 +405,11 @@ function AppContent() {
   const notify = useCallback((message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  const openHouseholdMoneySettings = useCallback(() => {
+    setAccountScrollToMoneyVisibility(true);
+    setAccountOpen(true);
   }, []);
 
   const applyVisionHours = useCallback((nextItems: LifeItem[]) => {
@@ -1523,7 +1530,11 @@ function AppContent() {
         ) : null}
 
         {tab === 'money' ? (
-          <BudgetScreen account={account!} notify={notify} />
+          <BudgetScreen
+            account={account!}
+            notify={notify}
+            onOpenHouseholdSettings={openHouseholdMoneySettings}
+          />
         ) : null}
 
         {tab === 'calendar' ? (
@@ -2585,8 +2596,15 @@ function AppContent() {
         visible={accountOpen}
         account={account}
         initialInviteToken={inviteToken ?? undefined}
+        scrollToMoneyVisibility={accountScrollToMoneyVisibility}
         notify={notify}
-        onClose={() => setAccountOpen(false)}
+        onClose={() => {
+          setAccountOpen(false);
+          setAccountScrollToMoneyVisibility(false);
+        }}
+        onScrollToMoneyVisibilityHandled={() =>
+          setAccountScrollToMoneyVisibility(false)
+        }
         onAccountChange={(next) => {
           setAccount(next);
           if (next) void load('refresh');
