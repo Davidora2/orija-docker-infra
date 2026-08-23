@@ -5,20 +5,26 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createBudget,
   formatMoney,
   getBudget,
+  getHouseholdMoneyLens,
   listBudgets,
   type Account,
   type Budget,
+  type HouseholdMoneyLens,
 } from './api';
 import {
   loadLastBudgetId,
   saveLastBudgetId,
 } from './budget-selection';
-import { resolveBudgetSelection, type BudgetListItem } from '@life-os/shared';
+import {
+  partnerVisibilityDiscoveryLine,
+  resolveBudgetSelection,
+  type BudgetListItem,
+} from '@life-os/shared';
 import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
@@ -39,50 +45,79 @@ const colors = {
   acid: '#D6F57A',
 };
 
+type MoneyScope = 'personal' | 'household';
+
 type Props = {
   account: Account;
   notify: (message: string) => void;
 };
 
 export function BudgetScreen({ account, notify }: Props) {
-  const [budgets, setBudgets] = useState<BudgetListItem[]>([]);
   const [displayBudgets, setDisplayBudgets] = useState<BudgetListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Budget | null>(null);
+  const [householdLens, setHouseholdLens] = useState<HouseholdMoneyLens | null>(null);
+  const [moneyScope, setMoneyScope] = useState<MoneyScope>('personal');
   const [busy, setBusy] = useState(false);
   const [section, setSection] = useState<'overview' | 'outgoings' | 'wealth'>('overview');
   const activeIdRef = useRef<string | null>(null);
   const canShare = (account.members?.length ?? 0) >= 2;
   const currency = account.user.preferredCurrency || 'GBP';
+  const partner = account.members.find((member) => member.id !== account.user.id);
+  const sharedBudgetId = useMemo(
+    () =>
+      displayBudgets.find(
+        (budget) =>
+          budget.visibility === 'SHARED' && budget.ownerUserId === account.user.id,
+      )?.id ?? null,
+    [displayBudgets, account.user.id],
+  );
+  const visibilityLines = partner
+    ? partnerVisibilityDiscoveryLine({
+        partnerName: partner.displayName,
+        yourGrant: account.moneyVisibilityGrant ?? 'SHARED_BILLS_ONLY',
+        partnerGrant: account.partnerMoneyVisibilityGrant ?? null,
+      })
+    : null;
 
   const reload = useCallback(
     async (preferredId?: string) => {
       const list = await listBudgets();
       const storedId = await loadLastBudgetId(account.user.id);
-      const { budgets: unique, displayBudgets: visible, selectedId: nextId } =
-        resolveBudgetSelection(list, account.user.id, {
+      const { displayBudgets: visible, selectedId: nextId } = resolveBudgetSelection(
+        list,
+        account.user.id,
+        {
           preferredId,
           storedId,
           currentId: activeIdRef.current,
           profileCurrency: currency,
-        });
-      setBudgets(unique);
+        },
+      );
       setDisplayBudgets(visible);
-      if (nextId !== activeIdRef.current) {
-        setActiveId(nextId);
-        activeIdRef.current = nextId;
-        if (nextId) {
-          await saveLastBudgetId(account.user.id, nextId);
-          setDetail(await getBudget(nextId));
-        } else {
-          setDetail(null);
-        }
-      } else if (nextId) {
-        await saveLastBudgetId(account.user.id, nextId);
-        void getBudget(nextId).then(setDetail);
+      const personalId =
+        visible.find(
+          (budget) =>
+            budget.visibility === 'PRIVATE' && budget.ownerUserId === account.user.id,
+        )?.id ?? nextId;
+      if (personalId !== activeIdRef.current) {
+        setActiveId(personalId);
+        activeIdRef.current = personalId;
+      }
+      if (personalId) {
+        await saveLastBudgetId(account.user.id, personalId);
+        setDetail(await getBudget(personalId));
+      } else {
+        setDetail(null);
+      }
+      if (canShare) {
+        const now = new Date();
+        setHouseholdLens(
+          await getHouseholdMoneyLens(now.getFullYear(), now.getMonth() + 1),
+        );
       }
     },
-    [account.user.id, currency],
+    [account.user.id, canShare, currency],
   );
 
   useEffect(() => {
@@ -91,49 +126,24 @@ export function BudgetScreen({ account, notify }: Props) {
     );
   }, [reload, notify, account.user.preferredCurrency]);
 
-  async function create(visibility: 'PRIVATE' | 'SHARED') {
+  async function createPersonal() {
     setBusy(true);
     try {
       const created = await createBudget({
-        name: visibility === 'SHARED' ? 'Shared budget' : 'Personal budget',
-        visibility,
+        name: 'Personal budget',
+        visibility: 'PRIVATE',
         currency,
       });
+      setMoneyScope('personal');
       setActiveId(created.id);
       activeIdRef.current = created.id;
       await reload(created.id);
-      notify(
-        visibility === 'SHARED'
-          ? 'Shared budget created for your household.'
-          : 'Personal budget created.',
-      );
+      notify('Personal budget created.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not create budget.');
     } finally {
       setBusy(false);
     }
-  }
-
-  async function selectBudget(id: string) {
-    setActiveId(id);
-    activeIdRef.current = id;
-    await saveLastBudgetId(account.user.id, id);
-    try {
-      setDetail(await getBudget(id));
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'Could not open this budget.');
-    }
-  }
-
-  async function focusOrCreate(visibility: 'PRIVATE' | 'SHARED') {
-    const existing = displayBudgets.find(
-      (budget) => budget.visibility === visibility,
-    );
-    if (existing) {
-      await selectBudget(existing.id);
-      return;
-    }
-    await create(visibility);
   }
 
   return (
@@ -145,64 +155,46 @@ export function BudgetScreen({ account, notify }: Props) {
         title="Your financial rhythm"
       />
 
-      <View style={styles.row}>
-        <AppButton
-          disabled={busy}
-          onPress={() => void focusOrCreate('PRIVATE')}
-          style={{ flex: 1 }}
-          variant="acid"
-        >
-          <AcidButtonLabel icon={<LifeIcon color="#2F431E" name="add" size={16} />}>
-            Personal
-          </AcidButtonLabel>
-        </AppButton>
-        <AppButton
-          disabled={!canShare || busy}
-          onPress={() => void focusOrCreate('SHARED')}
-          style={{ flex: 1 }}
-          variant="secondary"
-        >
-          Shared
-        </AppButton>
-      </View>
-      {!canShare ? (
-        <Text style={styles.hint}>
-          Link a partner in your profile to create a shared household budget.
-        </Text>
-      ) : null}
-
-      {displayBudgets.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>No budgets yet</Text>
-          <Text style={styles.meta}>
-            Create a personal budget to track income and spending.
-          </Text>
-        </View>
-      ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.tabs}>
-            {displayBudgets.map((budget) => (
+      {canShare ? (
+        <SurfaceCard>
+          <Text style={styles.eyebrow}>Viewing</Text>
+          <View style={styles.row}>
+            {(['personal', 'household'] as const).map((scope) => (
               <Pressable
-                key={budget.id}
-                style={[styles.tab, activeId === budget.id && styles.tabActive]}
-                onPress={() => void selectBudget(budget.id)}
+                key={scope}
+                style={[styles.scopeChip, moneyScope === scope && styles.scopeChipActive]}
+                onPress={() => setMoneyScope(scope)}
               >
                 <Text
                   style={[
-                    styles.tabText,
-                    activeId === budget.id && styles.tabTextActive,
+                    styles.scopeChipText,
+                    moneyScope === scope && styles.scopeChipTextActive,
                   ]}
                 >
-                  {budget.name} ·{' '}
-                  {budget.visibility === 'SHARED' ? 'Shared' : 'Personal'}
+                  {scope === 'personal' ? 'Personal' : 'Household'}
                 </Text>
               </Pressable>
             ))}
           </View>
-        </ScrollView>
-      )}
+          {visibilityLines ? (
+            <Text style={styles.meta}>
+              {visibilityLines.yours}
+              {visibilityLines.partner ? `\n${visibilityLines.partner}` : ''}
+            </Text>
+          ) : null}
+        </SurfaceCard>
+      ) : null}
 
-      {detail ? (
+      {!detail && moneyScope === 'personal' ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>No personal budget yet</Text>
+          <AppButton disabled={busy} onPress={() => void createPersonal()} variant="acid">
+            <AcidButtonLabel>Create personal space</AcidButtonLabel>
+          </AppButton>
+        </View>
+      ) : null}
+
+      {moneyScope === 'personal' && detail ? (
         <>
           <SegmentedControl
             value={section}
@@ -218,19 +210,9 @@ export function BudgetScreen({ account, notify }: Props) {
             <FocusHero
               accentDot
               eyebrow="Cashflow pulse"
-              meta={`Income ${formatMoney(detail.summary?.incomeCents ?? 0, currency)} · Spent ${formatMoney(detail.summary?.expenseCents ?? 0, currency)} · Planned ${formatMoney(detail.summary?.plannedCents ?? 0, currency)}`}
+              meta={`Income ${formatMoney(detail.summary?.incomeCents ?? 0, currency)} · Spent ${formatMoney(detail.summary?.expenseCents ?? 0, currency)}`}
               title={formatMoney(detail.summary?.balanceCents ?? 0, currency)}
               subtitle="Balance this month"
-              actions={
-                <>
-                  <AppButton onPress={() => setSection('outgoings')} variant="acid">
-                    <AcidButtonLabel>Review spending</AcidButtonLabel>
-                  </AppButton>
-                  <AppButton onPress={() => setSection('wealth')} variant="outlineDark">
-                    Open wealth
-                  </AppButton>
-                </>
-              }
             />
           ) : null}
 
@@ -240,6 +222,8 @@ export function BudgetScreen({ account, notify }: Props) {
               preferredCurrency={currency}
               notify={notify}
               onChanged={() => void reload(activeId ?? undefined)}
+              canMoveToHousehold={canShare && detail.visibility === 'PRIVATE'}
+              yourGrant={account.moneyVisibilityGrant ?? 'SHARED_BILLS_ONLY'}
             />
           ) : null}
 
@@ -253,40 +237,64 @@ export function BudgetScreen({ account, notify }: Props) {
           ) : null}
         </>
       ) : null}
+
+      {moneyScope === 'household' && householdLens ? (
+        <>
+          <SegmentedControl
+            value={section}
+            onChange={setSection}
+            options={[
+              { id: 'overview', label: 'Overview', icon: 'overview' },
+              { id: 'outgoings', label: 'Spending', icon: 'spending' },
+              { id: 'wealth', label: 'Wealth', icon: 'wealth' },
+            ]}
+          />
+          {section === 'overview' ? (
+            <FocusHero
+              accentDot
+              eyebrow="Household overview"
+              meta="Combined outgoings this month"
+              title={formatMoney(householdLens.totals.expenseCents, householdLens.currency)}
+              subtitle={
+                householdLens.emptySharedOnly
+                  ? 'No household bills yet. Move a bill from Personal.'
+                  : 'Household spending'
+              }
+            />
+          ) : null}
+          {section === 'outgoings' ? (
+            <OutgoingsView
+              preferredCurrency={currency}
+              notify={notify}
+              onChanged={() => void reload(activeId ?? undefined)}
+              householdLens={householdLens}
+              viewerId={account.user.id}
+            />
+          ) : null}
+          {section === 'wealth' ? (
+            <WealthView
+              account={account}
+              budgetId={sharedBudgetId}
+              currency={currency}
+              notify={notify}
+            />
+          ) : null}
+        </>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   stack: { gap: 12, paddingBottom: 24 },
-  title: { fontSize: 26, fontWeight: '700', color: colors.ink },
-  lede: { color: colors.muted, lineHeight: 20 },
   row: { flexDirection: 'row', gap: 8 },
-  button: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 5,
-    backgroundColor: colors.ink,
-    borderRadius: 12,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  eyebrow: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
-  buttonSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 5,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 12,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: { color: colors.paper, fontWeight: '700' },
-  buttonTextSecondary: { color: colors.ink, fontWeight: '700' },
-  disabled: { opacity: 0.45 },
   hint: { color: colors.muted, fontSize: 12 },
   card: {
     backgroundColor: colors.paper,
@@ -297,31 +305,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   cardTitle: { fontSize: 22, fontWeight: '700', color: colors.ink },
-  meta: { color: colors.muted, fontSize: 12 },
-  tabs: { flexDirection: 'row', gap: 8 },
-  tab: {
+  meta: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  scopeChip: {
+    flex: 1,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: colors.paper,
-  },
-  tabActive: { backgroundColor: colors.ink, borderColor: colors.ink },
-  tabText: { color: colors.ink, fontWeight: '600', fontSize: 12 },
-  tabTextActive: { color: colors.acid },
-  chip: {
+    borderRadius: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: colors.paper,
-    flexDirection: 'row',
-    gap: 5,
   },
-  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
-  chipText: { color: colors.ink, fontWeight: '600', fontSize: 12 },
-  chipTextActive: { color: colors.acid },
+  scopeChipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  scopeChipText: { color: colors.ink, fontWeight: '700', fontSize: 12 },
+  scopeChipTextActive: { color: colors.acid },
 });

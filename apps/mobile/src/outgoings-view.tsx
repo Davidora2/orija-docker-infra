@@ -17,11 +17,13 @@ import {
   getMonthOutgoings,
   listRecurringOutgoings,
   markOutgoingPaid,
+  moveRecurringToHousehold,
   unmarkOutgoingPaid,
   updateBudget,
   updateBudgetEntry,
   updateRecurringOutgoing,
   type Budget,
+  type HouseholdMoneyLens,
   type MonthOutgoings,
   type OutgoingItem,
   type RecurringOutgoing,
@@ -56,18 +58,74 @@ const MONTH_NAMES = [
 ];
 
 type Props = {
-  budget: Budget;
+  budget?: Budget;
   preferredCurrency?: string;
   notify: (message: string) => void;
   onChanged: () => void;
+  canMoveToHousehold?: boolean;
+  yourGrant?: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY';
+  householdLens?: HouseholdMoneyLens;
+  viewerId?: string;
 };
 
-export function OutgoingsView({
+export function OutgoingsView(props: Props) {
+  if (props.householdLens) {
+    return (
+      <HouseholdOutgoingsMobile
+        lens={props.householdLens}
+        viewerId={props.viewerId ?? ''}
+        preferredCurrency={props.preferredCurrency}
+      />
+    );
+  }
+  if (!props.budget) return null;
+  return <PersonalOutgoingsView {...props} budget={props.budget} />;
+}
+
+function HouseholdOutgoingsMobile({
+  lens,
+  viewerId,
+  preferredCurrency,
+}: {
+  lens: HouseholdMoneyLens;
+  viewerId: string;
+  preferredCurrency?: string;
+}) {
+  const displayCurrency = preferredCurrency || lens.currency || 'GBP';
+  return (
+    <View style={styles.card}>
+      <Text style={styles.eyebrow}>Household bills</Text>
+      {lens.emptySharedOnly ? (
+        <Text style={styles.meta}>
+          No household bills yet. Move a bill from Personal, or ask your partner to share one.
+        </Text>
+      ) : null}
+      {lens.list.map((item) => (
+        <View key={item.id} style={styles.listRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.itemTitle}>{item.title}</Text>
+            <Text style={styles.meta}>
+              {item.date} · {item.ownerUserId === viewerId ? 'You' : item.ownerDisplayName}
+              {item.readOnly ? ' · read-only' : ''}
+            </Text>
+          </View>
+          <Text style={[styles.itemTitle, { color: colors.danger }]}>
+            -{formatMoney(item.amountCents, displayCurrency)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function PersonalOutgoingsView({
   budget,
   preferredCurrency,
   notify,
   onChanged,
-}: Props) {
+  canMoveToHousehold = false,
+  yourGrant = 'SHARED_BILLS_ONLY',
+}: Props & { budget: Budget }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -422,6 +480,23 @@ export function OutgoingsView({
       setBusy(false);
     }
   }
+
+  async function moveToHousehold(row: RecurringOutgoing) {
+    setBusy(true);
+    try {
+      await moveRecurringToHousehold(budget.id, row.id);
+      await load();
+      onChanged();
+      notify('Bill moved to household budget.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not move bill.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const moveLabel =
+    yourGrant === 'FULL_VISIBILITY' ? 'Mark household' : 'Move to household';
 
   async function togglePaid(item: OutgoingItem) {
     if (
@@ -1018,6 +1093,13 @@ export function OutgoingsView({
                       {row.note ? ` · ${row.note}` : ''}
                     </Text>
                   </View>
+                  <Pressable
+                    disabled={!canMoveToHousehold || busy}
+                    style={styles.chip}
+                    onPress={() => void moveToHousehold(row)}
+                  >
+                    <Text style={styles.chipText}>{moveLabel}</Text>
+                  </Pressable>
                   <Pressable style={styles.chip} onPress={() => startEdit(row)}>
                     <Text style={styles.chipText}>Edit</Text>
                   </Pressable>

@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  Alert,
 } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +29,7 @@ import {
   register,
   resetPassword,
   setActiveHousehold,
+  updateMoneyVisibilityGrant,
   updateProfile,
   verifyResetCode,
   getWealthMeta,
@@ -343,6 +345,29 @@ export function AccountSheet({
   const activeHousehold = account?.households.find((household) => household.active);
   const canInvite =
     activeHousehold?.role === 'OWNER' && (account?.members.length ?? 0) < 2;
+  const partner = account?.members.find((member) => member.id !== account.user.id);
+  const yourGrant = account?.moneyVisibilityGrant ?? 'SHARED_BILLS_ONLY';
+
+  async function saveMoneyGrant(grant: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY') {
+    await perform(async () => {
+      onAccountChange(await updateMoneyVisibilityGrant(grant));
+      notify('Money visibility updated.');
+    });
+  }
+
+  function confirmFullVisibility() {
+    Alert.alert(
+      'Share full visibility?',
+      `${partner?.displayName ?? 'Your partner'} will see your personal recurring bills, daily spending entries, and pay schedule in Household view. They won't be able to edit your personal budget.`,
+      [
+        { text: 'Keep shared bills only', style: 'cancel' },
+        {
+          text: 'Turn on full visibility',
+          onPress: () => void saveMoneyGrant('FULL_VISIBILITY'),
+        },
+      ],
+    );
+  }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -694,6 +719,49 @@ export function AccountSheet({
                     <Text style={styles.memberRole}>{member.role}</Text>
                   </View>
                 ))}
+
+                {partner ? (
+                  <View style={styles.inviteCard}>
+                    <Text style={styles.sectionTitle}>Money visibility</Text>
+                    <Text style={styles.sectionCaption}>
+                      Choose what your partner can see of your spending. They control what
+                      you see of theirs.
+                    </Text>
+                    <Text style={styles.label}>WHAT {partner.displayName.toUpperCase()} CAN SEE</Text>
+                    <Pressable
+                      style={[
+                        styles.modeButton,
+                        yourGrant === 'SHARED_BILLS_ONLY' && styles.modeButtonActive,
+                      ]}
+                      onPress={() => void saveMoneyGrant('SHARED_BILLS_ONLY')}
+                    >
+                      <Text
+                        style={[
+                          styles.modeText,
+                          yourGrant === 'SHARED_BILLS_ONLY' && styles.modeTextActive,
+                        ]}
+                      >
+                        Shared bills only
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.modeButton,
+                        yourGrant === 'FULL_VISIBILITY' && styles.modeButtonActive,
+                      ]}
+                      onPress={confirmFullVisibility}
+                    >
+                      <Text
+                        style={[
+                          styles.modeText,
+                          yourGrant === 'FULL_VISIBILITY' && styles.modeTextActive,
+                        ]}
+                      >
+                        Full visibility
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
 
                 {canInvite && (
                   <View style={styles.inviteCard}>

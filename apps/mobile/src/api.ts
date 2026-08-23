@@ -60,6 +60,8 @@ export type HouseholdMember = {
 export type Account = {
   user: AccountUser;
   activeHouseholdId: string | null;
+  moneyVisibilityGrant?: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY';
+  partnerMoneyVisibilityGrant?: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY' | null;
   households: Household[];
   members: HouseholdMember[];
 };
@@ -643,6 +645,67 @@ export async function setActiveHousehold(householdId: string): Promise<Account> 
     method: 'PATCH',
     body: JSON.stringify({ householdId }),
   });
+}
+
+export async function updateMoneyVisibilityGrant(
+  grant: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY',
+): Promise<Account> {
+  return request<Account>('/v1/households/members/me/money-visibility', {
+    method: 'PUT',
+    body: JSON.stringify({ grant }),
+  });
+}
+
+export type HouseholdMoneyLens = {
+  lens: 'household';
+  householdId: string;
+  year: number;
+  month: number;
+  currency: string;
+  yourGrant: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY';
+  partnerGrant: 'SHARED_BILLS_ONLY' | 'FULL_VISIBILITY' | null;
+  partner: { id: string; displayName: string } | null;
+  recurring: Array<
+    RecurringOutgoing & {
+      ownerUserId: string;
+      ownerDisplayName: string;
+      readOnly: boolean;
+      sourceVisibility: 'PRIVATE' | 'SHARED';
+    }
+  >;
+  list: Array<
+    OutgoingItem & {
+      ownerUserId: string;
+      ownerDisplayName: string;
+      readOnly: boolean;
+      sourceBudgetId: string;
+      sourceVisibility: 'PRIVATE' | 'SHARED';
+    }
+  >;
+  totals: MonthOutgoings['totals'];
+  emptySharedOnly: boolean;
+};
+
+export async function getHouseholdMoneyLens(
+  year: number,
+  month: number,
+): Promise<HouseholdMoneyLens> {
+  const params = new URLSearchParams({
+    year: String(year),
+    month: String(month),
+  });
+  return request(`/v1/households/active/money-lens?${params.toString()}`);
+}
+
+export async function moveRecurringToHousehold(
+  budgetId: string,
+  recurringId: string,
+): Promise<RecurringOutgoing> {
+  const raw = await request<Record<string, unknown>>(
+    `/v1/budgets/${budgetId}/recurring/${recurringId}/move-to-household`,
+    { method: 'POST' },
+  );
+  return mapRecurring(raw);
 }
 
 export async function listLifeItems(kind?: ItemKind): Promise<LifeItem[]> {
