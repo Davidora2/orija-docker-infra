@@ -1560,6 +1560,7 @@ export type CashflowSeriesPoint = {
   month: number;
   label: string;
   incomeCents: number;
+  expectedIncomeCents: number;
   expenseCents: number;
   dailyExpenseCents: number;
   recurringCents: number;

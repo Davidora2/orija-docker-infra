@@ -1262,8 +1262,19 @@ export function registerOnboardingAndBudgetRoutes(
         })
         .parse(request.query);
 
-      const [budget] = await sql<{ currency: string }[]>`
-        SELECT currency FROM budgets WHERE id = ${id}
+      const [budget] = await sql<{
+        currency: string;
+        payFrequency: PayFrequency | null;
+        nextPayDate: string | null;
+        typicalPayCents: number | null;
+      }[]>`
+        SELECT
+          currency,
+          pay_frequency,
+          next_pay_date::text AS next_pay_date,
+          typical_pay_cents
+        FROM budgets
+        WHERE id = ${id}
       `;
       if (!budget) {
         throw new ApiError(404, 'budget_not_found', 'Budget not found.');
@@ -1348,6 +1359,16 @@ export function registerOnboardingAndBudgetRoutes(
         ).reduce((sum, item) => sum + item.amountCents, 0);
         const dailyExpenseCents = Number(entryTotals?.expenseCents ?? 0);
         const incomeCents = Number(entryTotals?.incomeCents ?? 0);
+        const payDates = payDatesInMonth(
+          year,
+          month,
+          budget.payFrequency,
+          budget.nextPayDate,
+        );
+        const expectedIncomeCents =
+          budget.typicalPayCents != null && payDates.length > 0
+            ? Number(budget.typicalPayCents) * payDates.length
+            : 0;
         const savingContributionCents = savingGoals.reduce(
           (sum, goal) => sum + Number(goal.monthlyContributionCents),
           0,
@@ -1361,18 +1382,21 @@ export function registerOnboardingAndBudgetRoutes(
           recurringCents +
           savingContributionCents +
           debtPaymentCents;
+        const effectiveIncomeCents =
+          incomeCents > 0 ? incomeCents : expectedIncomeCents;
 
         series.push({
           year,
           month,
           label: `${year}-${String(month).padStart(2, '0')}`,
           incomeCents,
+          expectedIncomeCents,
           expenseCents,
           dailyExpenseCents,
           recurringCents,
           savingContributionCents,
           debtPaymentCents,
-          netCents: incomeCents - expenseCents,
+          netCents: effectiveIncomeCents - expenseCents,
         });
       }
 

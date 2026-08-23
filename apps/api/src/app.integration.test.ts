@@ -545,6 +545,26 @@ suite('account and couple household API', () => {
       month.list.filter((item) => item.title === 'Car finance').map((item) => item.date),
     ).toEqual(['2026-08-07', '2026-08-21']);
 
+    const cashflow = await app.inject({
+      method: 'GET',
+      url: `/v1/budgets/${personalBudget.id}/cashflow-series?months=3`,
+      headers: { authorization: `Bearer ${owner.accessToken}` },
+    });
+    expect(cashflow.statusCode).toBe(200);
+    const series = cashflow.json<{
+      series: {
+        month: number;
+        incomeCents: number;
+        expectedIncomeCents: number;
+        expenseCents: number;
+      }[];
+    }>();
+    expect(series.series).toHaveLength(3);
+    const august = series.series.find((point) => point.month === 8);
+    expect(august?.incomeCents).toBe(0);
+    expect(august?.expectedIncomeCents).toBe(250_000);
+    expect(august?.expenseCents).toBeGreaterThan(0);
+
     const moved = await app.inject({
       method: 'PATCH',
       url: `/v1/budgets/${personalBudget.id}/recurring/${biweekly.json<{ id: string }>().id}`,

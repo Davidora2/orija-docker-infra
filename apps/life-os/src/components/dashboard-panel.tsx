@@ -93,12 +93,20 @@ export function DashboardPanel({
     return Math.max(
       1,
       ...data.series.flatMap((point) => [
-        point.incomeCents,
+        point.incomeCents > 0 ? point.incomeCents : point.expectedIncomeCents,
         point.expenseCents,
         point.savingContributionCents,
       ]),
     );
   }, [data]);
+
+  const chartUsesExpectedIncome = useMemo(
+    () =>
+      (data?.series ?? []).some(
+        (point) => point.incomeCents <= 0 && point.expectedIncomeCents > 0,
+      ),
+    [data],
+  );
 
   const plannedCents =
     budget.summary?.plannedCents ??
@@ -108,6 +116,9 @@ export function DashboardPanel({
     );
   const monthOutgoingsCents = month?.totals.expenseCents ?? 0;
   const recurringMonthlyCents = month?.totals.recurringCents ?? 0;
+  const oneOffCents = month?.totals.dailyExpenseCents ?? month?.totals.oneOffCents ?? 0;
+  const savingCents = month?.totals.savingContributionCents ?? 0;
+  const debtCents = month?.totals.debtPaymentCents ?? 0;
   const hasCategoryPlan = plannedCents > 0;
   const hasOutgoings = monthOutgoingsCents > 0;
   const recordedIncomeCents = month?.totals.incomeCents ?? 0;
@@ -289,13 +300,21 @@ export function DashboardPanel({
               </p>
             </div>
             <CapacityRing
-              used={monthOutgoingsCents / 100}
-              capacity={hasCategoryPlan ? plannedCents / 100 : monthOutgoingsCents / 100}
+              used={
+                hasCategoryPlan
+                  ? monthOutgoingsCents / 100
+                  : recurringMonthlyCents / 100
+              }
+              capacity={
+                hasCategoryPlan
+                  ? plannedCents / 100
+                  : monthOutgoingsCents / 100
+              }
               size={92}
               label={
                 hasCategoryPlan
                   ? "Monthly outgoings against category plan"
-                  : "Monthly outgoings from bills and entries"
+                  : "Regular bills share of month outgoings"
               }
               colors={{ used: "#617a57", track: "#e8ece7" }}
             />
@@ -319,8 +338,23 @@ export function DashboardPanel({
             </div>
           </div>
           <p className="mt-3 text-[11px] leading-4 text-[#87918c]">
-            Compares category targets with all scheduled or recorded outgoings
-            this month.
+            {hasCategoryPlan
+              ? "Compares category targets with all scheduled or recorded outgoings this month."
+              : hasOutgoings
+                ? `Month outgoings include ${formatMoney(recurringMonthlyCents, currency)} regular bills${
+                    oneOffCents > 0
+                      ? `, ${formatMoney(oneOffCents, currency)} one-off spending`
+                      : ""
+                  }${
+                    savingCents > 0
+                      ? `, ${formatMoney(savingCents, currency)} savings`
+                      : ""
+                  }${
+                    debtCents > 0
+                      ? `, ${formatMoney(debtCents, currency)} debt payments`
+                      : ""
+                  }. Set category amounts in Spending to track against a plan.`
+                : "Add recurring bills or category amounts in Spending."}
           </p>
         </article>
 
@@ -382,7 +416,9 @@ export function DashboardPanel({
             </p>
             <h4 className="mt-2 font-serif text-2xl">Six-month context</h4>
             <p className="mt-1 text-sm text-[#6c7771]">
-              Recorded income and total outgoings by month.
+              {chartUsesExpectedIncome
+                ? "Expected pay and total outgoings by month (recorded income when logged)."
+                : "Recorded income and total outgoings by month."}
             </p>
           </div>
         </div>
@@ -392,7 +428,12 @@ export function DashboardPanel({
             maxValue={maxValue}
             currency={currency}
             bars={[
-              { key: "incomeCents", label: "Income", color: "#617a57" },
+              {
+                key: "incomeCents",
+                fallbackKey: "expectedIncomeCents",
+                label: chartUsesExpectedIncome ? "Expected pay" : "Income",
+                color: "#617a57",
+              },
               { key: "expenseCents", label: "Outgoings", color: "#d88b77" },
             ]}
           />
@@ -418,13 +459,27 @@ function BarChart({
   series: CashflowSeries["series"];
   maxValue: number;
   currency: string;
-  bars: { key: keyof CashflowSeries["series"][number]; label: string; color: string }[];
+  bars: {
+    key: keyof CashflowSeries["series"][number];
+    fallbackKey?: keyof CashflowSeries["series"][number];
+    label: string;
+    color: string;
+  }[];
 }) {
   const width = Math.max(320, series.length * 64);
   const height = 180;
   const pad = 24;
   const groupWidth = (width - pad * 2) / Math.max(series.length, 1);
   const barWidth = Math.max(8, (groupWidth - 8) / bars.length);
+
+  const barValue = (
+    point: CashflowSeries["series"][number],
+    bar: (typeof bars)[number],
+  ) => {
+    const primary = Number(point[bar.key] ?? 0);
+    if (primary > 0 || !bar.fallbackKey) return primary;
+    return Number(point[bar.fallbackKey] ?? 0);
+  };
 
   return (
     <div className="mt-4 overflow-x-auto">
@@ -434,7 +489,7 @@ function BarChart({
           return (
             <g key={point.label}>
               {bars.map((bar, barIndex) => {
-                const value = Number(point[bar.key] ?? 0);
+                const value = barValue(point, bar);
                 const barHeight =
                   maxValue > 0 ? (value / maxValue) * (height - pad * 2) : 0;
                 const x = x0 + barIndex * barWidth;

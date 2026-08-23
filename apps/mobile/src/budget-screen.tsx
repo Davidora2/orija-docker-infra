@@ -8,7 +8,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createBudget,
-  formatMoney,
   getBudget,
   getHouseholdMoneyLens,
   listBudgets,
@@ -28,6 +27,7 @@ import {
 import { LifeIcon } from './life-icon';
 import { OutgoingsView } from './outgoings-view';
 import { WealthView } from './wealth-view';
+import { DashboardView } from './dashboard-view';
 import {
   AcidButtonLabel,
   AppButton,
@@ -214,12 +214,11 @@ export function BudgetScreen({ account, notify, onOpenHouseholdSettings }: Props
           />
 
           {section === 'overview' ? (
-            <FocusHero
-              accentDot
-              eyebrow="Cashflow pulse"
-              meta={`Income ${formatMoney(detail.summary?.incomeCents ?? 0, currency)} · Spent ${formatMoney(detail.summary?.expenseCents ?? 0, currency)}`}
-              title={formatMoney(detail.summary?.balanceCents ?? 0, currency)}
-              subtitle="Balance this month"
+            <DashboardView
+              budget={detail}
+              currency={currency}
+              notify={notify}
+              onNavigate={(next) => setSection(next)}
             />
           ) : null}
 
@@ -257,16 +256,11 @@ export function BudgetScreen({ account, notify, onOpenHouseholdSettings }: Props
             ]}
           />
           {section === 'overview' ? (
-            <FocusHero
-              accentDot
-              eyebrow="Household overview"
-              meta="Combined outgoings this month"
-              title={formatMoney(householdLens.totals.expenseCents, householdLens.currency)}
-              subtitle={
-                householdLens.emptySharedOnly
-                  ? 'No household bills yet. Move a bill from Personal.'
-                  : 'Household spending'
-              }
+            <DashboardView
+              currency={currency}
+              householdLens={householdLens}
+              notify={notify}
+              onNavigate={(next) => setSection(next)}
             />
           ) : null}
           {section === 'outgoings' ? (

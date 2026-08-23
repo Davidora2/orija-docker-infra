@@ -1427,6 +1427,36 @@ export async function getMonthOutgoings(
   );
 }
 
+export type CashflowSeriesPoint = {
+  year: number;
+  month: number;
+  label: string;
+  incomeCents: number;
+  expectedIncomeCents: number;
+  expenseCents: number;
+  dailyExpenseCents: number;
+  recurringCents: number;
+  savingContributionCents: number;
+  debtPaymentCents: number;
+  netCents: number;
+};
+
+export type CashflowSeries = {
+  budgetId: string;
+  currency: string;
+  months: number;
+  series: CashflowSeriesPoint[];
+};
+
+export async function getCashflowSeries(
+  budgetId: string,
+  months = 6,
+): Promise<CashflowSeries> {
+  return request<CashflowSeries>(
+    `/v1/budgets/${budgetId}/cashflow-series?months=${months}`,
+  );
+}
+
 export async function markOutgoingPaid(
   budgetId: string,
   input: {
