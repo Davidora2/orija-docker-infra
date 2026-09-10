@@ -59,8 +59,10 @@ uploadBtn.addEventListener("click", async () => {
         completeUrl: (uploadId) => apiUrl(`/api/requests/${id}/uploads/${uploadId}/complete`),
         file,
         extraComplete: { uploaderName, note },
-        onProgress(done, total, name) {
-          progressEl.textContent = `${name} · chunk ${done}/${total}`;
+        onProgress(done, total, name, extra = {}) {
+          progressEl.textContent = extra.retrying
+            ? `${name} · ${done}/${total} retrying…`
+            : `${name} · ${done}/${total}`;
         },
       });
       ok += 1;

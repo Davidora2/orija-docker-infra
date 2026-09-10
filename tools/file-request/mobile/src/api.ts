@@ -45,20 +45,29 @@ export async function pingInbox(serverUrl: string = DEFAULT_SERVER_URL): Promise
 }
 
 async function putChunk(url: string, body: BodyInit, attempt = 1): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
   try {
     const res = await fetch(url, {
       method: "PUT",
       headers: { "content-type": "application/octet-stream" },
       body,
+      signal: controller.signal,
     });
     if (!res.ok) {
       const err = await readJson(res);
       throw new Error(err.error || `Chunk failed (${res.status})`);
     }
   } catch (error) {
-    if (attempt >= 8) throw error;
-    await new Promise((r) => setTimeout(r, Math.min(15_000, 500 * 2 ** attempt)));
+    if (attempt >= 8) {
+      throw error instanceof Error && error.name === "AbortError"
+        ? new Error("Upload stalled. Check the connection and try again.")
+        : error;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(8_000, 400 * 2 ** attempt)));
     return putChunk(url, body, attempt + 1);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

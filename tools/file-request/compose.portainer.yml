@@ -20,6 +20,7 @@ services:
       DATA_DIR: /data
       UPLOAD_ROOT: /data/uploads
       MAX_FILE_MB: ${MAX_FILE_MB:-0}
+      CHUNK_SIZE_BYTES: ${CHUNK_SIZE_BYTES:-1048576}
       IMMICH_URL: ${IMMICH_URL:-http://host.docker.internal:2283}
       FILE_REQUEST_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
       FILE_REQUEST_REPO_REF: ${FILE_REQUEST_REPO_REF:-refs/heads/cursor/smb-immich-image-tool-f2be}

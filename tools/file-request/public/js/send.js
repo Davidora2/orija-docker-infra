@@ -54,8 +54,11 @@ uploadBtn.addEventListener("click", async () => {
         chunkPath: (uploadId, chunkIndex) => `api/open/uploads/${uploadId}/chunks/${chunkIndex}`,
         completeUrl: (uploadId) => `api/open/uploads/${uploadId}/complete`,
         file,
-        onProgress(done, total, name) {
-          progressEl.textContent = `${name} · ${done}/${total}`;
+        onProgress(done, total, name, extra = {}) {
+          const pct = Math.round((done / total) * 100);
+          progressEl.textContent = extra.retrying
+            ? `${name} · ${done}/${total} retrying…`
+            : `${name} · ${done}/${total} (${pct}%)`;
         },
       });
       ok += 1;

@@ -110,7 +110,7 @@ function request(method, urlPath, { headers = {}, body } = {}) {
           } catch {
             json = null;
           }
-          resolve({ status: res.statusCode, json, raw });
+          resolve({ status: res.statusCode, json, raw, headers: res.headers });
         });
       },
     );
@@ -190,6 +190,36 @@ try {
     body: "{}",
   });
   assert(openDone.status === 201 && openDone.json.count === 1, "open complete failed: " + JSON.stringify(openDone.json));
+  assert(openStart.json.chunkSize === 32, "test chunk size should be 32 bytes");
+
+  const videoBytes = Buffer.concat([Buffer.from("ftypmp42"), Buffer.alloc(180, 7)]);
+  const videoStart = await request("POST", "/api/open/uploads", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: "clip.mp4", size: videoBytes.length, mime: "video/mp4" }),
+  });
+  assert(videoStart.status === 201 && videoStart.json.uploadId, "video start failed");
+  const videoChunkSize = Number(videoStart.json.chunkSize);
+  const videoChunks = Math.ceil(videoBytes.length / videoChunkSize);
+  assert(videoChunks > 1, "video fixture should span multiple chunks");
+  for (let i = 0; i < videoChunks; i++) {
+    const slice = videoBytes.subarray(i * videoChunkSize, Math.min(videoBytes.length, (i + 1) * videoChunkSize));
+    const put = await request("PUT", `/api/open/uploads/${videoStart.json.uploadId}/chunks/${i}`, {
+      headers: { "content-type": "application/octet-stream", "content-length": String(slice.length) },
+      body: slice,
+    });
+    assert(put.json?.ok, `video chunk ${i} failed`);
+  }
+  const videoDone = await request("POST", `/api/open/uploads/${videoStart.json.uploadId}/complete`, {
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert(videoDone.status === 201 && videoDone.json.files?.[0]?.originalName === "clip.mp4", "video complete failed");
+  const videoFileId = videoDone.json.files[0].id;
+  const preview = await request("GET", `/api/admin/files/open/${videoFileId}/preview`, {
+    headers: { ...auth, range: "bytes=0-7" },
+  });
+  assert(preview.status === 206, "video preview should support byte ranges");
+  assert(preview.raw.toString("utf8") === "ftypmp42", "video range preview mismatch");
 
   const denied = await request("GET", "/api/admin/requests");
   assert(denied.status === 401, "admin should require password");

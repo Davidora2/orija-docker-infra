@@ -43,7 +43,7 @@ function safeName(name) {
 function isAllowedFile(filename, mime) {
   return (
     config.allowedMime.has(mime) ||
-    /\.(jpe?g|png|webp|heic|heif|gif|tiff?|bmp|mp4|mov|avi|webm)$/i.test(filename || "")
+    /\.(jpe?g|png|webp|heic|heif|gif|tiff?|bmp|mp4|m4v|mov|avi|webm|mkv|3gp|mpeg|mpg)$/i.test(filename || "")
   );
 }
 
@@ -78,7 +78,7 @@ const upload = multer({
   }),
   limits: { files: 10_000 },
   fileFilter(_req, file, cb) {
-    if (config.allowedMime.has(file.mimetype) || /\.(jpe?g|png|webp|heic|heif|gif|tiff?|bmp|mp4|mov|avi|webm)$/i.test(file.originalname)) {
+    if (config.allowedMime.has(file.mimetype) || /\.(jpe?g|png|webp|heic|heif|gif|tiff?|bmp|mp4|m4v|mov|avi|webm|mkv|3gp|mpeg|mpg)$/i.test(file.originalname)) {
       cb(null, true);
     } else {
       cb(new Error(`Unsupported file type: ${file.mimetype || file.originalname}`));
@@ -146,7 +146,7 @@ app.post("/api/open/uploads", (req, res) => {
 
 app.put(
   "/api/open/uploads/:uploadId/chunks/:index",
-  express.raw({ type: "*/*", limit: "12mb" }),
+  express.raw({ type: "*/*", limit: "3mb" }),
   (req, res) => {
     try {
       const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
@@ -286,7 +286,7 @@ app.post("/api/inbox/:token/uploads", (req, res) => {
 
 app.put(
   "/api/inbox/:token/uploads/:uploadId/chunks/:index",
-  express.raw({ type: "*/*", limit: "12mb" }),
+  express.raw({ type: "*/*", limit: "3mb" }),
   (req, res) => {
     const device = settings.getDeviceByToken(req.params.token);
     if (!device) return res.status(404).json({ error: "Unknown phone inbox" });
@@ -470,7 +470,7 @@ app.post("/api/requests/:id/uploads", (req, res) => {
 
 app.put(
   "/api/requests/:id/uploads/:uploadId/chunks/:index",
-  express.raw({ type: "*/*", limit: "12mb" }),
+  express.raw({ type: "*/*", limit: "3mb" }),
   (req, res) => {
     const request = requireOpenRequest(req, res);
     if (!request) return;
@@ -601,7 +601,26 @@ app.get("/api/admin/files/:requestId/:fileId/preview", requireAdmin, (req, res) 
   if (!file) return res.status(404).end();
   const src = path.join(config.uploadRoot, request.id, file.storedName);
   if (!fs.existsSync(src)) return res.status(404).end();
-  res.type(file.mime || "application/octet-stream");
+  const stat = fs.statSync(src);
+  const mime = file.mime || "application/octet-stream";
+  res.type(mime);
+  res.set("Accept-Ranges", "bytes");
+  const range = req.get("range");
+  if (range) {
+    const match = /bytes=(\d+)-(\d*)/.exec(range);
+    const start = match ? Number(match[1]) : 0;
+    const end = match && match[2] ? Number(match[2]) : stat.size - 1;
+    if (start >= stat.size || end >= stat.size || start > end) {
+      res.set("Content-Range", `bytes */${stat.size}`);
+      return res.status(416).end();
+    }
+    res.status(206);
+    res.set("Content-Range", `bytes ${start}-${end}/${stat.size}`);
+    res.set("Content-Length", String(end - start + 1));
+    fs.createReadStream(src, { start, end }).pipe(res);
+    return;
+  }
+  res.set("Content-Length", String(stat.size));
   fs.createReadStream(src).pipe(res);
 });
 
@@ -630,6 +649,9 @@ app.get("/r/:id", (_req, res) => {
 });
 
 app.use((err, _req, res, _next) => {
+  if (err?.type === "request.aborted" || err?.code === "ECONNABORTED") {
+    return res.status(400).json({ error: "Upload interrupted, retry the chunk" });
+  }
   console.error(err);
   res.status(500).json({ error: err.message || "Server error" });
 });

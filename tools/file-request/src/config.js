@@ -89,5 +89,10 @@ export const config = {
     "video/quicktime",
     "video/x-msvideo",
     "video/webm",
+    "video/x-matroska",
+    "video/3gpp",
+    "video/3gpp2",
+    "video/mpeg",
+    "video/x-m4v",
   ]),
 };

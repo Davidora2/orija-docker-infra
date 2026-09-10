@@ -3,7 +3,7 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import { config } from "./config.js";
 
-const CHUNK_SIZE = Number(process.env.CHUNK_SIZE_BYTES) || 8 * 1024 * 1024; // 8 MiB — under Cloudflare’s ~100MB request cap
+const CHUNK_SIZE = Number(process.env.CHUNK_SIZE_BYTES) || 1 * 1024 * 1024; // 1 MiB — 8MB phone uploads were aborting mid-body
 
 function inboxRoot() {
   const dir = path.join(config.uploadRoot, "_inbox");

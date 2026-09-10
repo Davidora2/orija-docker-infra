@@ -250,7 +250,7 @@ function renderDetail() {
       const moved = Boolean(file.movedAt);
       const isVideo = (file.mime || "").startsWith("video/");
       const media = isVideo
-        ? `<video src="${previewUrl(request.id, file.id)}" muted></video>`
+        ? `<video src="${previewUrl(request.id, file.id)}" muted preload="metadata" controls playsinline></video>`
         : `<img src="${previewUrl(request.id, file.id)}" alt="${escapeHtml(file.originalName)}" />`;
       return `<label class="file-card">
         ${media}
