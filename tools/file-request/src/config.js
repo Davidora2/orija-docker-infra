@@ -62,7 +62,8 @@ export const config = {
   requestsFile,
   settingsFile,
   immichFolders,
-  maxFileBytes: Number(process.env.MAX_FILE_MB || 100) * 1024 * 1024,
+  unlimitedUploads: true,
+  maxFileBytes: Number.MAX_SAFE_INTEGER,
   allowedMime: new Set([
     "image/jpeg",
     "image/png",

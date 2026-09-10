@@ -16,7 +16,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       DATA_DIR: /app/data
       UPLOAD_ROOT: /app/data/uploads
-      MAX_FILE_MB: ${MAX_FILE_MB:-100}
+      MAX_FILE_MB: ${MAX_FILE_MB:-0}
       # Immich on the same host, default published port
       IMMICH_URL: ${IMMICH_URL:-http://host.docker.internal:2283}
       IMMICH_FOLDERS: ${IMMICH_FOLDERS:-Inbox=/immich/inbox,Family=/immich/family,Vacation=/immich/vacation}

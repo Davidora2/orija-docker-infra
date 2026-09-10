@@ -8,13 +8,14 @@ This is its **own Docker stack**. Run it on the same host as Immich; it does not
 
 1. In admin, set your Immich URL and paste each user’s API key (Immich → Account Settings → API Keys).
 2. Create a request (“Wedding weekend photos”) and share `/r/<id>`.
-3. Anyone with the link drops photos (no Immich account).
+3. Anyone with the link drops photos or videos (no Immich account, **no size cap**).
 4. Admin picks **user + album** (or Library / new album) and clicks **Send to Immich**.
 5. Files are uploaded with that user’s key, so they land in that person’s library.
 
+Public uploads (web link and phone app) are always sent as **8MB chunks**. That bypasses Cloudflare Tunnel’s ~100MB per-request cap. There is **no total file-size limit** on the relay. The relay then streams the assembled file to Immich on the LAN (set `IMMICH_URL` to the LAN/Docker URL, not the tunneled hostname).
+
 ```
-Phone / laptop  →  /r/<id>  →  staging
-Admin           →  /admin   →  Immich API (user key) → that user’s library / album
+Phone / laptop  →  8MB chunks (no size cap)  →  relay on your host  →  Immich LAN API
 ```
 
 ## Run as its own stack (same host as Immich)
@@ -55,9 +56,13 @@ docker network ls | grep -i immich
 docker compose -f docker-compose.yml -f docker-compose.immich-network.yml up -d
 ```
 
-## API keys
+## Uploads are not size-capped
 
-Each Immich user needs their own key. Uploads are owned by whoever owns the key.
+The phone app in `mobile/` and the public `/r/<id>` page both send files as **8MB chunks** over the public URL. The relay reassembles on disk, then uploads to Immich on the LAN. Cloudflare’s ~100MB request cap does not apply, and this stack does not impose a total file-size limit.
+
+See [mobile/README.md](./mobile/README.md).
+
+## API keys
 
 Recommended key permissions: `asset.upload`, `album.read`, `album.create`, `albumAsset.create`, `user.read`.
 
@@ -85,7 +90,12 @@ Admin calls need header `x-admin-password` when `ADMIN_PASSWORD` is set.
 | GET | `/api/admin/immich/users/:id/albums` | That user’s albums |
 | POST | `/api/admin/send-to-immich` | `{ requestId, fileIds, userId, albumId? }` |
 | POST | `/api/admin/requests` | Create request |
-| POST | `/api/requests/:id/upload` | Public multipart `files` |
+| POST | `/api/requests/:id/uploads` | Start a chunked public upload (`{ filename, size, mime }`) |
+| PUT | `/api/requests/:id/uploads/:uploadId/chunks/:index` | 8MB binary chunk |
+| POST | `/api/requests/:id/uploads/:uploadId/complete` | Finish chunked public upload |
+| POST | `/api/inbox/:token/uploads` | Start a phone inbox upload |
+| PUT | `/api/inbox/:token/uploads/:uploadId/chunks/:index` | 8MB binary chunk |
+| POST | `/api/inbox/:token/uploads/:uploadId/complete` | Reassemble and send to Immich |
 
 ## Notes
 

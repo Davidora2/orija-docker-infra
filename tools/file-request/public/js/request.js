@@ -1,3 +1,5 @@
+import { uploadFileInChunks } from "./chunked-upload.js";
+
 const id = location.pathname.split("/").filter(Boolean).pop();
 const toastEl = document.getElementById("toast");
 const dropzone = document.getElementById("dropzone");
@@ -43,18 +45,26 @@ dropzone.addEventListener("drop", (e) => {
 
 uploadBtn.addEventListener("click", async () => {
   if (!files.length) return;
-  const body = new FormData();
-  body.append("uploaderName", document.getElementById("uploaderName").value);
-  body.append("note", document.getElementById("note").value);
-  for (const file of files) body.append("files", file);
-
+  const uploaderName = document.getElementById("uploaderName").value;
+  const note = document.getElementById("note").value;
   uploadBtn.disabled = true;
-  progressEl.textContent = "Uploading…";
+  let ok = 0;
   try {
-    const res = await fetch(`/api/requests/${id}/upload`, { method: "POST", body });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Upload failed");
-    progressEl.textContent = `Uploaded ${data.count} file${data.count === 1 ? "" : "s"}. Thank you.`;
+    for (const [index, file] of files.entries()) {
+      progressEl.textContent = `Uploading ${index + 1}/${files.length}: ${file.name}`;
+      await uploadFileInChunks({
+        startUrl: `/api/requests/${id}/uploads`,
+        chunkPath: (uploadId, chunkIndex) => `/api/requests/${id}/uploads/${uploadId}/chunks/${chunkIndex}`,
+        completeUrl: (uploadId) => `/api/requests/${id}/uploads/${uploadId}/complete`,
+        file,
+        extraComplete: { uploaderName, note },
+        onProgress(done, total, name) {
+          progressEl.textContent = `${name} · chunk ${done}/${total}`;
+        },
+      });
+      ok += 1;
+    }
+    progressEl.textContent = `Uploaded ${ok} file${ok === 1 ? "" : "s"}. Thank you.`;
     setFiles([]);
     fileInput.value = "";
     toast("Upload complete");
@@ -81,7 +91,7 @@ async function boot() {
   }
   const request = await res.json();
   title.textContent = request.title;
-  description.textContent = request.description || "Drop photos or videos for this request.";
+  description.textContent = request.description || "Drop photos or videos for this request. No size limit.";
   document.title = request.title;
   if (request.closed) {
     statusPill.textContent = "Closed";

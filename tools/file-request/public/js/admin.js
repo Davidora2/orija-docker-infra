@@ -34,6 +34,7 @@ let state = {
   immichUsers: [],
   albums: [],
   selectedUserId: "",
+  devices: [],
 };
 
 function selectedRequest() {
@@ -43,7 +44,8 @@ function selectedRequest() {
 function formatBytes(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function escapeHtml(value) {
@@ -82,6 +84,54 @@ function renderUsers() {
         render();
         await loadAlbums();
         toast("User removed");
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+  });
+}
+
+function fillDeviceSelects() {
+  const userSelect = document.getElementById("deviceUserSelect");
+  const albumSelect = document.getElementById("deviceAlbumSelect");
+  userSelect.innerHTML = state.immichUsers.length
+    ? state.immichUsers.map((u) => `<option value="${u.id}">${escapeHtml(u.label)}</option>`).join("")
+    : `<option value="">Add an Immich user first</option>`;
+  if (state.selectedUserId) userSelect.value = state.selectedUserId;
+  albumSelect.innerHTML = [
+    `<option value="">Library (no album)</option>`,
+    ...state.albums.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`),
+  ].join("");
+}
+
+function renderDevices() {
+  fillDeviceSelects();
+  const list = document.getElementById("deviceList");
+  if (!state.devices.length) {
+    list.className = "empty";
+    list.textContent = "No phones yet.";
+    return;
+  }
+  list.className = "stack";
+  list.innerHTML = state.devices
+    .map(
+      (d) => `<div class="user-row">
+        <div>
+          <strong>${escapeHtml(d.label)}</strong>
+          <div class="muted">${escapeHtml(d.userLabel)} · ${escapeHtml(d.albumName || "Library")}</div>
+          <div class="mono muted">${escapeHtml(d.token)}</div>
+        </div>
+        <button class="btn secondary" data-remove-device="${d.id}" type="button">Remove</button>
+      </div>`,
+    )
+    .join("");
+  list.querySelectorAll("[data-remove-device]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const updated = await api(`/api/admin/devices/${btn.dataset.removeDevice}`, { method: "DELETE" });
+        state.devices = updated.devices || [];
+        renderDevices();
+        toast("Phone inbox removed");
       } catch (error) {
         toast(error.message);
       }
@@ -212,6 +262,7 @@ function renderDetail() {
 
 function render() {
   renderUsers();
+  renderDevices();
   renderRequests();
   renderDetail();
 }
@@ -240,6 +291,7 @@ async function refresh() {
   ]);
   state.folders = cfg.immichFolders;
   state.immichUsers = cfg.immich?.users || [];
+  state.devices = cfg.immich?.devices || [];
   document.getElementById("immichUrl").value = cfg.immich?.immichUrl || "";
   if (!state.selectedUserId && state.immichUsers[0]) state.selectedUserId = state.immichUsers[0].id;
   state.requests = requests;
@@ -299,6 +351,38 @@ document.getElementById("addUserBtn").addEventListener("click", async () => {
   } catch (error) {
     toast(error.message);
   }
+});
+
+document.getElementById("deviceUserSelect").addEventListener("change", (e) => {
+  state.selectedUserId = e.target.value;
+  loadAlbums();
+});
+
+document.getElementById("createDeviceBtn").addEventListener("click", async () => {
+  try {
+    const albumSelect = document.getElementById("deviceAlbumSelect");
+    const created = await api("/api/admin/devices", {
+      method: "POST",
+      body: {
+        label: document.getElementById("deviceLabel").value,
+        userId: document.getElementById("deviceUserSelect").value,
+        albumId: albumSelect.value || "",
+        albumName: albumSelect.value ? albumSelect.selectedOptions[0]?.textContent : "Library",
+      },
+    });
+    document.getElementById("deviceCreated").hidden = false;
+    document.getElementById("deviceServerUrl").value = created.appServerUrl;
+    document.getElementById("deviceToken").value = created.token;
+    await refresh();
+    toast("Phone token created");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
+document.getElementById("copyDeviceBtn").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(document.getElementById("deviceToken").value);
+  toast("Token copied");
 });
 
 document.getElementById("createBtn").addEventListener("click", async () => {

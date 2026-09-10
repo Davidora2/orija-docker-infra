@@ -80,6 +80,7 @@ const child = spawn(process.execPath, [path.join(root, "src/server.js")], {
     DATA_DIR: dataDir,
     UPLOAD_ROOT: path.join(dataDir, "uploads"),
     IMMICH_FOLDERS: `Inbox=${inbox},Family=${family}`,
+    CHUNK_SIZE_BYTES: "32",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -164,6 +165,7 @@ const auth = { "x-admin-password": "test-pass" };
 try {
   const health = await request("GET", "/api/health");
   assert(health.status === 200 && health.json.ok, "health failed");
+  assert(health.json.unlimitedUploads === true, "health should report unlimited uploads");
 
   const denied = await request("GET", "/api/admin/requests");
   assert(denied.status === 401, "admin should require password");
@@ -179,6 +181,31 @@ try {
   const publicMeta = await request("GET", `/api/requests/${id}`);
   assert(publicMeta.json.title === "Weekend photos", "public meta mismatch");
   assert(!("files" in publicMeta.json), "public meta should hide files");
+  assert(publicMeta.json.unlimited === true, "public request should be unlimited");
+  assert(publicMeta.json.chunkSize > 0, "chunk size missing");
+
+  const chunkBytes = Buffer.concat([tinyPng(), Buffer.alloc(40, 3)]);
+  const chunkStart = await request("POST", `/api/requests/${id}/uploads`, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: "big-video.mp4", size: chunkBytes.length, mime: "video/mp4" }),
+  });
+  assert(chunkStart.status === 201 && chunkStart.json.uploadId, "chunked start failed: " + JSON.stringify(chunkStart.json));
+  const requestChunkSize = Number(chunkStart.json.chunkSize);
+  const nChunks = Math.ceil(chunkBytes.length / requestChunkSize);
+  assert(nChunks > 1, "smoke chunk size should force multiple chunks");
+  for (let i = 0; i < nChunks; i++) {
+    const slice = chunkBytes.subarray(i * requestChunkSize, Math.min(chunkBytes.length, (i + 1) * requestChunkSize));
+    const put = await request("PUT", `/api/requests/${id}/uploads/${chunkStart.json.uploadId}/chunks/${i}`, {
+      headers: { "content-type": "application/octet-stream", "content-length": String(slice.length) },
+      body: slice,
+    });
+    assert(put.json?.ok, `request chunk ${i} failed: ` + JSON.stringify(put.json));
+  }
+  const chunkDone = await request("POST", `/api/requests/${id}/uploads/${chunkStart.json.uploadId}/complete`, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ uploaderName: "Alex", note: "chunked" }),
+  });
+  assert(chunkDone.status === 201 && chunkDone.json.count === 1, "chunked complete failed: " + JSON.stringify(chunkDone.json));
 
   const { body, contentType } = multipartBody(
     { uploaderName: "Alex", note: "Saturday" },
@@ -193,7 +220,7 @@ try {
 
   const listed = await request("GET", "/api/admin/requests", { headers: auth });
   const row = listed.json.find((r) => r.id === id);
-  assert(row.files.length === 1, "file not listed");
+  assert(row.files.length === 2, "files not listed");
 
   const savedUrl = await request("PUT", "/api/admin/immich/url", {
     headers: { ...auth, "content-type": "application/json" },
@@ -215,6 +242,35 @@ try {
   assert(!JSON.stringify(added.json).includes("maya-key"), "api key leaked");
   const userId = added.json.id;
 
+  const device = await request("POST", "/api/admin/devices", {
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ label: "Pixel", userId, albumId: "album-family", albumName: "Family" }),
+  });
+  assert(device.status === 201 && device.json.token, "device create failed: " + JSON.stringify(device.json));
+  const token = device.json.token;
+  const inboxMeta = await request("GET", `/api/inbox/${token}`);
+  assert(inboxMeta.json.ok && inboxMeta.json.chunkSize > 0, "inbox ping failed");
+
+  const payload = Buffer.concat([tinyPng(), Buffer.alloc(64, 7)]);
+  const started = await request("POST", `/api/inbox/${token}/uploads`, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: "clip.bin", size: payload.length, mime: "application/octet-stream" }),
+  });
+  assert(started.status === 201 && started.json.uploadId, "inbox start failed: " + JSON.stringify(started.json));
+  const inboxChunkSize = Number(started.json.chunkSize);
+  const inboxChunks = Math.ceil(payload.length / inboxChunkSize);
+  for (let i = 0; i < inboxChunks; i++) {
+    const slice = payload.subarray(i * inboxChunkSize, Math.min(payload.length, (i + 1) * inboxChunkSize));
+    const chunkPut = await request("PUT", `/api/inbox/${token}/uploads/${started.json.uploadId}/chunks/${i}`, {
+      headers: { "content-type": "application/octet-stream", "content-length": String(slice.length) },
+      body: slice,
+    });
+    assert(chunkPut.json?.ok, `inbox chunk ${i} failed: ` + JSON.stringify(chunkPut.json));
+  }
+  const completed = await request("POST", `/api/inbox/${token}/uploads/${started.json.uploadId}/complete`);
+  assert(completed.json?.ok && completed.json.assetId, "inbox complete failed: " + JSON.stringify(completed.json));
+  assert(mockState.uploads.length === 1, "phone upload did not reach Immich");
+
   const albums = await request("GET", `/api/admin/immich/users/${userId}/albums`, { headers: auth });
   assert(albums.json.some((a) => a.name === "Family"), "albums missing: " + JSON.stringify(albums.json));
 
@@ -229,12 +285,12 @@ try {
     }),
   });
   assert(sent.json.ok, "send to immich failed: " + JSON.stringify(sent.json));
-  assert(mockState.uploads.length === 1, "immich did not receive upload");
-  assert(mockState.albumAdds.length === 1, "immich did not receive album add");
-  assert(sent.json.results[0].assetId === "asset-1", "asset id mismatch");
+  assert(mockState.uploads.length === 2, "immich did not receive second upload");
+  assert(mockState.albumAdds.length === 2, "immich did not receive album add");
+  assert(sent.json.results[0].assetId === "asset-2", "asset id mismatch");
 
   const afterSend = await request("GET", "/api/admin/requests", { headers: auth });
-  const sentFile = afterSend.json.find((r) => r.id === id).files[0];
+  const sentFile = afterSend.json.find((r) => r.id === id).files.find((f) => f.id === fileId);
   assert(sentFile.destination.kind === "immich", "destination not marked immich");
   assert(sentFile.destination.albumName === "Family", "album name not stored");
 
@@ -261,6 +317,12 @@ try {
     body: lateParts.body,
   });
   assert(late.status === 403, "closed request should reject uploads");
+
+  const lateChunk = await request("POST", `/api/requests/${id}/uploads`, {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: "late.mp4", size: 10, mime: "video/mp4" }),
+  });
+  assert(lateChunk.status === 403, "closed request should reject chunked uploads");
 
   const adminPage = await request("GET", "/admin");
   assert(adminPage.status === 200 && adminPage.raw.toString().includes("Send to Immich"), "admin html missing");

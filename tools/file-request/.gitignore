@@ -6,3 +6,6 @@ data/immich-external/**/*
 !data/immich-external/**/.gitkeep
 data/requests.json
 data/settings.json
+mobile/node_modules
+mobile/android
+mobile/.expo

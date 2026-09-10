@@ -19,6 +19,7 @@ export function getSettings() {
   return {
     immichUrl: settings.immichUrl || "",
     users: Array.isArray(settings.users) ? settings.users : [],
+    devices: Array.isArray(settings.devices) ? settings.devices : [],
   };
 }
 
@@ -28,6 +29,21 @@ export function publicSettings() {
     immichUrl: settings.immichUrl,
     connected: Boolean(settings.immichUrl && settings.users.length),
     users: settings.users.map(publicUser),
+    devices: settings.devices.map(publicDevice),
+  };
+}
+
+export function publicDevice(device) {
+  const user = getUser(device.userId);
+  return {
+    id: device.id,
+    token: device.token,
+    label: device.label || "Phone",
+    userId: device.userId,
+    userLabel: user?.label || user?.name || "",
+    albumId: device.albumId || "",
+    albumName: device.albumName || "Library",
+    createdAt: device.createdAt,
   };
 }
 
@@ -77,4 +93,38 @@ export function removeUser(id) {
 
 export function getUser(id) {
   return getSettings().users.find((u) => u.id === id) || null;
+}
+
+export function listDevices() {
+  return getSettings().devices.map(publicDevice);
+}
+
+export function getDeviceByToken(token) {
+  return getSettings().devices.find((d) => d.token === token) || null;
+}
+
+export function createDevice({ label, userId, albumId, albumName }) {
+  const settings = getSettings();
+  const user = settings.users.find((u) => u.id === userId);
+  if (!user) throw new Error("Select an Immich user for this phone");
+  const device = {
+    id: nanoid(8),
+    token: nanoid(20),
+    label: String(label || "Phone").trim() || "Phone",
+    userId: user.id,
+    albumId: albumId || "",
+    albumName: albumName || "Library",
+    createdAt: new Date().toISOString(),
+  };
+  settings.devices = settings.devices || [];
+  settings.devices.push(device);
+  writeSettings(settings);
+  return publicDevice(device);
+}
+
+export function removeDevice(id) {
+  const settings = getSettings();
+  settings.devices = (settings.devices || []).filter((d) => d.id !== id);
+  writeSettings(settings);
+  return publicSettings();
 }

@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import * as store from "./store.js";
 import * as settings from "./settings.js";
 import * as immich from "./immich.js";
+import * as inbox from "./inbox.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -31,6 +32,30 @@ function safeName(name) {
     .slice(0, 180);
 }
 
+function isAllowedFile(filename, mime) {
+  return (
+    config.allowedMime.has(mime) ||
+    /\.(jpe?g|png|webp|heic|heif|gif|tiff?|bmp|mp4|mov|avi|webm)$/i.test(filename || "")
+  );
+}
+
+function requestToken(id) {
+  return `request:${id}`;
+}
+
+function requireOpenRequest(req, res) {
+  const request = store.getRequest(req.params.id);
+  if (!request) {
+    res.status(404).json({ error: "Request not found" });
+    return null;
+  }
+  if (request.closed) {
+    res.status(403).json({ error: "This file request is closed" });
+    return null;
+  }
+  return request;
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination(req, _file, cb) {
@@ -43,7 +68,7 @@ const upload = multer({
       cb(null, `${Date.now()}-${nanoid(6)}-${base}`);
     },
   }),
-  limits: { fileSize: config.maxFileBytes, files: 50 },
+  limits: { files: 10_000 },
   fileFilter(_req, file, cb) {
     if (config.allowedMime.has(file.mimetype) || /\.(jpe?g|png|webp|heic|heif|gif|tiff?|bmp|mp4|mov|avi|webm)$/i.test(file.originalname)) {
       cb(null, true);
@@ -54,7 +79,12 @@ const upload = multer({
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, folders: config.immichFolders.map((f) => f.name) });
+  res.json({
+    ok: true,
+    unlimitedUploads: true,
+    chunkSize: inbox.CHUNK_SIZE,
+    folders: config.immichFolders.map((f) => f.name),
+  });
 });
 
 app.get("/api/admin/config", requireAdmin, (_req, res) => {
@@ -62,7 +92,9 @@ app.get("/api/admin/config", requireAdmin, (_req, res) => {
     baseUrl: config.baseUrl,
     authRequired: Boolean(config.adminPassword),
     immichFolders: config.immichFolders.map(({ id, name, path: p }) => ({ id, name, path: p })),
-    maxFileMb: config.maxFileBytes / (1024 * 1024),
+    maxFileMb: 0,
+    unlimitedUploads: true,
+    chunkSize: inbox.CHUNK_SIZE,
     immich: settings.publicSettings(),
   });
 });
@@ -113,6 +145,107 @@ app.post("/api/admin/immich/users/:id/albums", requireAdmin, async (req, res) =>
     const cfg = settings.getSettings();
     const album = await immich.createAlbum(cfg.immichUrl, user.apiKey, name);
     res.status(201).json(album);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/api/admin/devices", requireAdmin, (_req, res) => {
+  res.json(settings.listDevices());
+});
+
+app.post("/api/admin/devices", requireAdmin, (req, res) => {
+  try {
+    const device = settings.createDevice({
+      label: req.body.label,
+      userId: req.body.userId,
+      albumId: req.body.albumId,
+      albumName: req.body.albumName,
+    });
+    res.status(201).json({
+      ...device,
+      appServerUrl: config.baseUrl,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/admin/devices/:id", requireAdmin, (req, res) => {
+  res.json(settings.removeDevice(req.params.id));
+});
+
+app.get("/api/inbox/:token", (req, res) => {
+  const device = settings.getDeviceByToken(req.params.token);
+  if (!device) return res.status(404).json({ error: "Unknown phone inbox" });
+  const user = settings.getUser(device.userId);
+  res.json({
+    ok: true,
+    label: device.label,
+    destination: {
+      user: user?.label || user?.name || "Immich user",
+      album: device.albumName || "Library",
+    },
+    chunkSize: inbox.CHUNK_SIZE,
+    unlimited: true,
+  });
+});
+
+app.post("/api/inbox/:token/uploads", (req, res) => {
+  const device = settings.getDeviceByToken(req.params.token);
+  if (!device) return res.status(404).json({ error: "Unknown phone inbox" });
+  const started = inbox.startUpload({
+    token: device.token,
+    filename: req.body.filename,
+    size: req.body.size,
+    mime: req.body.mime,
+    createdAt: req.body.createdAt,
+  });
+  res.status(201).json(started);
+});
+
+app.put(
+  "/api/inbox/:token/uploads/:uploadId/chunks/:index",
+  express.raw({ type: "*/*", limit: "12mb" }),
+  (req, res) => {
+    const device = settings.getDeviceByToken(req.params.token);
+    if (!device) return res.status(404).json({ error: "Unknown phone inbox" });
+    try {
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+      res.json(inbox.saveChunk(req.params.uploadId, req.params.index, body, device.token));
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+app.post("/api/inbox/:token/uploads/:uploadId/complete", async (req, res) => {
+  const device = settings.getDeviceByToken(req.params.token);
+  if (!device) return res.status(404).json({ error: "Unknown phone inbox" });
+  const user = settings.getUser(device.userId);
+  const cfg = settings.getSettings();
+  if (!user || !cfg.immichUrl) {
+    return res.status(400).json({ error: "Immich user is not configured for this phone" });
+  }
+  try {
+    const assembled = inbox.assembleUpload(req.params.uploadId, device.token);
+    const uploaded = await immich.uploadAsset(cfg.immichUrl, user.apiKey, {
+      filePath: assembled.filePath,
+      filename: assembled.filename,
+      mime: assembled.mime,
+      createdAt: assembled.createdAt,
+      deviceAssetId: `phone-${device.id}-${assembled.id}`,
+    });
+    if (device.albumId) {
+      await immich.addToAlbum(cfg.immichUrl, user.apiKey, device.albumId, [uploaded.id]);
+    }
+    inbox.cleanupUpload(req.params.uploadId);
+    res.json({
+      ok: true,
+      assetId: uploaded.id,
+      duplicate: uploaded.duplicate,
+      destination: { user: user.label || user.name, album: device.albumName || "Library" },
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -232,15 +365,79 @@ app.get("/api/requests/:id", (req, res) => {
     closed: request.closed,
     createdAt: request.createdAt,
     fileCount: request.files.length,
+    chunkSize: inbox.CHUNK_SIZE,
+    unlimited: true,
   });
 });
 
-app.post("/api/requests/:id/upload", (req, res) => {
-  const request = store.getRequest(req.params.id);
-  if (!request) return res.status(404).json({ error: "Request not found" });
-  if (request.closed) return res.status(403).json({ error: "This file request is closed" });
+app.post("/api/requests/:id/uploads", (req, res) => {
+  const request = requireOpenRequest(req, res);
+  if (!request) return;
+  const filename = req.body.filename || "upload";
+  const mime = req.body.mime || "application/octet-stream";
+  if (!isAllowedFile(filename, mime)) {
+    return res.status(400).json({ error: `Unsupported file type: ${mime || filename}` });
+  }
+  const started = inbox.startUpload({
+    token: requestToken(request.id),
+    filename,
+    size: req.body.size,
+    mime,
+    createdAt: req.body.createdAt,
+  });
+  res.status(201).json(started);
+});
 
-  upload.array("files", 50)(req, res, (err) => {
+app.put(
+  "/api/requests/:id/uploads/:uploadId/chunks/:index",
+  express.raw({ type: "*/*", limit: "12mb" }),
+  (req, res) => {
+    const request = requireOpenRequest(req, res);
+    if (!request) return;
+    try {
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+      res.json(inbox.saveChunk(req.params.uploadId, req.params.index, body, requestToken(request.id)));
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+app.post("/api/requests/:id/uploads/:uploadId/complete", (req, res) => {
+  const request = requireOpenRequest(req, res);
+  if (!request) return;
+  try {
+    const assembled = inbox.assembleUpload(req.params.uploadId, requestToken(request.id));
+    const storedName = `${Date.now()}-${nanoid(6)}-${assembled.filename}`;
+    const destDir = path.join(config.uploadRoot, request.id);
+    fs.mkdirSync(destDir, { recursive: true });
+    const dest = path.join(destDir, storedName);
+    fs.renameSync(assembled.filePath, dest);
+    inbox.cleanupUpload(req.params.uploadId);
+    const meta = {
+      id: nanoid(10),
+      originalName: assembled.filename,
+      storedName,
+      size: assembled.size,
+      mime: assembled.mime,
+      uploaderName: String(req.body?.uploaderName || "Anonymous").trim() || "Anonymous",
+      note: String(req.body?.note || "").trim(),
+      uploadedAt: new Date().toISOString(),
+      movedAt: null,
+      destination: null,
+    };
+    store.addFile(request.id, meta);
+    res.status(201).json({ ok: true, count: 1, files: [meta], unlimited: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/requests/:id/upload", (req, res) => {
+  const request = requireOpenRequest(req, res);
+  if (!request) return;
+
+  upload.array("files", 10_000)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.files?.length) return res.status(400).json({ error: "No files uploaded" });
     const uploaderName = String(req.body.uploaderName || "Anonymous").trim() || "Anonymous";

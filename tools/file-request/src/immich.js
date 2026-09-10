@@ -1,4 +1,11 @@
-import fs from "node:fs";
+import { openAsBlob } from "node:fs";
+import { Agent, fetch as undiciFetch } from "undici";
+
+const immichAgent = new Agent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+  connectTimeout: 30_000,
+});
 
 export function apiBase(url) {
   const trimmed = String(url || "").trim().replace(/\/$/, "");
@@ -17,9 +24,10 @@ async function parseBody(res) {
 }
 
 export async function immichRequest(url, apiKey, path, { method = "GET", headers = {}, body, raw } = {}) {
-  const res = await fetch(`${apiBase(url)}${path}`, {
+  const res = await undiciFetch(`${apiBase(url)}${path}`, {
     method,
     body,
+    dispatcher: immichAgent,
     headers: {
       Accept: "application/json",
       "x-api-key": apiKey,
@@ -63,9 +71,9 @@ export async function createAlbum(url, apiKey, name) {
 }
 
 export async function uploadAsset(url, apiKey, { filePath, filename, mime, createdAt, modifiedAt, deviceAssetId }) {
-  const buffer = fs.readFileSync(filePath);
+  const blob = await openAsBlob(filePath, { type: mime || "application/octet-stream" });
   const form = new FormData();
-  form.append("assetData", new Blob([buffer], { type: mime || "application/octet-stream" }), filename);
+  form.append("assetData", blob, filename);
   form.append("deviceAssetId", deviceAssetId || `${filename}-${createdAt}`);
   form.append("deviceId", "immich-file-request");
   form.append("fileCreatedAt", createdAt || new Date().toISOString());

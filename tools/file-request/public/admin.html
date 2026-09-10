@@ -71,6 +71,31 @@
               <div id="userList" class="empty">No Immich users yet.</div>
             </div>
 
+            <div class="panel stack">
+              <h2 style="margin:0;font-family:var(--font)">Phone inboxes</h2>
+              <p class="muted" style="margin:0">Create a token for the Android app. Photos and videos upload in 8MB chunks with no size cap (Cloudflare’s 100MB limit does not apply) and go straight into that Immich user.</p>
+              <div>
+                <label for="deviceLabel">Phone label</label>
+                <input id="deviceLabel" type="text" placeholder="Maya’s Pixel" />
+              </div>
+              <div class="row">
+                <select id="deviceUserSelect"></select>
+                <select id="deviceAlbumSelect"></select>
+              </div>
+              <button class="btn" id="createDeviceBtn" type="button">Create phone token</button>
+              <div id="deviceCreated" hidden>
+                <p class="muted" style="margin:0">Enter these in the Android app:</p>
+                <label>Server URL</label>
+                <input id="deviceServerUrl" class="mono" type="text" readonly />
+                <label>Token</label>
+                <div class="link-box">
+                  <input id="deviceToken" class="mono" type="text" readonly />
+                  <button class="btn secondary" id="copyDeviceBtn" type="button">Copy</button>
+                </div>
+              </div>
+              <div id="deviceList" class="empty">No phones yet.</div>
+            </div>
+
             <div class="panel">
               <div class="row" style="justify-content:space-between;margin-bottom:0.75rem">
                 <h2 style="margin:0;font-family:var(--font)">Requests</h2>
