@@ -8,11 +8,13 @@ Uploads are split into **8MB chunks**, so Cloudflare Tunnel’s ~100MB request c
 
 1. Admin → add Immich user API key
 2. Admin → **Phone inboxes** → create a token for that user/album
-3. In the app, paste **Server URL** (public tunnel hostname) and **token**
+3. In the app, paste **Server URL** `https://inbox.orija.store` and the **token**
+
+Point a Cloudflare Tunnel public hostname `inbox.orija.store` at `http://localhost:13847` on the Portainer host (same pattern as `photos.orija.store` → Immich).
 
 ## Sideload APK
 
-Package id: `co.orija.immichsend` (1.0.0). Install the APK, allow unknown sources, then paste the public Server URL and phone token from Admin → Phone inboxes.
+Package id: `co.orija.immichsend` (1.0.1). Install the APK, allow unknown sources, then connect with the public Server URL and phone token.
 
 Rebuild (needs Android SDK):
 
