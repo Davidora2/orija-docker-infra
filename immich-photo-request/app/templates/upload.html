@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ request_row.title }} · {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg"></div>
+  <main class="shell narrow">
+    <header class="hero">
+      <p class="eyebrow">Photo request from {{ owner_name }}</p>
+      <h1>{{ request_row.title }}</h1>
+      {% if request_row.message %}
+      <p class="lede">{{ request_row.message }}</p>
+      {% endif %}
+    </header>
+
+    {% if not is_open %}
+    <section class="panel warn">
+      <h2>Uploads closed</h2>
+      <p>{{ closed_reason }}</p>
+    </section>
+    {% else %}
+    <section class="panel">
+      <p class="hint">
+        {{ remaining }} file(s) remaining · max {{ max_upload_mb }}MB each
+      </p>
+      <form id="upload-form" class="stack">
+        <label class="dropzone" id="dropzone">
+          <input id="file-input" type="file" accept="image/*,video/*" multiple hidden />
+          <strong>Drop photos here</strong>
+          <span>or tap to choose from your device</span>
+        </label>
+        <ul id="file-list" class="file-list"></ul>
+        <label>
+          Optional note
+          <input id="note" name="note" maxlength="500" placeholder="From Alex’s phone" />
+        </label>
+        <button id="upload-btn" type="submit" disabled>Upload</button>
+        <p id="upload-status" class="status" hidden></p>
+      </form>
+    </section>
+    {% endif %}
+  </main>
+  <script>
+    window.PHOTO_REQUEST = {
+      token: {{ token|tojson }},
+      remaining: {{ remaining }},
+      maxUploadMb: {{ max_upload_mb }},
+      isOpen: {{ is_open|tojson }}
+    };
+  </script>
+  <script src="/static/upload.js"></script>
+</body>
+</html>

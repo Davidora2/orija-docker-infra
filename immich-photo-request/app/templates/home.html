@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg"></div>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">Immich companion</p>
+      <h1>{{ app_name }}</h1>
+      <p class="lede">
+        Generate a link, send it to friends or family, and their browser uploads
+        land in your Immich external library folder.
+      </p>
+    </header>
+
+    <section class="panel" id="auth-panel">
+      <h2>Connect with Immich</h2>
+      <p class="hint">
+        Create an API key in Immich
+        (<a href="{{ immich_base_url }}" target="_blank" rel="noopener">open Immich</a>
+        → Account Settings → API Keys). Needs library read/update if you want auto-scan.
+      </p>
+      <label>
+        Immich API key
+        <input id="api-key" type="password" autocomplete="off" placeholder="Paste API key" />
+      </label>
+      <button id="connect-btn" type="button">Connect</button>
+      <p id="auth-status" class="status" hidden></p>
+    </section>
+
+    <section class="panel" id="dashboard" hidden>
+      <div class="row between">
+        <div>
+          <h2 id="user-name">Signed in</h2>
+          <p class="hint" id="user-meta"></p>
+        </div>
+        <button id="disconnect-btn" class="ghost" type="button">Disconnect</button>
+      </div>
+
+      <div class="grid two">
+        <form id="create-form" class="stack">
+          <h3>New photo request</h3>
+          <label>
+            Title
+            <input name="title" required maxlength="200" placeholder="Wedding weekend photos" />
+          </label>
+          <label>
+            Message for guests
+            <textarea name="message" rows="3" maxlength="2000" placeholder="Drop your favourite shots here…"></textarea>
+          </label>
+          <div class="grid two">
+            <label>
+              Expires in (days)
+              <input name="expiry_days" type="number" min="0" max="365" value="14" />
+            </label>
+            <label>
+              Max files
+              <input name="max_files" type="number" min="1" max="1000" value="100" />
+            </label>
+          </div>
+          <label>
+            Immich external library (optional, for auto-scan)
+            <select id="library-select" name="immich_library_id">
+              <option value="">Skip auto-scan</option>
+            </select>
+          </label>
+          <button type="submit">Create link</button>
+        </form>
+
+        <div class="stack">
+          <h3>Your folder</h3>
+          <p class="hint">
+            Point an Immich <strong>external library</strong> import path at this directory
+            (or its parent). On SMB/NAS, mount the same share into Immich and this app.
+          </p>
+          <code id="external-path" class="path"></code>
+          <div id="created-link" class="created" hidden>
+            <p>Share this link:</p>
+            <div class="row">
+              <input id="link-output" readonly />
+              <button id="copy-btn" type="button">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Open requests</h3>
+      <div id="request-list" class="request-list"></div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
