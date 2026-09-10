@@ -2,7 +2,7 @@
 
 Dropbox-style **file requests** for collecting photos and videos. People upload through a public link. You send the files into a chosen **Immich user** (via that user’s API key) and optionally into one of their **albums**.
 
-This avoids guests using Immich’s own upload UI (and typical reverse-proxy / error 592 issues).
+This is its **own Docker stack**. Run it on the same host as Immich; it does not get merged into the Immich compose file.
 
 ## Flow
 
@@ -17,20 +17,36 @@ Phone / laptop  →  /r/<id>  →  staging
 Admin           →  /admin   →  Immich API (user key) → that user’s library / album
 ```
 
-## Quick start
+## Run as its own stack (same host as Immich)
+
+On the Immich machine:
 
 ```bash
 cd tools/file-request
 cp .env.example .env
-npm install
-npm start
+# set BASE_URL if you reverse-proxy this app
+docker compose up -d --build
 ```
 
 Open [http://localhost:3847/admin](http://localhost:3847/admin). Default password is `change-me`.
 
-1. Save Immich server URL (example: `http://192.168.1.10:2283`).
-2. For each Immich user, create an API key with **asset upload** and **album** permissions, then paste it.
-3. Create a request link and send it to people.
+`.env` defaults `IMMICH_URL` to `http://host.docker.internal:2283` (Immich’s usual published port on this host). Paste each user’s API key in the admin UI.
+
+```bash
+docker compose ps
+docker compose logs -f
+docker compose down
+```
+
+Compose project name is `file-request` (`container_name: file-request`), so it sits next to Immich instead of inside it.
+
+If Immich is not published on the host and you would rather use its Docker network:
+
+```bash
+docker network ls | grep -i immich
+# set IMMICH_DOCKER_NETWORK and IMMICH_URL=http://immich-server:2283 in .env
+docker compose -f docker-compose.yml -f docker-compose.immich-network.yml up -d
+```
 
 ## API keys
 
@@ -42,13 +58,14 @@ Recommended key permissions: `asset.upload`, `album.read`, `album.create`, `albu
 
 You can still copy/move files into directories Immich watches as **external libraries** (`IMMICH_FOLDERS` in `.env`). That is a fallback, not the main path.
 
-## Docker
+## Run without Docker
 
 ```bash
-docker compose up -d --build
+cd tools/file-request
+cp .env.example .env
+npm install
+npm start
 ```
-
-Set `IMMICH_URL` if you want a default server URL. User keys are stored in `./data/settings.json`.
 
 ## API (optional)
 

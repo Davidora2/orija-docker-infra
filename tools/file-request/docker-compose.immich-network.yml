@@ -1,0 +1,17 @@
+# Optional: attach this stack to Immich's Docker network so IMMICH_URL
+# can use the Immich service name (e.g. http://immich-server:2283).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.immich-network.yml up -d
+#
+# Find the network with: docker network ls | grep immich
+
+services:
+  file-request:
+    networks:
+      - default
+      - immich
+
+networks:
+  immich:
+    external: true
+    name: ${IMMICH_DOCKER_NETWORK:-immich_default}
