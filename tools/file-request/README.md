@@ -46,7 +46,8 @@ On the Orija Portainer host (`portainer.orija.store`, endpoint `local`):
 ```bash
 # Agents deploy this via Portainer API from tools/file-request/compose.portainer.yml
 # Published origin: host port 13847 → container 3847
-# Public hostname: https://inbox.orija.store (Cloudflare Tunnel → localhost:13847)
+# Public send page: https://lifeos.orija.store/send
+# Immich is not modified; this stack only stores incoming files.
 ```
 
 If Immich is not published on the host and you would rather use its Docker network:
