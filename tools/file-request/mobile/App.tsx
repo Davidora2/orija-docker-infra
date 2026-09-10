@@ -1,63 +1,23 @@
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { DEFAULT_SERVER_URL, KEYS, pingInbox, uploadFile, type InboxInfo } from "./src/api";
+import { DEFAULT_SERVER_URL, pingInbox, uploadFile, type InboxInfo } from "./src/api";
 
 export default function App() {
-  const [url, setUrl] = useState("");
-  const [token, setToken] = useState("");
   const [inbox, setInbox] = useState<InboxInfo | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const savedUrl = (await AsyncStorage.getItem(KEYS.url)) || DEFAULT_SERVER_URL;
-      const savedToken = (await AsyncStorage.getItem(KEYS.token)) || "";
-      setUrl(savedUrl);
-      setToken(savedToken);
-      if (savedUrl && savedToken) {
-        try {
-          setInbox(await pingInbox(savedUrl, savedToken));
-        } catch (error) {
-          setStatus(error instanceof Error ? error.message : "Saved login failed");
-        }
-      }
-      setReady(true);
-    })();
+    pingInbox()
+      .then(setInbox)
+      .catch((error) => setStatus(error instanceof Error ? error.message : "Cannot reach home"))
+      .finally(() => undefined);
   }, []);
 
-  async function connect() {
-    setBusy(true);
-    setStatus("");
-    try {
-      const info = await pingInbox(url.trim(), token.trim());
-      await AsyncStorage.setItem(KEYS.url, url.trim());
-      await AsyncStorage.setItem(KEYS.token, token.trim());
-      setInbox(info);
-      setStatus(`Connected · ${info.destination.user}`);
-    } catch (error) {
-      setInbox(null);
-      setStatus(error instanceof Error ? error.message : "Connect failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function send(fromCamera: boolean) {
-    if (!inbox) return;
     const permission = fromCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -83,19 +43,18 @@ export default function App() {
           `upload-${Date.now()}-${index}.${asset.mimeType?.includes("video") ? "mp4" : "jpg"}`;
         setStatus(`Sending ${index + 1}/${picked.assets.length}: ${name}`);
         await uploadFile(
-          url.trim(),
-          token.trim(),
+          DEFAULT_SERVER_URL,
           {
             uri: asset.uri,
             name,
             mime: asset.mimeType || "image/jpeg",
             size: asset.fileSize,
           },
-          (done, total) => setStatus(`${name} · chunk ${done}/${total}`),
+          (done, total) => setStatus(`${name} · ${done}/${total}`),
         );
         ok += 1;
       }
-      setStatus(`Sent ${ok} file${ok === 1 ? "" : "s"} to ${inbox.destination.user} · ${inbox.destination.album}`);
+      setStatus(`Sent ${ok} file${ok === 1 ? "" : "s"}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Upload failed");
     } finally {
@@ -103,62 +62,22 @@ export default function App() {
     }
   }
 
-  if (!ready) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#0f6b5c" />
-      </View>
-    );
-  }
-
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safe}>
         <StatusBar style="dark" />
         <ScrollView contentContainerStyle={styles.page}>
-          <Text style={styles.brand}>Immich Send</Text>
+          <Text style={styles.brand}>Send photos</Text>
           <Text style={styles.sub}>
-            Upload from anywhere. Files go through your Orija relay in 8MB chunks with no size cap, then into Immich on your home
-            server — Cloudflare’s 100MB tunnel limit does not apply.
+            Tap below and choose photos or videos. They go home automatically. No login, no size limit.
           </Text>
-
-          <Text style={styles.label}>Server URL</Text>
-          <TextInput
-            style={styles.input}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="https://inbox.orija.store"
-            value={url}
-            onChangeText={setUrl}
-          />
-          <Text style={styles.label}>Phone token</Text>
-          <TextInput
-            style={styles.input}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="token from admin → Phone inboxes"
-            value={token}
-            onChangeText={setToken}
-          />
-          <Pressable style={styles.btn} onPress={connect} disabled={busy}>
-            <Text style={styles.btnText}>{inbox ? "Reconnect" : "Connect"}</Text>
+          <Pressable style={styles.btn} onPress={() => send(false)} disabled={busy}>
+            <Text style={styles.btnText}>Choose photos or videos</Text>
           </Pressable>
-
-          {inbox ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{inbox.label}</Text>
-              <Text style={styles.muted}>
-                Goes to {inbox.destination.user} · {inbox.destination.album}
-              </Text>
-              <Pressable style={styles.btn} onPress={() => send(false)} disabled={busy}>
-                <Text style={styles.btnText}>Choose photos or videos</Text>
-              </Pressable>
-              <Pressable style={[styles.btn, styles.secondary]} onPress={() => send(true)} disabled={busy}>
-                <Text style={styles.secondaryText}>Take photo</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
+          <Pressable style={[styles.btn, styles.secondary]} onPress={() => send(true)} disabled={busy}>
+            <Text style={styles.secondaryText}>Take photo</Text>
+          </Pressable>
+          {inbox ? <Text style={styles.muted}>Ready</Text> : null}
           {busy ? <ActivityIndicator color="#0f6b5c" style={{ marginTop: 16 }} /> : null}
           {status ? <Text style={styles.status}>{status}</Text> : null}
         </ScrollView>
@@ -169,20 +88,9 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f3efe6" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#f3efe6" },
   page: { padding: 24, paddingBottom: 48 },
   brand: { fontSize: 32, fontWeight: "700", color: "#1c1914" },
-  sub: { marginTop: 8, color: "#6b6458", lineHeight: 22 },
-  label: { marginTop: 18, marginBottom: 6, color: "#6b6458", fontSize: 13 },
-  input: {
-    backgroundColor: "#fff",
-    borderColor: "#ddd4c4",
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: "#1c1914",
-  },
+  sub: { marginTop: 8, marginBottom: 12, color: "#6b6458", lineHeight: 22 },
   btn: {
     marginTop: 14,
     backgroundColor: "#0f6b5c",
@@ -193,15 +101,6 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontWeight: "700" },
   secondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: "#ddd4c4" },
   secondaryText: { color: "#1c1914", fontWeight: "700" },
-  card: {
-    marginTop: 24,
-    backgroundColor: "#fffdf8",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#ddd4c4",
-    padding: 16,
-  },
-  cardTitle: { fontSize: 18, fontWeight: "700", color: "#1c1914" },
-  muted: { color: "#6b6458", marginTop: 4, marginBottom: 8 },
+  muted: { color: "#6b6458", marginTop: 18 },
   status: { marginTop: 16, color: "#1c1914", lineHeight: 22 },
 });

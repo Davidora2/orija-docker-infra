@@ -15,7 +15,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3847"
-      BASE_URL: ${BASE_URL:-https://inbox.orija.store}
+      BASE_URL: ${BASE_URL:-https://lifeos.orija.store/send}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       DATA_DIR: /data
       UPLOAD_ROOT: /data/uploads

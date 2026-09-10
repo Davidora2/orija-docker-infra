@@ -19,6 +19,28 @@ export function getRequest(id) {
   return readAll().find((r) => r.id === id) || null;
 }
 
+export function ensureOpenDrop() {
+  const existing = getRequest("open");
+  if (existing) {
+    if (existing.closed) setClosed("open", false);
+    return getRequest("open");
+  }
+  const rows = readAll();
+  const request = {
+    id: "open",
+    title: "Send photos",
+    description: "Drop photos or videos. No account needed.",
+    createdBy: "system",
+    createdAt: new Date().toISOString(),
+    closed: false,
+    files: [],
+  };
+  rows.push(request);
+  writeAll(rows);
+  fs.mkdirSync(path.join(config.uploadRoot, request.id), { recursive: true });
+  return request;
+}
+
 export function createRequest({ title, description, createdBy }) {
   const rows = readAll();
   const request = {

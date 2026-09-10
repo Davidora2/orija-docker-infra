@@ -167,6 +167,30 @@ try {
   assert(health.status === 200 && health.json.ok, "health failed");
   assert(health.json.unlimitedUploads === true, "health should report unlimited uploads");
 
+  const openMeta = await request("GET", "/api/open");
+  assert(openMeta.json.ok && openMeta.json.unlimited === true, "open inbox missing");
+  const openBytes = Buffer.concat([tinyPng(), Buffer.alloc(40, 9)]);
+  const openStart = await request("POST", "/api/open/uploads", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: "phone.jpg", size: openBytes.length, mime: "image/jpeg" }),
+  });
+  assert(openStart.status === 201 && openStart.json.uploadId, "open start failed");
+  const openChunkSize = Number(openStart.json.chunkSize);
+  const openChunks = Math.ceil(openBytes.length / openChunkSize);
+  for (let i = 0; i < openChunks; i++) {
+    const slice = openBytes.subarray(i * openChunkSize, Math.min(openBytes.length, (i + 1) * openChunkSize));
+    const put = await request("PUT", `/api/open/uploads/${openStart.json.uploadId}/chunks/${i}`, {
+      headers: { "content-type": "application/octet-stream", "content-length": String(slice.length) },
+      body: slice,
+    });
+    assert(put.json?.ok, `open chunk ${i} failed`);
+  }
+  const openDone = await request("POST", `/api/open/uploads/${openStart.json.uploadId}/complete`, {
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert(openDone.status === 201 && openDone.json.count === 1, "open complete failed: " + JSON.stringify(openDone.json));
+
   const denied = await request("GET", "/api/admin/requests");
   assert(denied.status === 401, "admin should require password");
 

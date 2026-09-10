@@ -86,6 +86,32 @@ const upload = multer({
   },
 });
 
+const OPEN_TOKEN = "open";
+
+function saveToOpenDrop(assembled, extra = {}) {
+  const drop = store.ensureOpenDrop();
+  const storedName = `${Date.now()}-${nanoid(6)}-${assembled.filename}`;
+  const destDir = path.join(config.uploadRoot, drop.id);
+  fs.mkdirSync(destDir, { recursive: true });
+  const dest = path.join(destDir, storedName);
+  fs.renameSync(assembled.filePath, dest);
+  inbox.cleanupUpload(assembled.id);
+  const meta = {
+    id: nanoid(10),
+    originalName: assembled.filename,
+    storedName,
+    size: assembled.size,
+    mime: assembled.mime,
+    uploaderName: String(extra.uploaderName || "Phone").trim() || "Phone",
+    note: String(extra.note || "").trim(),
+    uploadedAt: new Date().toISOString(),
+    movedAt: null,
+    destination: null,
+  };
+  store.addFile(drop.id, meta);
+  return meta;
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
@@ -93,6 +119,52 @@ app.get("/api/health", (_req, res) => {
     chunkSize: inbox.CHUNK_SIZE,
     folders: config.immichFolders.map((f) => f.name),
   });
+});
+
+app.get("/api/open", (_req, res) => {
+  store.ensureOpenDrop();
+  res.json({
+    ok: true,
+    label: "Send photos",
+    destination: { user: "Home library", album: "Inbox" },
+    chunkSize: inbox.CHUNK_SIZE,
+    unlimited: true,
+  });
+});
+
+app.post("/api/open/uploads", (req, res) => {
+  store.ensureOpenDrop();
+  const started = inbox.startUpload({
+    token: OPEN_TOKEN,
+    filename: req.body.filename,
+    size: req.body.size,
+    mime: req.body.mime,
+    createdAt: req.body.createdAt,
+  });
+  res.status(201).json(started);
+});
+
+app.put(
+  "/api/open/uploads/:uploadId/chunks/:index",
+  express.raw({ type: "*/*", limit: "12mb" }),
+  (req, res) => {
+    try {
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+      res.json(inbox.saveChunk(req.params.uploadId, req.params.index, body, OPEN_TOKEN));
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+);
+
+app.post("/api/open/uploads/:uploadId/complete", (req, res) => {
+  try {
+    const assembled = inbox.assembleUpload(req.params.uploadId, OPEN_TOKEN);
+    const meta = saveToOpenDrop(assembled, req.body || {});
+    res.status(201).json({ ok: true, count: 1, files: [meta], unlimited: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.get("/api/admin/config", requireAdmin, (_req, res) => {
@@ -533,7 +605,11 @@ app.get("/api/admin/files/:requestId/:fileId/preview", requireAdmin, (req, res) 
   fs.createReadStream(src).pipe(res);
 });
 
-app.get(["/", "/admin"], (_req, res) => {
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(config.root, "public", "send.html"));
+});
+
+app.get("/admin", (_req, res) => {
   res.sendFile(path.join(config.root, "public", "admin.html"));
 });
 
@@ -547,9 +623,8 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(config.port, () => {
+  store.ensureOpenDrop();
   console.log(`Immich File Request listening on ${config.baseUrl}`);
+  console.log(`Send: ${config.baseUrl}/`);
   console.log(`Admin: ${config.baseUrl}/admin`);
-  console.log(
-    `Immich folders: ${config.immichFolders.map((f) => `${f.name} → ${f.path}`).join(" | ") || "(none configured)"}`,
-  );
 });

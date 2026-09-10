@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="./" />
+    <title>Send photos</title>
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <section class="hero-request">
+        <p class="pill open" id="statusPill">Open</p>
+        <h1>Send photos</h1>
+        <p>Choose photos or videos. No account, no size limit.</p>
+      </section>
+
+      <section class="panel stack" id="uploadPanel">
+        <div class="dropzone" id="dropzone">
+          <strong>Drop photos or videos here</strong>
+          <span class="muted">or tap to choose files</span>
+          <input id="fileInput" type="file" accept="image/*,video/*,.heic,.heif" multiple hidden />
+        </div>
+        <div id="selected" class="muted"></div>
+        <button class="btn" id="uploadBtn" type="button" disabled>Send</button>
+        <p id="progress" class="muted"></p>
+      </section>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script src="js/send.js" type="module"></script>
+  </body>
+</html>

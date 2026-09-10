@@ -8,9 +8,10 @@ export type InboxInfo = {
   unlimited?: boolean;
 };
 
+export const DEFAULT_SERVER_URL = "https://lifeos.orija.store/send";
+
 export function normalizeServerUrl(raw: string) {
-  let url = String(raw || "").trim();
-  if (!url) throw new Error("Enter the server URL from Admin → Phone inboxes");
+  let url = String(raw || DEFAULT_SERVER_URL).trim();
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
   return url.replace(/\/$/, "");
 }
@@ -26,20 +27,16 @@ async function readJson(res: Response) {
 function friendlyNetworkError(error: unknown, serverUrl: string) {
   const message = error instanceof Error ? error.message : String(error);
   if (/Network request failed|Failed to fetch|TypeError/i.test(message)) {
-    return `Cannot reach ${serverUrl}. Use the public HTTPS inbox URL, or http://YOUR-LAN-IP:13847 on the same Wi-Fi.`;
+    return `Cannot reach ${serverUrl}. Check internet and try again.`;
   }
   return message;
 }
 
-export async function pingInbox(serverUrl: string, token: string): Promise<InboxInfo> {
+export async function pingInbox(serverUrl: string = DEFAULT_SERVER_URL): Promise<InboxInfo> {
   const url = normalizeServerUrl(serverUrl);
-  if (!token.trim()) throw new Error("Enter the phone token from Admin → Phone inboxes");
   try {
-    const res = await fetch(join(url, `/api/inbox/${encodeURIComponent(token.trim())}`));
+    const res = await fetch(join(url, "/api/open"));
     const data = await readJson(res);
-    if (res.status === 404) {
-      throw new Error("This server does not have a phone inbox (wrong URL, or the live stack is outdated).");
-    }
     if (!res.ok) throw new Error(data.error || `Cannot reach server (${res.status})`);
     return data as InboxInfo;
   } catch (error) {
@@ -70,8 +67,7 @@ function safeName(name: string) {
 }
 
 function asBlob(bytes: Uint8Array) {
-  const copy = new Uint8Array(bytes);
-  return new Blob([copy]);
+  return new Blob([new Uint8Array(bytes)]);
 }
 
 function openLocalFile(uri: string, name: string) {
@@ -86,14 +82,8 @@ function openLocalFile(uri: string, name: string) {
   }
 }
 
-async function blobFromUri(uri: string) {
-  const res = await fetch(uri);
-  return res.blob();
-}
-
 export async function uploadFile(
   serverUrl: string,
-  token: string,
   file: { uri: string; name: string; mime: string; size?: number },
   onProgress?: (done: number, total: number) => void,
 ) {
@@ -107,13 +97,13 @@ export async function uploadFile(
     if (local.size) size = local.size;
     useHandle = local.open();
   } catch {
-    blob = await blobFromUri(file.uri);
+    blob = await (await fetch(file.uri)).blob();
     size = size || blob.size;
   }
 
   if (!size) throw new Error("Could not read the file size");
 
-  const initRes = await fetch(join(url, `/api/inbox/${encodeURIComponent(token)}/uploads`), {
+  const initRes = await fetch(join(url, "/api/open/uploads"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -133,17 +123,10 @@ export async function uploadFile(
     for (let i = 0; i < totalChunks; i++) {
       const offset = i * chunkSize;
       const length = Math.min(chunkSize, size - offset);
-      let body: BodyInit;
-      if (useHandle) {
-        useHandle.offset = offset;
-        body = asBlob(useHandle.readBytes(length));
-      } else {
-        body = blob!.slice(offset, offset + length);
-      }
-      await putChunk(
-        join(url, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/chunks/${i}`),
-        body,
-      );
+      const body = useHandle
+        ? ((useHandle.offset = offset), asBlob(useHandle.readBytes(length)))
+        : blob!.slice(offset, offset + length);
+      await putChunk(join(url, `/api/open/uploads/${uploadId}/chunks/${i}`), body);
       onProgress?.(i + 1, totalChunks);
     }
   } finally {
@@ -154,17 +137,8 @@ export async function uploadFile(
     }
   }
 
-  const doneRes = await fetch(join(url, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/complete`), {
-    method: "POST",
-  });
+  const doneRes = await fetch(join(url, `/api/open/uploads/${uploadId}/complete`), { method: "POST" });
   const done = await readJson(doneRes);
-  if (!doneRes.ok) throw new Error(done.error || "Immich upload failed");
+  if (!doneRes.ok) throw new Error(done.error || "Upload failed");
   return done;
 }
-
-export const KEYS = {
-  url: "immich-send-url",
-  token: "immich-send-token",
-};
-
-export const DEFAULT_SERVER_URL = "https://inbox.orija.store";
