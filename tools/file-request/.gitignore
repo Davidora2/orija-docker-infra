@@ -1,0 +1,6 @@
+node_modules
+.env
+data/uploads/
+data/immich-external/**/*
+!data/immich-external/**/.gitkeep
+data/requests.json

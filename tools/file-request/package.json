@@ -1,0 +1,20 @@
+{
+  "name": "immich-file-request",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dropbox-style file requests for collecting images, then moving them into Immich external library folders",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "nanoid": "^5.1.5"
+  }
+}

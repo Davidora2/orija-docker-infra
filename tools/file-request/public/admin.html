@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>File Requests · Immich</title>
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <h1 class="brand">File Requests</h1>
+        <p class="sub">Collect photos like Dropbox File Request, then move them into Immich external folders.</p>
+      </header>
+
+      <section id="authGate" class="panel auth-gate stack" hidden>
+        <h2 style="margin:0;font-family:var(--font)">Admin sign-in</h2>
+        <p class="muted" style="margin:0">Enter the admin password from your <span class="mono">.env</span>.</p>
+        <div>
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" />
+        </div>
+        <button class="btn" id="unlockBtn" type="button">Unlock</button>
+        <p id="authError" class="muted" style="color:var(--danger)"></p>
+      </section>
+
+      <section id="app" hidden>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="panel stack">
+              <h2 style="margin:0;font-family:var(--font)">New request</h2>
+              <div>
+                <label for="title">Title</label>
+                <input id="title" type="text" placeholder="Wedding weekend photos" />
+              </div>
+              <div>
+                <label for="description">Message to uploaders</label>
+                <textarea id="description" placeholder="Please drop originals from the weekend. Thanks!"></textarea>
+              </div>
+              <button class="btn" id="createBtn" type="button">Create request link</button>
+              <div id="createdBox" hidden>
+                <p class="muted" style="margin:0">Share this link:</p>
+                <div class="link-box">
+                  <input id="createdLink" class="mono" type="text" readonly />
+                  <button class="btn secondary" id="copyLinkBtn" type="button">Copy</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="row" style="justify-content:space-between;margin-bottom:0.75rem">
+                <h2 style="margin:0;font-family:var(--font)">Requests</h2>
+                <button class="btn secondary" id="refreshBtn" type="button">Refresh</button>
+              </div>
+              <div id="requestList"></div>
+            </div>
+          </div>
+
+          <div class="panel stack">
+            <div class="row" style="justify-content:space-between">
+              <div>
+                <h2 id="detailTitle" style="margin:0;font-family:var(--font)">Select a request</h2>
+                <p id="detailSub" class="muted" style="margin:0.35rem 0 0"></p>
+              </div>
+              <div class="row" id="detailActions" hidden>
+                <button class="btn secondary" id="toggleCloseBtn" type="button">Close</button>
+              </div>
+            </div>
+
+            <div class="row" id="moveBar" hidden>
+              <select id="folderSelect"></select>
+              <select id="modeSelect">
+                <option value="copy">Copy to Immich folder</option>
+                <option value="move">Move to Immich folder</option>
+              </select>
+              <button class="btn" id="moveBtn" type="button">Send selected</button>
+            </div>
+
+            <div id="fileList" class="empty">Create a request, share the link, then move uploaded images here.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script src="/js/admin.js" type="module"></script>
+  </body>
+</html>

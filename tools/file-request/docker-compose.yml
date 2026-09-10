@@ -1,0 +1,20 @@
+services:
+  file-request:
+    build: .
+    ports:
+      - "3847:3847"
+    environment:
+      PORT: "3847"
+      BASE_URL: ${BASE_URL:-http://localhost:3847}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      DATA_DIR: /app/data
+      UPLOAD_ROOT: /app/data/uploads
+      IMMICH_FOLDERS: ${IMMICH_FOLDERS:-Inbox=/immich/inbox,Family=/immich/family,Vacation=/immich/vacation}
+      MAX_FILE_MB: ${MAX_FILE_MB:-100}
+    volumes:
+      - ./data:/app/data
+      # Bind these to the same paths Immich uses as external libraries
+      - ${IMMICH_INBOX:-./data/immich-external/inbox}:/immich/inbox
+      - ${IMMICH_FAMILY:-./data/immich-external/family}:/immich/family
+      - ${IMMICH_VACATION:-./data/immich-external/vacation}:/immich/vacation
+    restart: unless-stopped
