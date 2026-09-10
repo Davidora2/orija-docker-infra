@@ -40,6 +40,13 @@ docker compose down
 
 Compose project name is `file-request` (`container_name: file-request`), so it sits next to Immich instead of inside it.
 
+On the Orija Portainer host (`portainer.orija.store`, endpoint `local`):
+
+```bash
+# Agents deploy this via Portainer API from tools/file-request/compose.portainer.yml
+# Published origin: host port 13847 → container 3847
+```
+
 If Immich is not published on the host and you would rather use its Docker network:
 
 ```bash

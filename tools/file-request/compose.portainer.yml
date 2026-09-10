@@ -1,0 +1,68 @@
+# Independent Portainer stack (same Docker host as other Orija apps).
+# Origin port is high-only — do not bind 80/443.
+# Tunnel/DNS can point at http://localhost:${FILE_REQUEST_PORT:-13847}
+
+services:
+  file-request:
+    image: node:22-alpine
+    container_name: file-request
+    restart: unless-stopped
+    working_dir: /opt/file-request
+    ports:
+      - "${FILE_REQUEST_PORT:-13847}:3847"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: production
+      PORT: "3847"
+      BASE_URL: ${BASE_URL:-http://localhost:13847}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      DATA_DIR: /data
+      UPLOAD_ROOT: /data/uploads
+      MAX_FILE_MB: ${MAX_FILE_MB:-100}
+      IMMICH_URL: ${IMMICH_URL:-http://host.docker.internal:2283}
+      FILE_REQUEST_REPO_URL: https://github.com/Davidora2/orija-docker-infra.git
+      FILE_REQUEST_REPO_REF: ${FILE_REQUEST_REPO_REF:-refs/heads/cursor/smb-immich-image-tool-f2be}
+    volumes:
+      - file-request-data:/data
+      - file-request-src:/opt/file-request
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        REPO_URL="$${FILE_REQUEST_REPO_URL}"
+        BRANCH="$${FILE_REQUEST_REPO_REF#refs/heads/}"
+        ROOT=/opt/file-request
+        mkdir -p "$$ROOT" /data/uploads
+        echo "Syncing file-request from $$BRANCH..."
+        apk add --no-cache git
+        if [ ! -d "$$ROOT/repo/.git" ]; then
+          rm -rf "$$ROOT/repo"
+          git clone --depth 1 --branch "$$BRANCH" "$$REPO_URL" "$$ROOT/repo"
+        else
+          cd "$$ROOT/repo"
+          git fetch --depth 1 origin "$$BRANCH"
+          git checkout -B "$$BRANCH" FETCH_HEAD
+          git reset --hard FETCH_HEAD
+        fi
+        cd "$$ROOT/repo/tools/file-request"
+        npm install --omit=dev
+        exec node src/server.js
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3847/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    labels:
+      - "com.orija.stack=file-request"
+
+volumes:
+  file-request-data:
+  file-request-src:
