@@ -12,7 +12,11 @@ function writeAll(rows) {
 }
 
 export function listRequests() {
-  return readAll().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return readAll().sort((a, b) => {
+    if (a.id === "open") return -1;
+    if (b.id === "open") return 1;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
 }
 
 export function getRequest(id) {

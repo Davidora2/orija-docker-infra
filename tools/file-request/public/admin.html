@@ -3,14 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>File Requests · Immich</title>
-    <link rel="stylesheet" href="/css/app.css" />
+    <title>Inbox · Send photos</title>
+    <base href="../" />
+    <link rel="stylesheet" href="css/app.css" />
   </head>
   <body>
     <div class="shell">
       <header>
-        <h1 class="brand">File Requests</h1>
-        <p class="sub">Collect photos like Dropbox File Request, then send them into an Immich user’s library or album.</p>
+        <h1 class="brand">Inbox</h1>
+        <p class="sub">Photos people send land in <strong>Send photos</strong> on the left. Open that inbox to see the pictures. Immich is optional later.</p>
       </header>
 
       <section id="authGate" class="panel auth-gate stack" hidden>
@@ -108,7 +109,7 @@
           <div class="panel stack">
             <div class="row" style="justify-content:space-between">
               <div>
-                <h2 id="detailTitle" style="margin:0;font-family:var(--font)">Select a request</h2>
+                <h2 id="detailTitle" style="margin:0;font-family:var(--font)">Send photos inbox</h2>
                 <p id="detailSub" class="muted" style="margin:0.35rem 0 0"></p>
               </div>
               <div class="row" id="detailActions" hidden>
@@ -140,13 +141,13 @@
               </details>
             </div>
 
-            <div id="fileList" class="empty">Create a request, share the link, then send uploaded images into Immich.</div>
+            <div id="fileList" class="empty">Unlock to open the Send photos inbox. Guest uploads show up here as pictures.</div>
           </div>
         </div>
       </section>
     </div>
 
     <div class="toast" id="toast"></div>
-    <script src="/js/admin.js" type="module"></script>
+    <script src="js/admin.js" type="module"></script>
   </body>
 </html>

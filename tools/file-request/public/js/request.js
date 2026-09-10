@@ -1,4 +1,5 @@
 import { uploadFileInChunks } from "./chunked-upload.js";
+import { apiUrl } from "./prefix.js";
 
 const id = location.pathname.split("/").filter(Boolean).pop();
 const toastEl = document.getElementById("toast");
@@ -53,9 +54,9 @@ uploadBtn.addEventListener("click", async () => {
     for (const [index, file] of files.entries()) {
       progressEl.textContent = `Uploading ${index + 1}/${files.length}: ${file.name}`;
       await uploadFileInChunks({
-        startUrl: `/api/requests/${id}/uploads`,
-        chunkPath: (uploadId, chunkIndex) => `/api/requests/${id}/uploads/${uploadId}/chunks/${chunkIndex}`,
-        completeUrl: (uploadId) => `/api/requests/${id}/uploads/${uploadId}/complete`,
+        startUrl: apiUrl(`/api/requests/${id}/uploads`),
+        chunkPath: (uploadId, chunkIndex) => apiUrl(`/api/requests/${id}/uploads/${uploadId}/chunks/${chunkIndex}`),
+        completeUrl: (uploadId) => apiUrl(`/api/requests/${id}/uploads/${uploadId}/complete`),
         file,
         extraComplete: { uploaderName, note },
         onProgress(done, total, name) {
@@ -83,7 +84,7 @@ async function boot() {
   const closedPanel = document.getElementById("closedPanel");
   const missingPanel = document.getElementById("missingPanel");
 
-  const res = await fetch(`/api/requests/${id}`);
+  const res = await fetch(apiUrl(`/api/requests/${id}`));
   if (res.status === 404) {
     statusPill.textContent = "Unavailable";
     missingPanel.hidden = false;

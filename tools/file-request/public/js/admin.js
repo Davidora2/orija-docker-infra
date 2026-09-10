@@ -1,7 +1,10 @@
+import { API_PREFIX, apiUrl } from "./prefix.js";
+
 const toastEl = document.getElementById("toast");
 const authGate = document.getElementById("authGate");
 const appEl = document.getElementById("app");
 const PASS_KEY = "immich-file-request-admin";
+const OPEN_ID = "open";
 
 function toast(message) {
   toastEl.textContent = message;
@@ -21,7 +24,7 @@ async function api(url, options = {}) {
     headers["content-type"] = "application/json";
     options = { ...options, body: JSON.stringify(options.body) };
   }
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(apiUrl(url), { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
   return data;
@@ -148,10 +151,11 @@ function renderRequests() {
   list.innerHTML = state.requests
     .map((r) => {
       const pending = r.files.filter((f) => !f.movedAt).length;
+      const inbox = r.id === OPEN_ID;
       return `<button class="request-card ${r.id === state.selectedId ? "active" : ""}" data-id="${r.id}" type="button">
-        <h3>${escapeHtml(r.title)}</h3>
+        <h3>${escapeHtml(inbox ? "Inbox — Send photos" : r.title)}</h3>
         <p>${r.files.length} file${r.files.length === 1 ? "" : "s"} · ${pending} waiting</p>
-        <p style="margin-top:0.4rem"><span class="pill ${r.closed ? "closed" : "open"}">${r.closed ? "Closed" : "Open"}</span></p>
+        <p style="margin-top:0.4rem"><span class="pill ${r.closed ? "closed" : "open"}">${inbox ? "Guest uploads" : r.closed ? "Closed" : "Open"}</span></p>
       </button>`;
     })
     .join("");
@@ -165,7 +169,7 @@ function renderRequests() {
 
 function previewUrl(requestId, fileId) {
   const q = password() ? `?password=${encodeURIComponent(password())}` : "";
-  return `/api/admin/files/${requestId}/${fileId}/preview${q}`;
+  return apiUrl(`/api/admin/files/${requestId}/${fileId}/preview${q}`);
 }
 
 function destLabel(file) {
@@ -214,17 +218,21 @@ function renderDetail() {
   const toggleBtn = document.getElementById("toggleCloseBtn");
 
   if (!request) {
-    title.textContent = "Select a request";
+    title.textContent = "Send photos inbox";
     sub.textContent = "";
     actions.hidden = true;
     moveBar.hidden = true;
     filesEl.className = "empty";
-    filesEl.textContent = "Create a request, share the link, then send uploaded images into Immich.";
+    filesEl.textContent = "Unlock to open the Send photos inbox. Guest uploads show up here as pictures.";
     return;
   }
 
-  title.textContent = request.title;
-  sub.innerHTML = `${escapeHtml(request.description || "No message")} · <span class="mono">${location.origin}/r/${request.id}</span>`;
+  const isOpen = request.id === OPEN_ID;
+  title.textContent = isOpen ? "Inbox — photos people just sent" : request.title;
+  const shareUrl = isOpen
+    ? `${location.origin}${API_PREFIX || ""}/`
+    : `${location.origin}${API_PREFIX}/r/${request.id}`;
+  sub.innerHTML = `${escapeHtml(request.description || "No message")} · <span class="mono">${shareUrl}</span>`;
   actions.hidden = false;
   toggleBtn.textContent = request.closed ? "Reopen" : "Close request";
   moveBar.hidden = request.files.length === 0;
@@ -295,7 +303,9 @@ async function refresh() {
   document.getElementById("immichUrl").value = cfg.immich?.immichUrl || "";
   if (!state.selectedUserId && state.immichUsers[0]) state.selectedUserId = state.immichUsers[0].id;
   state.requests = requests;
-  if (!state.selectedId && requests[0]) state.selectedId = requests[0].id;
+  if (!state.selectedId) {
+    state.selectedId = requests.find((r) => r.id === OPEN_ID)?.id || requests[0]?.id || null;
+  }
   if (state.selectedId && !requests.find((r) => r.id === state.selectedId)) {
     state.selectedId = requests[0]?.id || null;
   }

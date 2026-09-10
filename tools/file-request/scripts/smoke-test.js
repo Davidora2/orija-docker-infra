@@ -194,6 +194,22 @@ try {
   const denied = await request("GET", "/api/admin/requests");
   assert(denied.status === 401, "admin should require password");
 
+  const inbox = await request("GET", "/api/admin/requests", { headers: auth });
+  assert(inbox.json[0]?.id === "open", "open inbox should be first in admin list");
+  assert(
+    inbox.json[0].files.some((f) => f.originalName === "phone.jpg"),
+    "guest upload missing from open inbox",
+  );
+
+  const adminPage = await request("GET", "/admin");
+  assert(adminPage.status === 200, "admin page missing");
+  const adminHtml = fs.readFileSync(path.join(root, "public", "admin.html"), "utf8");
+  assert(!adminHtml.includes('href="/css/app.css"'), "admin CSS must be prefix-safe");
+  assert(!adminHtml.includes('src="/js/admin.js"'), "admin JS must be prefix-safe");
+  const adminJs = fs.readFileSync(path.join(root, "public", "js", "admin.js"), "utf8");
+  assert(adminJs.includes("apiUrl"), "admin JS must prefix API calls");
+  assert(adminJs.includes('OPEN_ID'), "admin JS must auto-open the guest inbox");
+
   const created = await request("POST", "/api/admin/requests", {
     headers: { ...auth, "content-type": "application/json" },
     body: JSON.stringify({ title: "Weekend photos", description: "Please send originals" }),
@@ -348,8 +364,8 @@ try {
   });
   assert(lateChunk.status === 403, "closed request should reject chunked uploads");
 
-  const adminPage = await request("GET", "/admin");
-  assert(adminPage.status === 200 && adminPage.raw.toString().includes("Send to Immich"), "admin html missing");
+  const adminHtmlPage = await request("GET", "/admin");
+  assert(adminHtmlPage.status === 200 && adminHtmlPage.raw.toString().includes("Send to Immich"), "admin html missing");
   const reqPage = await request("GET", `/r/${id}`);
   assert(reqPage.status === 200 && reqPage.raw.toString().includes("Drop photos"), "request html missing");
 
