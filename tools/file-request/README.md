@@ -1,20 +1,20 @@
 # Immich File Request
 
-Dropbox-style **file requests** for collecting photos and videos, then moving them into Immich **external library** folders from an admin screen.
+Dropbox-style **file requests** for collecting photos and videos. People upload through a public link. You send the files into a chosen **Immich user** (via that user’s API key) and optionally into one of their **albums**.
 
-This avoids Immich’s own upload path (and error 592 / reverse-proxy upload limits). People only get a public request link. You copy or move the files into folders Immich already watches.
+This avoids guests using Immich’s own upload UI (and typical reverse-proxy / error 592 issues).
 
 ## Flow
 
-1. Admin creates a request (“Wedding weekend photos”) and copies the link.
-2. Anyone with the link drops images (no Immich account).
-3. Admin reviews files, picks an Immich external folder (`Family`, `Vacation`, `Inbox`, …), and **Copy** or **Move**.
-4. Immich picks them up on the next external-library scan.
+1. In admin, set your Immich URL and paste each user’s API key (Immich → Account Settings → API Keys).
+2. Create a request (“Wedding weekend photos”) and share `/r/<id>`.
+3. Anyone with the link drops photos (no Immich account).
+4. Admin picks **user + album** (or Library / new album) and clicks **Send to Immich**.
+5. Files are uploaded with that user’s key, so they land in that person’s library.
 
 ```
-Phone / laptop  →  /r/<id> upload page  →  staging (data/uploads)
-Admin           →  /admin               →  copy/move into Immich external folders
-Immich          →  watches those folders as external libraries
+Phone / laptop  →  /r/<id>  →  staging
+Admin           →  /admin   →  Immich API (user key) → that user’s library / album
 ```
 
 ## Quick start
@@ -22,38 +22,33 @@ Immich          →  watches those folders as external libraries
 ```bash
 cd tools/file-request
 cp .env.example .env
-# edit IMMICH_FOLDERS to real Immich external-library paths
-pnpm install   # or: npm install
-pnpm start
+npm install
+npm start
 ```
 
-Open [http://localhost:3847/admin](http://localhost:3847/admin). Default password from `.env.example` is `change-me`.
+Open [http://localhost:3847/admin](http://localhost:3847/admin). Default password is `change-me`.
 
-Share links look like `http://localhost:3847/r/<id>`.
+1. Save Immich server URL (example: `http://192.168.1.10:2283`).
+2. For each Immich user, create an API key with **asset upload** and **album** permissions, then paste it.
+3. Create a request link and send it to people.
 
-## Point folders at Immich
+## API keys
 
-Set `IMMICH_FOLDERS` to the same directories Immich uses as **external libraries**. Examples:
+Each Immich user needs their own key. Uploads are owned by whoever owns the key.
 
-```env
-# Local mounts
-IMMICH_FOLDERS=Inbox=/mnt/immich/external/inbox,Family=/mnt/immich/external/family
+Recommended key permissions: `asset.upload`, `album.read`, `album.create`, `albumAsset.create`, `user.read`.
 
-# SMB / CIFS already mounted on the host
-IMMICH_FOLDERS=Family=/mnt/smb/photos/family,Vacation=/mnt/smb/photos/vacation
-```
+## Optional disk folders
 
-In Immich: **Administration → External Libraries → Add library** for each of those paths (or bind-mount them into the Immich container at the same path). After you move files, run **Scan** on that library if it does not pick them up automatically.
+You can still copy/move files into directories Immich watches as **external libraries** (`IMMICH_FOLDERS` in `.env`). That is a fallback, not the main path.
 
 ## Docker
-
-From this directory:
 
 ```bash
 docker compose up -d --build
 ```
 
-Bind-mount your Immich library folders over `./data/immich-external/...` (see `docker-compose.yml`).
+Set `IMMICH_URL` if you want a default server URL. User keys are stored in `./data/settings.json`.
 
 ## API (optional)
 
@@ -61,14 +56,15 @@ Admin calls need header `x-admin-password` when `ADMIN_PASSWORD` is set.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/api/admin/requests` | Create request `{ title, description }` |
-| GET | `/api/admin/requests` | List requests + uploaded files |
-| POST | `/api/requests/:id/upload` | Multipart field `files` (+ `uploaderName`, `note`) |
-| POST | `/api/admin/move` | `{ requestId, fileIds, folderId, mode: "copy" \| "move" }` |
+| PUT | `/api/admin/immich/url` | `{ url }` |
+| POST | `/api/admin/immich/users` | `{ apiKey, label }` — validates via Immich `/users/me` |
+| GET | `/api/admin/immich/users/:id/albums` | That user’s albums |
+| POST | `/api/admin/send-to-immich` | `{ requestId, fileIds, userId, albumId? }` |
+| POST | `/api/admin/requests` | Create request |
+| POST | `/api/requests/:id/upload` | Public multipart `files` |
 
 ## Notes
 
-- Staging files live in `data/uploads/<request-id>/`. Do not point Immich at that folder.
-- `Copy` keeps a staging copy; `Move` relocates the file into the Immich folder.
-- Name collisions in the destination get a short suffix.
+- Staging files live in `data/uploads/<request-id>/`.
+- API keys are stored in `data/settings.json` and never sent back to the browser (only a masked suffix).
 - Leave `ADMIN_PASSWORD` empty only on a trusted LAN.

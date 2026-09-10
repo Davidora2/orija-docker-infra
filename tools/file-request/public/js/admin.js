@@ -31,6 +31,9 @@ let state = {
   requests: [],
   selectedId: null,
   folders: [],
+  immichUsers: [],
+  albums: [],
+  selectedUserId: "",
 };
 
 function selectedRequest() {
@@ -41,6 +44,49 @@ function formatBytes(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function renderUsers() {
+  const list = document.getElementById("userList");
+  if (!state.immichUsers.length) {
+    list.className = "empty";
+    list.textContent = "No Immich users yet.";
+    return;
+  }
+  list.className = "stack";
+  list.innerHTML = state.immichUsers
+    .map(
+      (u) => `<div class="user-row">
+        <div>
+          <strong>${escapeHtml(u.label)}</strong>
+          <div class="muted">${escapeHtml(u.email || u.name || u.apiKeyMasked)}</div>
+        </div>
+        <button class="btn secondary" data-remove-user="${u.id}" type="button">Remove</button>
+      </div>`,
+    )
+    .join("");
+  list.querySelectorAll("[data-remove-user]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const updated = await api(`/api/admin/immich/users/${btn.dataset.removeUser}`, { method: "DELETE" });
+        state.immichUsers = updated.users;
+        if (state.selectedUserId === btn.dataset.removeUser) state.selectedUserId = state.immichUsers[0]?.id || "";
+        render();
+        await loadAlbums();
+        toast("User removed");
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+  });
 }
 
 function renderRequests() {
@@ -72,6 +118,42 @@ function previewUrl(requestId, fileId) {
   return `/api/admin/files/${requestId}/${fileId}/preview${q}`;
 }
 
+function destLabel(file) {
+  const dest = file.destination;
+  if (!dest) return "";
+  if (dest.kind === "immich") {
+    const who = dest.userName || "Immich";
+    const where = dest.albumName || "Library";
+    return `In ${who} · ${where}`;
+  }
+  return `In ${dest.folderName || "folder"}`;
+}
+
+function renderDestControls() {
+  const userSelect = document.getElementById("immichUserSelect");
+  const albumSelect = document.getElementById("immichAlbumSelect");
+  const newAlbumRow = document.getElementById("newAlbumRow");
+  userSelect.innerHTML = state.immichUsers.length
+    ? state.immichUsers.map((u) => `<option value="${u.id}">${escapeHtml(u.label)}</option>`).join("")
+    : `<option value="">Add an Immich user first</option>`;
+  if (state.selectedUserId) userSelect.value = state.selectedUserId;
+
+  const albumOptions = [
+    `<option value="">Library (no album)</option>`,
+    ...state.albums.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`),
+    `<option value="__new__">New album…</option>`,
+  ];
+  const previous = albumSelect.value;
+  albumSelect.innerHTML = albumOptions.join("");
+  if ([...albumSelect.options].some((o) => o.value === previous)) albumSelect.value = previous;
+  newAlbumRow.hidden = albumSelect.value !== "__new__";
+
+  const folderSelect = document.getElementById("folderSelect");
+  folderSelect.innerHTML = state.folders
+    .map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)
+    .join("");
+}
+
 function renderDetail() {
   const request = selectedRequest();
   const title = document.getElementById("detailTitle");
@@ -87,7 +169,7 @@ function renderDetail() {
     actions.hidden = true;
     moveBar.hidden = true;
     filesEl.className = "empty";
-    filesEl.textContent = "Create a request, share the link, then move uploaded images here.";
+    filesEl.textContent = "Create a request, share the link, then send uploaded images into Immich.";
     return;
   }
 
@@ -96,11 +178,7 @@ function renderDetail() {
   actions.hidden = false;
   toggleBtn.textContent = request.closed ? "Reopen" : "Close request";
   moveBar.hidden = request.files.length === 0;
-
-  const folderSelect = document.getElementById("folderSelect");
-  folderSelect.innerHTML = state.folders
-    .map((f) => `<option value="${f.id}">${escapeHtml(f.name)}</option>`)
-    .join("");
+  renderDestControls();
 
   if (!request.files.length) {
     filesEl.className = "empty";
@@ -125,24 +203,34 @@ function renderDetail() {
           </label>
           <div>${escapeHtml(file.uploaderName)} · ${formatBytes(file.size)}</div>
           ${file.note ? `<div>${escapeHtml(file.note)}</div>` : ""}
-          ${moved ? `<div class="pill open">In ${escapeHtml(file.destination?.folderName || "Immich")}</div>` : ""}
+          ${moved ? `<div class="pill open">${escapeHtml(destLabel(file))}</div>` : ""}
         </div>
       </label>`;
     })
     .join("");
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
 function render() {
+  renderUsers();
   renderRequests();
   renderDetail();
+}
+
+async function loadAlbums() {
+  const userId = document.getElementById("immichUserSelect")?.value || state.selectedUserId;
+  state.selectedUserId = userId;
+  if (!userId) {
+    state.albums = [];
+    renderDestControls();
+    return;
+  }
+  try {
+    state.albums = await api(`/api/admin/immich/users/${userId}/albums`);
+  } catch (error) {
+    state.albums = [];
+    toast(error.message);
+  }
+  renderDestControls();
 }
 
 async function refresh() {
@@ -151,12 +239,16 @@ async function refresh() {
     api("/api/admin/requests"),
   ]);
   state.folders = cfg.immichFolders;
+  state.immichUsers = cfg.immich?.users || [];
+  document.getElementById("immichUrl").value = cfg.immich?.immichUrl || "";
+  if (!state.selectedUserId && state.immichUsers[0]) state.selectedUserId = state.immichUsers[0].id;
   state.requests = requests;
   if (!state.selectedId && requests[0]) state.selectedId = requests[0].id;
   if (state.selectedId && !requests.find((r) => r.id === state.selectedId)) {
     state.selectedId = requests[0]?.id || null;
   }
   render();
+  await loadAlbums();
 }
 
 async function unlock() {
@@ -176,6 +268,37 @@ async function unlock() {
 document.getElementById("unlockBtn").addEventListener("click", unlock);
 document.getElementById("password").addEventListener("keydown", (e) => {
   if (e.key === "Enter") unlock();
+});
+
+document.getElementById("saveUrlBtn").addEventListener("click", async () => {
+  try {
+    const updated = await api("/api/admin/immich/url", {
+      method: "PUT",
+      body: { url: document.getElementById("immichUrl").value },
+    });
+    state.immichUsers = updated.users;
+    toast("Immich URL saved");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
+document.getElementById("addUserBtn").addEventListener("click", async () => {
+  try {
+    const user = await api("/api/admin/immich/users", {
+      method: "POST",
+      body: {
+        label: document.getElementById("userLabel").value,
+        apiKey: document.getElementById("userApiKey").value,
+      },
+    });
+    document.getElementById("userApiKey").value = "";
+    state.selectedUserId = user.id;
+    await refresh();
+    toast(`Added ${user.label}`);
+  } catch (error) {
+    toast(error.message);
+  }
 });
 
 document.getElementById("createBtn").addEventListener("click", async () => {
@@ -217,10 +340,64 @@ document.getElementById("toggleCloseBtn").addEventListener("click", async () => 
   }
 });
 
+document.getElementById("immichUserSelect").addEventListener("change", (e) => {
+  state.selectedUserId = e.target.value;
+  loadAlbums();
+});
+
+document.getElementById("immichAlbumSelect").addEventListener("change", () => {
+  document.getElementById("newAlbumRow").hidden =
+    document.getElementById("immichAlbumSelect").value !== "__new__";
+  if (document.getElementById("immichAlbumSelect").value === "__new__") {
+    const request = selectedRequest();
+    if (request && !document.getElementById("newAlbumName").value) {
+      document.getElementById("newAlbumName").value = request.title;
+    }
+  }
+});
+
+function selectedFileIds() {
+  return [...document.querySelectorAll("#fileList input[type=checkbox]:checked")].map((el) => el.dataset.fileId);
+}
+
+document.getElementById("sendImmichBtn").addEventListener("click", async () => {
+  const request = selectedRequest();
+  if (!request) return;
+  const fileIds = selectedFileIds();
+  if (!fileIds.length) {
+    toast("Select at least one file");
+    return;
+  }
+  const userId = document.getElementById("immichUserSelect").value;
+  if (!userId) {
+    toast("Add an Immich user API key first");
+    return;
+  }
+  const albumSelect = document.getElementById("immichAlbumSelect");
+  const albumId = albumSelect.value;
+  const body = { requestId: request.id, fileIds, userId };
+  if (albumId === "__new__") {
+    body.newAlbumName = document.getElementById("newAlbumName").value.trim() || request.title;
+  } else if (albumId) {
+    body.albumId = albumId;
+    body.albumName = albumSelect.selectedOptions[0]?.textContent;
+  }
+  try {
+    const result = await api("/api/admin/send-to-immich", { method: "POST", body });
+    const failed = result.results.filter((r) => !r.ok);
+    if (result.albumError) toast(`Uploaded, but album add failed: ${result.albumError}`);
+    else if (failed.length) toast(`Sent with ${failed.length} error(s)`);
+    else toast("Sent to Immich");
+    await refresh();
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 document.getElementById("moveBtn").addEventListener("click", async () => {
   const request = selectedRequest();
   if (!request) return;
-  const fileIds = [...document.querySelectorAll("#fileList input[type=checkbox]:checked")].map((el) => el.dataset.fileId);
+  const fileIds = selectedFileIds();
   if (!fileIds.length) {
     toast("Select at least one file");
     return;
@@ -237,7 +414,7 @@ document.getElementById("moveBtn").addEventListener("click", async () => {
     });
     const failed = result.results.filter((r) => !r.ok);
     if (failed.length) toast(`Moved with ${failed.length} error(s)`);
-    else toast("Sent to Immich folder");
+    else toast("Sent to folder");
     await refresh();
   } catch (error) {
     toast(error.message);

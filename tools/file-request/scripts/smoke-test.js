@@ -15,6 +15,60 @@ fs.mkdirSync(inbox);
 fs.mkdirSync(family);
 fs.mkdirSync(dataDir);
 
+const mockState = {
+  albums: [{ id: "album-family", albumName: "Family", assetCount: 2 }],
+  uploads: [],
+  albumAdds: [],
+};
+
+const mock = http.createServer((req, res) => {
+  const key = req.headers["x-api-key"];
+  const send = (status, body) => {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
+  if (key !== "maya-key") {
+    send(401, { message: "Invalid API key" });
+    return;
+  }
+  const url = new URL(req.url, "http://immich.test");
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", () => {
+    if (req.method === "GET" && url.pathname === "/api/users/me") {
+      send(200, { id: "user-maya", name: "Maya", email: "maya@home" });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/albums") {
+      send(200, mockState.albums);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/albums") {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      const album = { id: "album-new", albumName: body.albumName, assetCount: 0 };
+      mockState.albums.push(album);
+      send(201, album);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/assets") {
+      const asset = { id: `asset-${mockState.uploads.length + 1}`, status: "created" };
+      mockState.uploads.push({ asset, bytes: Buffer.concat(chunks).length });
+      send(201, asset);
+      return;
+    }
+    if (req.method === "PUT" && url.pathname.endsWith("/assets")) {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      mockState.albumAdds.push({ path: url.pathname, ids: body.ids });
+      send(200, (body.ids || []).map((id) => ({ id, success: true })));
+      return;
+    }
+    send(404, { message: `no mock ${req.method} ${url.pathname}` });
+  });
+});
+
+const mockPort = 38480;
+await new Promise((resolve) => mock.listen(mockPort, "127.0.0.1", resolve));
+
 const port = 38479;
 const child = spawn(process.execPath, [path.join(root, "src/server.js")], {
   cwd: root,
@@ -141,6 +195,49 @@ try {
   const row = listed.json.find((r) => r.id === id);
   assert(row.files.length === 1, "file not listed");
 
+  const savedUrl = await request("PUT", "/api/admin/immich/url", {
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ url: `http://127.0.0.1:${mockPort}` }),
+  });
+  assert(savedUrl.status === 200 && savedUrl.json.immichUrl.includes(String(mockPort)), "save url failed");
+
+  const badKey = await request("POST", "/api/admin/immich/users", {
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ apiKey: "nope", label: "Bad" }),
+  });
+  assert(badKey.status === 401, "bad key should fail");
+
+  const added = await request("POST", "/api/admin/immich/users", {
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ apiKey: "maya-key", label: "Maya" }),
+  });
+  assert(added.status === 201 && added.json.email === "maya@home", "add user failed: " + JSON.stringify(added.json));
+  assert(!JSON.stringify(added.json).includes("maya-key"), "api key leaked");
+  const userId = added.json.id;
+
+  const albums = await request("GET", `/api/admin/immich/users/${userId}/albums`, { headers: auth });
+  assert(albums.json.some((a) => a.name === "Family"), "albums missing: " + JSON.stringify(albums.json));
+
+  const sent = await request("POST", "/api/admin/send-to-immich", {
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({
+      requestId: id,
+      fileIds: [fileId],
+      userId,
+      albumId: "album-family",
+      albumName: "Family",
+    }),
+  });
+  assert(sent.json.ok, "send to immich failed: " + JSON.stringify(sent.json));
+  assert(mockState.uploads.length === 1, "immich did not receive upload");
+  assert(mockState.albumAdds.length === 1, "immich did not receive album add");
+  assert(sent.json.results[0].assetId === "asset-1", "asset id mismatch");
+
+  const afterSend = await request("GET", "/api/admin/requests", { headers: auth });
+  const sentFile = afterSend.json.find((r) => r.id === id).files[0];
+  assert(sentFile.destination.kind === "immich", "destination not marked immich");
+  assert(sentFile.destination.albumName === "Family", "album name not stored");
+
   const moved = await request("POST", "/api/admin/move", {
     headers: { ...auth, "content-type": "application/json" },
     body: JSON.stringify({ requestId: id, fileIds: [fileId], folderId: "family", mode: "copy" }),
@@ -166,11 +263,12 @@ try {
   assert(late.status === 403, "closed request should reject uploads");
 
   const adminPage = await request("GET", "/admin");
-  assert(adminPage.status === 200 && adminPage.raw.toString().includes("File Requests"), "admin html missing");
+  assert(adminPage.status === 200 && adminPage.raw.toString().includes("Send to Immich"), "admin html missing");
   const reqPage = await request("GET", `/r/${id}`);
   assert(reqPage.status === 200 && reqPage.raw.toString().includes("Drop photos"), "request html missing");
 
   console.log("smoke-test ok");
 } finally {
   child.kill("SIGTERM");
+  mock.close();
 }

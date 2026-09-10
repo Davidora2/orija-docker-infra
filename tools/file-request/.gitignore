@@ -1,6 +1,8 @@
 node_modules
 .env
-data/uploads/
+data/uploads/*
+!data/uploads/.gitkeep
 data/immich-external/**/*
 !data/immich-external/**/.gitkeep
 data/requests.json
+data/settings.json

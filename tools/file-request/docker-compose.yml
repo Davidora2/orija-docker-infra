@@ -10,6 +10,7 @@ services:
       DATA_DIR: /app/data
       UPLOAD_ROOT: /app/data/uploads
       IMMICH_FOLDERS: ${IMMICH_FOLDERS:-Inbox=/immich/inbox,Family=/immich/family,Vacation=/immich/vacation}
+      IMMICH_URL: ${IMMICH_URL:-}
       MAX_FILE_MB: ${MAX_FILE_MB:-100}
     volumes:
       - ./data:/app/data

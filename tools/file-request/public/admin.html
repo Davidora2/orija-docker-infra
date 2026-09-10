@@ -10,7 +10,7 @@
     <div class="shell">
       <header>
         <h1 class="brand">File Requests</h1>
-        <p class="sub">Collect photos like Dropbox File Request, then move them into Immich external folders.</p>
+        <p class="sub">Collect photos like Dropbox File Request, then send them into an Immich user’s library or album.</p>
       </header>
 
       <section id="authGate" class="panel auth-gate stack" hidden>
@@ -47,6 +47,30 @@
               </div>
             </div>
 
+            <div class="panel stack">
+              <h2 style="margin:0;font-family:var(--font)">Immich users</h2>
+              <p class="muted" style="margin:0">Paste each person’s API key from Immich → Account Settings → API Keys. Photos are uploaded as that user.</p>
+              <div>
+                <label for="immichUrl">Immich server URL</label>
+                <div class="link-box">
+                  <input id="immichUrl" type="text" placeholder="https://photos.example.com" />
+                  <button class="btn secondary" id="saveUrlBtn" type="button">Save</button>
+                </div>
+              </div>
+              <div>
+                <label for="userLabel">Label (optional)</label>
+                <input id="userLabel" type="text" placeholder="Maya / Family" />
+              </div>
+              <div>
+                <label for="userApiKey">User API key</label>
+                <div class="link-box">
+                  <input id="userApiKey" type="password" autocomplete="off" placeholder="immich API key" />
+                  <button class="btn" id="addUserBtn" type="button">Add user</button>
+                </div>
+              </div>
+              <div id="userList" class="empty">No Immich users yet.</div>
+            </div>
+
             <div class="panel">
               <div class="row" style="justify-content:space-between;margin-bottom:0.75rem">
                 <h2 style="margin:0;font-family:var(--font)">Requests</h2>
@@ -67,16 +91,31 @@
               </div>
             </div>
 
-            <div class="row" id="moveBar" hidden>
-              <select id="folderSelect"></select>
-              <select id="modeSelect">
-                <option value="copy">Copy to Immich folder</option>
-                <option value="move">Move to Immich folder</option>
-              </select>
-              <button class="btn" id="moveBtn" type="button">Send selected</button>
+            <div class="stack" id="moveBar" hidden>
+              <div class="row">
+                <select id="immichUserSelect"></select>
+                <select id="immichAlbumSelect"></select>
+              </div>
+              <div class="row" id="newAlbumRow" hidden>
+                <input id="newAlbumName" type="text" placeholder="New album name" />
+              </div>
+              <div class="row">
+                <button class="btn" id="sendImmichBtn" type="button">Send to Immich</button>
+              </div>
+              <details class="muted">
+                <summary>Or copy to a disk folder</summary>
+                <div class="row" style="margin-top:0.6rem">
+                  <select id="folderSelect"></select>
+                  <select id="modeSelect">
+                    <option value="copy">Copy</option>
+                    <option value="move">Move</option>
+                  </select>
+                  <button class="btn secondary" id="moveBtn" type="button">Send to folder</button>
+                </div>
+              </details>
             </div>
 
-            <div id="fileList" class="empty">Create a request, share the link, then move uploaded images here.</div>
+            <div id="fileList" class="empty">Create a request, share the link, then send uploaded images into Immich.</div>
           </div>
         </div>
       </section>

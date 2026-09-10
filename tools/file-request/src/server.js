@@ -5,6 +5,8 @@ import multer from "multer";
 import { nanoid } from "nanoid";
 import { config } from "./config.js";
 import * as store from "./store.js";
+import * as settings from "./settings.js";
+import * as immich from "./immich.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -61,7 +63,135 @@ app.get("/api/admin/config", requireAdmin, (_req, res) => {
     authRequired: Boolean(config.adminPassword),
     immichFolders: config.immichFolders.map(({ id, name, path: p }) => ({ id, name, path: p })),
     maxFileMb: config.maxFileBytes / (1024 * 1024),
+    immich: settings.publicSettings(),
   });
+});
+
+app.put("/api/admin/immich/url", requireAdmin, (req, res) => {
+  try {
+    res.json(settings.setImmichUrl(req.body.url));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/admin/immich/users", requireAdmin, async (req, res) => {
+  try {
+    const { apiKey, label } = req.body || {};
+    const cfg = settings.getSettings();
+    if (!cfg.immichUrl) return res.status(400).json({ error: "Set the Immich URL first" });
+    const profile = await immich.getMe(cfg.immichUrl, String(apiKey || "").trim());
+    const user = settings.upsertUser({ apiKey, label, profile });
+    res.status(201).json(user);
+  } catch (error) {
+    res.status(error.status === 401 ? 401 : 400).json({ error: error.message || "Could not add Immich user" });
+  }
+});
+
+app.delete("/api/admin/immich/users/:id", requireAdmin, (req, res) => {
+  res.json(settings.removeUser(req.params.id));
+});
+
+app.get("/api/admin/immich/users/:id/albums", requireAdmin, async (req, res) => {
+  try {
+    const user = settings.getUser(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not saved" });
+    const cfg = settings.getSettings();
+    const albums = await immich.listAlbums(cfg.immichUrl, user.apiKey);
+    res.json(albums);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/admin/immich/users/:id/albums", requireAdmin, async (req, res) => {
+  try {
+    const user = settings.getUser(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not saved" });
+    const name = String(req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Album name required" });
+    const cfg = settings.getSettings();
+    const album = await immich.createAlbum(cfg.immichUrl, user.apiKey, name);
+    res.status(201).json(album);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/admin/send-to-immich", requireAdmin, async (req, res) => {
+  const { requestId, fileIds, userId, albumId, albumName, newAlbumName } = req.body || {};
+  const request = store.getRequest(requestId);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const user = settings.getUser(userId);
+  if (!user) return res.status(400).json({ error: "Select an Immich user" });
+  const cfg = settings.getSettings();
+  if (!cfg.immichUrl) return res.status(400).json({ error: "Immich URL is not configured" });
+
+  const ids = Array.isArray(fileIds) ? fileIds : [];
+  if (!ids.length) return res.status(400).json({ error: "No files selected" });
+
+  let album = null;
+  try {
+    if (newAlbumName) {
+      album = await immich.createAlbum(cfg.immichUrl, user.apiKey, String(newAlbumName).trim());
+    } else if (albumId) {
+      album = { id: albumId, name: albumName || "Album" };
+    }
+  } catch (error) {
+    return res.status(400).json({ error: `Could not create album: ${error.message}` });
+  }
+
+  const results = [];
+  const uploadedIds = [];
+  for (const fileId of ids) {
+    const file = request.files.find((f) => f.id === fileId);
+    if (!file) {
+      results.push({ fileId, ok: false, error: "File not found" });
+      continue;
+    }
+    const src = path.join(config.uploadRoot, request.id, file.storedName);
+    if (!fs.existsSync(src)) {
+      results.push({ fileId, ok: false, error: "Source missing on disk" });
+      continue;
+    }
+    try {
+      const uploaded = await immich.uploadAsset(cfg.immichUrl, user.apiKey, {
+        filePath: src,
+        filename: file.originalName,
+        mime: file.mime,
+        createdAt: file.uploadedAt,
+        deviceAssetId: `${request.id}-${file.id}`,
+      });
+      uploadedIds.push(uploaded.id);
+      store.markFileMoved(requestId, fileId, {
+        kind: "immich",
+        userId: user.id,
+        userName: user.label || user.name,
+        albumId: album?.id || null,
+        albumName: album?.name || (album?.id ? "Album" : "Library"),
+        assetId: uploaded.id,
+        duplicate: uploaded.duplicate,
+      });
+      results.push({ fileId, ok: true, assetId: uploaded.id, duplicate: uploaded.duplicate });
+    } catch (error) {
+      results.push({ fileId, ok: false, error: error.message });
+    }
+  }
+
+  if (album?.id && uploadedIds.length) {
+    try {
+      await immich.addToAlbum(cfg.immichUrl, user.apiKey, album.id, uploadedIds);
+    } catch (error) {
+      return res.json({
+        ok: false,
+        albumError: error.message,
+        album,
+        results,
+      });
+    }
+  }
+
+  res.json({ ok: results.every((r) => r.ok), album, results });
 });
 
 app.get("/api/admin/requests", requireAdmin, (_req, res) => {

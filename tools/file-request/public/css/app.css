@@ -201,3 +201,19 @@ textarea { min-height: 90px; resize: vertical; }
   margin-top: 0.75rem;
 }
 .link-box input { flex: 1; }
+
+select { min-width: 0; flex: 1; }
+
+.user-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.7rem 0.85rem;
+  background: #fff;
+}
+.user-row strong { display: block; }
+
+details summary { cursor: pointer; }

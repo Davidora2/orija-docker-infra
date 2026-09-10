@@ -39,6 +39,7 @@ const immichFolders = parseFolders(process.env.IMMICH_FOLDERS);
 const dataRoot = path.resolve(ROOT, process.env.DATA_DIR || "./data");
 const uploadRoot = path.resolve(ROOT, process.env.UPLOAD_ROOT || path.join(dataRoot, "uploads"));
 const requestsFile = path.join(dataRoot, "requests.json");
+const settingsFile = path.join(dataRoot, "settings.json");
 
 for (const folder of immichFolders) {
   fs.mkdirSync(folder.path, { recursive: true });
@@ -48,6 +49,9 @@ fs.mkdirSync(dataRoot, { recursive: true });
 if (!fs.existsSync(requestsFile)) {
   fs.writeFileSync(requestsFile, "[]\n");
 }
+if (!fs.existsSync(settingsFile)) {
+  fs.writeFileSync(settingsFile, `${JSON.stringify({ immichUrl: process.env.IMMICH_URL || "", users: [] }, null, 2)}\n`);
+}
 
 export const config = {
   root: ROOT,
@@ -56,6 +60,7 @@ export const config = {
   adminPassword: process.env.ADMIN_PASSWORD || "",
   uploadRoot,
   requestsFile,
+  settingsFile,
   immichFolders,
   maxFileBytes: Number(process.env.MAX_FILE_MB || 100) * 1024 * 1024,
   allowedMime: new Set([
