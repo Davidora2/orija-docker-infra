@@ -12,7 +12,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { KEYS, pingInbox, uploadFile, type InboxInfo } from "./src/api";
+import { DEFAULT_SERVER_URL, KEYS, pingInbox, uploadFile, type InboxInfo } from "./src/api";
 
 export default function App() {
   const [url, setUrl] = useState("");
@@ -24,7 +24,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const savedUrl = (await AsyncStorage.getItem(KEYS.url)) || "";
+      const savedUrl = (await AsyncStorage.getItem(KEYS.url)) || DEFAULT_SERVER_URL;
       const savedToken = (await AsyncStorage.getItem(KEYS.token)) || "";
       setUrl(savedUrl);
       setToken(savedToken);
@@ -127,7 +127,7 @@ export default function App() {
             style={styles.input}
             autoCapitalize="none"
             autoCorrect={false}
-            placeholder="https://photos-inbox.example.com"
+            placeholder="https://inbox.orija.store"
             value={url}
             onChangeText={setUrl}
           />

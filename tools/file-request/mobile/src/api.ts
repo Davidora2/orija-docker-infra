@@ -1,4 +1,6 @@
-type InboxInfo = {
+import { File, Paths } from "expo-file-system";
+
+export type InboxInfo = {
   ok: boolean;
   label: string;
   destination: { user: string; album: string };
@@ -6,19 +8,43 @@ type InboxInfo = {
   unlimited?: boolean;
 };
 
+export function normalizeServerUrl(raw: string) {
+  let url = String(raw || "").trim();
+  if (!url) throw new Error("Enter the server URL from Admin → Phone inboxes");
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  return url.replace(/\/$/, "");
+}
+
 function join(url: string, path: string) {
-  return `${url.replace(/\/$/, "")}${path}`;
+  return `${normalizeServerUrl(url)}${path}`;
 }
 
 async function readJson(res: Response) {
   return res.json().catch(() => ({} as { error?: string }));
 }
 
+function friendlyNetworkError(error: unknown, serverUrl: string) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Network request failed|Failed to fetch|TypeError/i.test(message)) {
+    return `Cannot reach ${serverUrl}. Use the public HTTPS inbox URL, or http://YOUR-LAN-IP:13847 on the same Wi-Fi.`;
+  }
+  return message;
+}
+
 export async function pingInbox(serverUrl: string, token: string): Promise<InboxInfo> {
-  const res = await fetch(join(serverUrl, `/api/inbox/${encodeURIComponent(token)}`));
-  const data = await readJson(res);
-  if (!res.ok) throw new Error(data.error || `Cannot reach server (${res.status})`);
-  return data as InboxInfo;
+  const url = normalizeServerUrl(serverUrl);
+  if (!token.trim()) throw new Error("Enter the phone token from Admin → Phone inboxes");
+  try {
+    const res = await fetch(join(url, `/api/inbox/${encodeURIComponent(token.trim())}`));
+    const data = await readJson(res);
+    if (res.status === 404) {
+      throw new Error("This server does not have a phone inbox (wrong URL, or the live stack is outdated).");
+    }
+    if (!res.ok) throw new Error(data.error || `Cannot reach server (${res.status})`);
+    return data as InboxInfo;
+  } catch (error) {
+    throw new Error(friendlyNetworkError(error, url));
+  }
 }
 
 async function putChunk(url: string, body: BodyInit, attempt = 1): Promise<void> {
@@ -39,38 +65,29 @@ async function putChunk(url: string, body: BodyInit, attempt = 1): Promise<void>
   }
 }
 
-async function loadFileSystem(): Promise<typeof import("expo-file-system") | null> {
+function safeName(name: string) {
+  return String(name || "upload").replace(/[^\w.\-]+/g, "_").slice(0, 180);
+}
+
+function asBlob(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes);
+  return new Blob([copy]);
+}
+
+function openLocalFile(uri: string, name: string) {
+  const source = new File(uri);
+  if (uri.startsWith("file://") && source.exists) return source;
+  const dest = new File(Paths.cache, `immich-send-${Date.now()}-${safeName(name)}`);
   try {
-    return await import("expo-file-system");
+    source.copy(dest);
+    return dest;
   } catch {
-    return null;
+    return source;
   }
 }
 
-async function localFileUri(
-  FileSystem: typeof import("expo-file-system"),
-  uri: string,
-  name: string,
-): Promise<string> {
-  if (uri.startsWith("file://")) return uri;
-  const dest = `${FileSystem.cacheDirectory}immich-send-${Date.now()}-${name.replace(/[^\w.\-]+/g, "_")}`;
-  await FileSystem.copyAsync({ from: uri, to: dest });
-  return dest;
-}
-
-async function readChunk(
-  FileSystem: typeof import("expo-file-system"),
-  uri: string,
-  position: number,
-  length: number,
-): Promise<BodyInit> {
-  const EncodingType = FileSystem.EncodingType || { Base64: "base64" };
-  const b64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: EncodingType.Base64,
-    position,
-    length,
-  } as Parameters<typeof FileSystem.readAsStringAsync>[1]);
-  const res = await fetch(`data:application/octet-stream;base64,${b64}`);
+async function blobFromUri(uri: string) {
+  const res = await fetch(uri);
   return res.blob();
 }
 
@@ -80,24 +97,23 @@ export async function uploadFile(
   file: { uri: string; name: string; mime: string; size?: number },
   onProgress?: (done: number, total: number) => void,
 ) {
-  const FileSystem = await loadFileSystem();
-  let localUri = file.uri;
+  const url = normalizeServerUrl(serverUrl);
   let size = file.size || 0;
-  let copied = false;
+  let useHandle: { offset: number | null; readBytes(length: number): Uint8Array; close(): void } | null = null;
+  let blob: Blob | null = null;
 
-  if (FileSystem) {
-    localUri = await localFileUri(FileSystem, file.uri, file.name);
-    copied = localUri !== file.uri;
-    const info = await FileSystem.getInfoAsync(localUri);
-    if (info.exists && "size" in info && typeof info.size === "number") size = info.size;
+  try {
+    const local = openLocalFile(file.uri, file.name);
+    if (local.size) size = local.size;
+    useHandle = local.open();
+  } catch {
+    blob = await blobFromUri(file.uri);
+    size = size || blob.size;
   }
 
-  if (!size && !FileSystem) {
-    const blob = await (await fetch(file.uri)).blob();
-    size = blob.size;
-  }
+  if (!size) throw new Error("Could not read the file size");
 
-  const initRes = await fetch(join(serverUrl, `/api/inbox/${encodeURIComponent(token)}/uploads`), {
+  const initRes = await fetch(join(url, `/api/inbox/${encodeURIComponent(token)}/uploads`), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -111,41 +127,36 @@ export async function uploadFile(
   if (!initRes.ok) throw new Error(started.error || "Could not start upload");
   const chunkSize = Number(started.chunkSize) || 8 * 1024 * 1024;
   const uploadId = started.uploadId as string;
-  const totalChunks = Math.max(1, Math.ceil((size || 1) / chunkSize));
+  const totalChunks = Math.max(1, Math.ceil(size / chunkSize));
 
   try {
-    if (FileSystem) {
-      for (let i = 0; i < totalChunks; i++) {
-        const offset = i * chunkSize;
-        const length = Math.min(chunkSize, size - offset);
-        const body = await readChunk(FileSystem, localUri, offset, length);
-        await putChunk(
-          join(serverUrl, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/chunks/${i}`),
-          body,
-        );
-        onProgress?.(i + 1, totalChunks);
+    for (let i = 0; i < totalChunks; i++) {
+      const offset = i * chunkSize;
+      const length = Math.min(chunkSize, size - offset);
+      let body: BodyInit;
+      if (useHandle) {
+        useHandle.offset = offset;
+        body = asBlob(useHandle.readBytes(length));
+      } else {
+        body = blob!.slice(offset, offset + length);
       }
-    } else {
-      const blob = await (await fetch(file.uri)).blob();
-      for (let i = 0; i < totalChunks; i++) {
-        const slice = blob.slice(i * chunkSize, Math.min(blob.size, (i + 1) * chunkSize));
-        await putChunk(
-          join(serverUrl, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/chunks/${i}`),
-          slice,
-        );
-        onProgress?.(i + 1, totalChunks);
-      }
+      await putChunk(
+        join(url, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/chunks/${i}`),
+        body,
+      );
+      onProgress?.(i + 1, totalChunks);
     }
   } finally {
-    if (copied && FileSystem) {
-      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => undefined);
+    try {
+      useHandle?.close();
+    } catch {
+      /* ignore */
     }
   }
 
-  const doneRes = await fetch(
-    join(serverUrl, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/complete`),
-    { method: "POST" },
-  );
+  const doneRes = await fetch(join(url, `/api/inbox/${encodeURIComponent(token)}/uploads/${uploadId}/complete`), {
+    method: "POST",
+  });
   const done = await readJson(doneRes);
   if (!doneRes.ok) throw new Error(done.error || "Immich upload failed");
   return done;
@@ -156,4 +167,4 @@ export const KEYS = {
   token: "immich-send-token",
 };
 
-export type { InboxInfo };
+export const DEFAULT_SERVER_URL = "https://inbox.orija.store";
