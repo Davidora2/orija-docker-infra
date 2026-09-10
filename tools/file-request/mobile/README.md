@@ -10,19 +10,17 @@ Uploads are split into **8MB chunks**, so Cloudflare Tunnel’s ~100MB request c
 2. Admin → **Phone inboxes** → create a token for that user/album
 3. In the app, paste **Server URL** (public tunnel hostname) and **token**
 
-## Run / build
+## Sideload APK
+
+Package id: `co.orija.immichsend` (1.0.0). Install the APK, allow unknown sources, then paste the public Server URL and phone token from Admin → Phone inboxes.
+
+Rebuild (needs Android SDK):
 
 ```bash
 cd tools/file-request/mobile
 npm install
-npx expo start
-```
-
-Release APK (needs Android SDK):
-
-```bash
 npx expo prebuild --platform android
 cd android && ./gradlew assembleRelease
 ```
 
-APK: `android/app/build/outputs/apk/release/app-release.apk`
+Output: `android/app/build/outputs/apk/release/app-release.apk`
