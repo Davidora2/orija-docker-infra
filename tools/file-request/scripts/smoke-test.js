@@ -203,12 +203,17 @@ try {
 
   const adminPage = await request("GET", "/admin");
   assert(adminPage.status === 200, "admin page missing");
+  const servedAdmin = adminPage.raw.toString("utf8");
+  assert(servedAdmin.includes('href="/css/app.css"'), "local admin CSS path wrong");
+  assert(servedAdmin.includes('src="/js/admin.js"'), "local admin JS path wrong");
+  assert(!servedAdmin.includes("__MOUNT__"), "mount prefix not substituted");
   const adminHtml = fs.readFileSync(path.join(root, "public", "admin.html"), "utf8");
-  assert(!adminHtml.includes('href="/css/app.css"'), "admin CSS must be prefix-safe");
-  assert(!adminHtml.includes('src="/js/admin.js"'), "admin JS must be prefix-safe");
+  assert(adminHtml.includes("__MOUNT__/css/app.css"), "admin CSS must use mount placeholder");
+  assert(adminHtml.includes("__MOUNT__/js/admin.js"), "admin JS must use mount placeholder");
+  assert(!adminHtml.includes("<base"), "admin must not use a relative base href");
   const adminJs = fs.readFileSync(path.join(root, "public", "js", "admin.js"), "utf8");
   assert(adminJs.includes("apiUrl"), "admin JS must prefix API calls");
-  assert(adminJs.includes('OPEN_ID'), "admin JS must auto-open the guest inbox");
+  assert(adminJs.includes("OPEN_ID"), "admin JS must auto-open the guest inbox");
 
   const created = await request("POST", "/api/admin/requests", {
     headers: { ...auth, "content-type": "application/json" },

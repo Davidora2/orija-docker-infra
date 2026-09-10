@@ -53,10 +53,22 @@ if (!fs.existsSync(settingsFile)) {
   fs.writeFileSync(settingsFile, `${JSON.stringify({ immichUrl: process.env.IMMICH_URL || "", users: [] }, null, 2)}\n`);
 }
 
+function mountPrefixFromBase(baseUrl) {
+  try {
+    const pathname = new URL(baseUrl).pathname.replace(/\/$/, "");
+    return pathname && pathname !== "/" ? pathname : "";
+  } catch {
+    return "";
+  }
+}
+
+const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3847}`).replace(/\/$/, "");
+
 export const config = {
   root: ROOT,
   port: Number(process.env.PORT || 3847),
-  baseUrl: (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3847}`).replace(/\/$/, ""),
+  baseUrl,
+  mountPrefix: mountPrefixFromBase(baseUrl),
   adminPassword: process.env.ADMIN_PASSWORD || "",
   uploadRoot,
   requestsFile,

@@ -605,16 +605,28 @@ app.get("/api/admin/files/:requestId/:fileId/preview", requireAdmin, (req, res) 
   fs.createReadStream(src).pipe(res);
 });
 
+function sendPublicPage(res, filename) {
+  const file = path.join(config.root, "public", filename);
+  const html = fs.readFileSync(file, "utf8").replaceAll("__MOUNT__", config.mountPrefix);
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+    "CDN-Cache-Control": "no-store",
+    "Cloudflare-CDN-Cache-Control": "no-store",
+  });
+  res.type("html").send(html);
+}
+
 app.get("/", (_req, res) => {
   res.sendFile(path.join(config.root, "public", "send.html"));
 });
 
 app.get("/admin", (_req, res) => {
-  res.sendFile(path.join(config.root, "public", "admin.html"));
+  sendPublicPage(res, "admin.html");
 });
 
 app.get("/r/:id", (_req, res) => {
-  res.sendFile(path.join(config.root, "public", "request.html"));
+  sendPublicPage(res, "request.html");
 });
 
 app.use((err, _req, res, _next) => {
